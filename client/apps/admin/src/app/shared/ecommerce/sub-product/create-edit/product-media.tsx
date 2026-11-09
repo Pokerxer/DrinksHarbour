@@ -4,12 +4,13 @@
 import { useFormContext } from 'react-hook-form';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useCallback, useRef } from 'react';
-import { PiX, PiUpload, PiImage, PiSpinner, PiStar, PiStarFill } from 'react-icons/pi';
+import { PiX, PiUpload, PiImage, PiSpinner, PiStar, PiStarFill, PiDownload } from 'react-icons/pi';
 import Image from 'next/image';
 import { useSession } from 'next-auth/react';
 import { uploadService } from '@/services/upload.service';
 import toast from 'react-hot-toast';
 import cn from '@core/utils/class-names';
+import downloadProductImage from './image-download';
 
 interface ImageItem {
   url: string;
@@ -218,6 +219,22 @@ export default function SubProductImageOverrides() {
                   )}
                   <button
                     type="button"
+                    aria-label={`Download image ${index + 1}`}
+                    onClick={() => {
+                      // Name comes from the stored image URL (e.g.
+                      // akpeteshie-75cl.webp); the helper falls back to a
+                      // direct-link download if the bytes can't be fetched.
+                      downloadProductImage(img.url).catch(() =>
+                        toast.error('Download failed — try opening the image directly.')
+                      );
+                    }}
+                    className="flex items-center gap-1 rounded-lg bg-blue-500 px-2 py-1 text-[11px] font-semibold text-white shadow hover:bg-blue-600"
+                  >
+                    <PiDownload className="h-3 w-3" />
+                    Download
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => removeImage(index)}
                     className="flex items-center gap-1 rounded-lg bg-red-500 px-2 py-1 text-[11px] font-semibold text-white shadow hover:bg-red-600"
                   >
@@ -233,7 +250,7 @@ export default function SubProductImageOverrides() {
 
       {images.length > 0 && (
         <p className="text-xs text-gray-400">
-          Star icon = primary image shown first on listing. Hover an image to change it.
+          Star icon = primary image shown first on listing. Hover an image to download, re-badge or remove it.
         </p>
       )}
     </div>

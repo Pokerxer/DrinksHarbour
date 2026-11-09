@@ -14,6 +14,7 @@ import {
 } from 'react-icons/pi';
 import type { SubProductListItem, SizeVariant } from '../table';
 import SubProductImage from './SubProductImage';
+import { resolveSizePrices } from '@/utils/sub-product-pricing';
 
 export interface ProductGridCardProps {
   product: SubProductListItem;
@@ -45,8 +46,9 @@ export default function ProductGridCard({
   const base = product.baseSellingPrice || 0;
   const bg = getBgGradient(product.product?.type);
 
-  const primarySize = product.sizes?.[0];
-  const price = primarySize?.sellingPrice || base;
+  // Price = the size price(s) when the listing carries priced size variants
+  // (range across sizes); the listing base price is only a fallback.
+  const { price, priceMax } = resolveSizePrices(product.sizes ?? [], base);
 
   return (
     <motion.div
@@ -191,6 +193,11 @@ export default function ProductGridCard({
           <span className="text-sm font-bold tabular-nums text-gray-900">
             {symbol}
             {price.toLocaleString()}
+            {priceMax !== undefined && (
+              <span className="font-normal text-gray-400">
+                –{priceMax.toLocaleString()}
+              </span>
+            )}
           </span>
           <span
             className={cn(

@@ -44,6 +44,11 @@ async function assertWarehouseSide(warehouseId, tenantId, req, label) {
   }
 }
 
+const {
+  sanitizeStockTransferLines,
+  lineTypeOf,
+} = require("../utils/stockTransferItems");
+
 async function generateTransferNumber(tenantId) {
   const year = new Date().getFullYear();
   const prefix = `TRF-${year}-`;
@@ -128,7 +133,6 @@ const createStockTransfer = asyncHandler(async (req, res) => {
     throw new ValidationError("Inter-warehouse transfers are disabled for this tenant");
 
   await require('../services/restock/transfer-purchase').validateTransferPreparation(tenantId, req.body);
-
   // Resolve the header Tax ref (or tenant default) and stamp every line BEFORE
   // enrichment/money math, so applyTransferMoney's taxAmount picks it up.
   {
@@ -142,6 +146,11 @@ const createStockTransfer = asyncHandler(async (req, res) => {
       for (const it of items) it.taxRate = resolved.taxRate;
     }
   }
+
+  // Normalise wire names; presentation ('section'/'note') lines are zeroed
+  // (after the tax stamping, so they stay at 0%) before enrichment copies
+  // them into transfer.items.
+  sanitizeStockTransferLines(items);
 
   const enriched = await enrichItems(items, tenantId);
   const transferNumber = await generateTransferNumber(tenantId);
@@ -217,6 +226,11 @@ const duplicateStockTransfer = asyncHandler(async (req, res) => {
     sku: it.sku,
     sizeId: it.sizeId,
     sizeName: it.sizeName,
+    // Presentation lines ('section'/'note') ride along zeroed — a duplicate
+    // keeps the document's structure.
+    lineType: it.lineType || 'product',
+    name: it.name,
+    description: it.description,
     quantity: it.quantity,
     transferredQty: 0,
     costPrice: it.costPrice || 0,
@@ -398,6 +412,10 @@ const updateStockTransfer = asyncHandler(async (req, res) => {
     if (resolved && resolved.taxRate !== null) {
       for (const it of items) it.taxRate = resolved.taxRate;
     }
+    // Normalise wire names; presentation lines are zeroed (after the tax
+    // stamping, so they stay at 0%) before enrichment copies them into
+    // transfer.items.
+    sanitizeStockTransferLines(items);
     const enriched = await enrichItems(items, tenantId);
     transfer.items = enriched.map((it) => ({
       ...it,

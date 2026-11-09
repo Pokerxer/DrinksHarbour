@@ -9,6 +9,8 @@ export type ProductHistory = 'purchased' | 'sold' | 'returns';
 export interface ToolbarStatsProps {
   stock: number;
   price: number;
+  /** Highest size price — when greater than `price`, the stat renders a range. */
+  priceMax?: number;
   currency: string;
   purchased: number | null;
   sold: number | null;
@@ -28,6 +30,15 @@ function formatPrice(price: number, currency: string) {
   } catch {
     return `${currency} ${price.toLocaleString('en-NG')}`;
   }
+}
+
+function priceLabel(price: number, priceMax: number | null, currency: string) {
+  const minLabel = formatPrice(price, currency);
+  const maxLabel =
+    priceMax !== null && Number.isFinite(priceMax) && priceMax > price
+      ? formatPrice(priceMax, currency)
+      : null;
+  return maxLabel ? `${minLabel} – ${maxLabel}` : minLabel;
 }
 
 export default function ToolbarStats(props: ToolbarStatsProps) {
@@ -63,7 +74,7 @@ export default function ToolbarStats(props: ToolbarStatsProps) {
       <div className="flex min-h-10 shrink-0 items-center gap-2 rounded-lg bg-gray-50 px-3 text-xs text-gray-600">
         Price{' '}
         <strong className="tabular-nums text-gray-900">
-          {formatPrice(props.price, props.currency)}
+          {priceLabel(props.price, props.priceMax ?? null, props.currency)}
         </strong>
       </div>
       {props.editing &&

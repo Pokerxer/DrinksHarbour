@@ -96,4 +96,33 @@ describe('sub-product toolbar', () => {
     );
     expect(html).toMatch(/<button[^>]*aria-label="Next product"[^>]*disabled/);
   });
+  it('renders a price range when the listing has varied size prices', () => {
+    const html = renderToStaticMarkup(
+      <SubProductToolbar
+        {...props}
+        stats={{ ...props.stats, price: 1500, priceMax: 200000 }}
+      />
+    );
+    expect(html).toContain('₦1,500.00');
+    expect(html).toContain('–');
+    expect(html).toContain('₦200,000.00');
+  });
+  it('renders a single price when the size prices agree or no range is given', () => {
+    const single = (stats: typeof props.stats) =>
+      renderToStaticMarkup(<SubProductToolbar {...props} stats={stats} />);
+    const equalPrices = single({ ...props.stats, price: 50000, priceMax: 50000 });
+    const noRange = single({ ...props.stats, price: 50000 });
+    const invertedRange = single({
+      ...props.stats,
+      price: 200000,
+      priceMax: 1500,
+    });
+    for (const html of [equalPrices, noRange]) {
+      expect(html).toContain('₦50,000.00');
+      expect(html).not.toContain('–');
+    }
+    // An inverted max never widens the price — render just the minimum.
+    expect(invertedRange).toContain('₦200,000.00');
+    expect(invertedRange).not.toContain('–');
+  });
 });

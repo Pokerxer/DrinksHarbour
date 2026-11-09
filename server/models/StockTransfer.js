@@ -5,12 +5,46 @@ const { ObjectId } = Schema;
 
 const StockTransferItemSchema = new Schema(
   {
-    subProductId: { type: ObjectId, ref: "SubProduct", required: true },
-    subProductName: { type: String, required: true, trim: true },
+    // Line discrimination: 'product' (default) moves stock; 'section' is a
+    // titled heading and 'note' is standalone free text — both carry no
+    // quantity/price and are excluded from dispatch, receiving, shortfalls,
+    // returns and money. Mirrors the purchase-order line model.
+    lineType: {
+      type: String,
+      enum: ["product", "section", "note"],
+      default: "product",
+    },
+    // Section heading text (lineType 'section').
+    name: { type: String, trim: true },
+    // Note body (lineType 'note').
+    description: { type: String },
+    subProductId: {
+      type: ObjectId,
+      ref: "SubProduct",
+      // Catalog reference is mandatory on product lines only.
+      required: function () {
+        const t = this && this.lineType;
+        return !t || t === "product";
+      },
+    },
+    subProductName: {
+      type: String,
+      required: function () {
+        const t = this && this.lineType;
+        return !t || t === "product";
+      },
+      trim: true,
+    },
     sku: { type: String, default: "", trim: true },
     sizeId: { type: ObjectId, ref: "Size" },
     sizeName: { type: String, trim: true },
-    quantity: { type: Number, required: true, min: 1 },
+    quantity: {
+      type: Number,
+      default: 1,
+      // Presentation lines are zeroed by sanitizeStockTransferLines; a product
+      // line's quantity>1 guard lives in the (tenant-facing) sanitizer.
+      min: 0,
+    },
     transferredQty: { type: Number, default: 0, min: 0 },
     costPrice: { type: Number, default: 0, min: 0 },
     // Destination purchase terms (see services/stockTransfer.money.js):

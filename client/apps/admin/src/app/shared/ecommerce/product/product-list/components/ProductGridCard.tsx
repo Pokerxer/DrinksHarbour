@@ -22,6 +22,7 @@ import {
   PiImagesBold as PiImages,
 } from 'react-icons/pi';
 import type { ProductListItem } from '../columns';
+import { currencySymbols } from '@/app/shared/ecommerce/sub-product/sub-product-list/components/product-card-utils';
 
 interface ProductGridCardProps {
   product: ProductListItem;
@@ -63,6 +64,9 @@ export default function ProductGridCard({
       : product.status === 'discontinued'
         ? 'Discontinued'
         : 'Published';
+  const hasPrice =
+    product.price != null && Number.isFinite(Number(product.price)) && Number(product.price) > 0;
+  const priceSymbol = currencySymbols[product.priceCurrency] || currencySymbols.NGN || '₦';
 
   return (
     <motion.div
@@ -178,6 +182,21 @@ export default function ProductGridCard({
           )}
         </Flex>
 
+        {/* Price — min–max across the sized listings' SIZE rows (each size
+            prices itself, same rule as the /sub-products cards) */}
+        {hasPrice && (
+          <Text className="mb-3 text-sm font-bold tabular-nums text-gray-900">
+            {priceSymbol}
+            {Number(product.price).toLocaleString()}
+            {product.priceMax != null &&
+              Number(product.priceMax) > Number(product.price) && (
+                <span className="font-normal text-gray-500">
+                  –{Number(product.priceMax).toLocaleString()}
+                </span>
+              )}
+          </Text>
+        )}
+
         {/* Details row */}
         <Flex
           align="center"
@@ -251,6 +270,9 @@ export function ProductGridCardCompact({
   const BeverageIcon = getBeverageIcon(product.type);
   const variantCount = product.variantCount ?? product.subProductCount ?? 0;
   const stock = stockChip(product.totalStock);
+  const hasPrice =
+    product.price != null && Number.isFinite(Number(product.price)) && Number(product.price) > 0;
+  const priceSymbol = currencySymbols[product.priceCurrency] || currencySymbols.NGN || '₦';
 
   return (
     <div
@@ -295,8 +317,23 @@ export function ProductGridCardCompact({
           </p>
         )}
         <div className="flex items-center justify-between gap-1 pt-0.5">
-          <span className="text-[11px] font-medium tabular-nums text-gray-500">
-            {variantCount} variant{variantCount !== 1 ? 's' : ''}
+          <span className="text-[11px] font-bold tabular-nums text-gray-900">
+            {hasPrice ? (
+              <>
+                {priceSymbol}
+                {Number(product.price).toLocaleString()}
+                {product.priceMax != null &&
+                  Number(product.priceMax) > Number(product.price) && (
+                    <span className="font-normal text-gray-400">
+                      –{Number(product.priceMax).toLocaleString()}
+                    </span>
+                  )}
+              </>
+            ) : (
+              <>
+                {variantCount} variant{variantCount !== 1 ? 's' : ''}
+              </>
+            )}
           </span>
           <span
             className={cn(

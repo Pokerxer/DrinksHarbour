@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { resolveSubProductPricing } from './sub-product-pricing';
+import {
+  resolveSubProductPricing,
+  resolveSizePrices,
+} from './sub-product-pricing';
 import { subProductFormSchema } from '@/validators/sub-product.schema';
 import {
   transformFormData,
@@ -19,6 +22,60 @@ const variantProduct = {
     ],
   },
 };
+
+describe('resolveSizePrices — card/toolbar price from the size rows', () => {
+  const serverSizes = (prices: Array<Record<string, unknown>>) =>
+    prices.map((price, index) => ({ _id: `s${index}`, ...price }));
+
+  it('returns the min–max range across the sizes a listing carries', () => {
+    expect(
+      resolveSizePrices(serverSizes([{ sellingPrice: 3000 }, { sellingPrice: 1500 }]), 10000)
+    ).toEqual({ price: 1500, priceMax: 3000 });
+  });
+
+  it('drops the range when every size prices the same', () => {
+    expect(
+      resolveSizePrices(serverSizes([{ sellingPrice: 2000 }, { sellingPrice: '2000' }]), 0)
+    ).toEqual({ price: 2000 });
+  });
+
+  it('uses an active size sale over its regular selling price', () => {
+    expect(
+      resolveSizePrices(
+        serverSizes([
+          { sellingPrice: 3000, salePrice: 1500, isOnSale: true },
+          { sellingPrice: 500 },
+        ]),
+        0
+      )
+    ).toEqual({ price: 500, priceMax: 1500 });
+  });
+
+  it('ignores a sale price when the row is not flagged isOnSale', () => {
+    expect(
+      resolveSizePrices(
+        serverSizes([{ sellingPrice: 3000, salePrice: 5, isOnSale: false }]),
+        0
+      )
+    ).toEqual({ price: 3000 });
+  });
+
+  it('falls back to the listing base price when no size carries a price', () => {
+    expect(
+      resolveSizePrices(serverSizes([{ sellingPrice: 0 }, {}]), 7000)
+    ).toEqual({ price: 7000 });
+  });
+
+  it('reads form rows through their basePrice field', () => {
+    expect(
+      resolveSizePrices([{ basePrice: 1000, isOnSale: false }, { basePrice: 2500 }], 0)
+    ).toEqual({ price: 1000, priceMax: 2500 });
+  });
+
+  it('returns the fallback for empty or missing size arrays', () => {
+    expect(resolveSizePrices([], 900)).toEqual({ price: 900 });
+  });
+});
 
 describe('variant pricing with optional base defaults', () => {
   it('handles numeric input strings without treating zero as an explicit default', () => {

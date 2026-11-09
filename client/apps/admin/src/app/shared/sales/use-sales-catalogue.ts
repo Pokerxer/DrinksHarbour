@@ -9,12 +9,20 @@ import {
 
 const noFacets = { categories: [], brands: [], types: [] };
 
+type CatalogueLoader = typeof loadCataloguePage;
+
 export function useSalesCatalogue(
   open: boolean,
   token: string,
   warehouseId?: string,
   pricelistId?: string,
-  quantities: Record<string, number> = {}
+  quantities: Record<string, number> = {},
+  /**
+   * Optional page loader override — lets other surfaces (e.g. the purchase
+   * catalogue) reuse the search/filter/pagination plumbing with their own
+   * pricing contract. Defaults to the sales page loader.
+   */
+  loader: CatalogueLoader = loadCataloguePage,
 ) {
   const [query, setQuery] = useState('');
   const [search, setSearch] = useState('');
@@ -97,7 +105,7 @@ export function useSalesCatalogue(
       return;
     }
     const load = () =>
-      loadCataloguePage({
+      loader({
         token,
         warehouseId,
         query: search,
@@ -158,6 +166,7 @@ export function useSalesCatalogue(
     quantitiesKey,
     pageKey,
     contextKey,
+    loader,
   ]);
 
   const current = state.key === key;

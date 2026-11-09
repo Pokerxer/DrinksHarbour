@@ -405,7 +405,33 @@ export default function PurchasesPODetail({ id }: { id: string }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {po.items.map((item, i) => (
+            {po.items.map((item, i) => {
+              const lineType = (item as any).lineType;
+              if (lineType === 'section') {
+                return (
+                  <tr key={i} className="bg-gray-50/80">
+                    <td
+                      colSpan={8}
+                      className="px-4 py-2.5 text-sm font-bold text-gray-900"
+                    >
+                      {(item as any).name}
+                    </td>
+                  </tr>
+                );
+              }
+              if (lineType === 'note') {
+                return (
+                  <tr key={i} className="bg-amber-50/40">
+                    <td
+                      colSpan={8}
+                      className="px-4 py-2.5 text-xs italic text-gray-600"
+                    >
+                      {(item as any).description}
+                    </td>
+                  </tr>
+                );
+              }
+              return (
               <tr key={i}>
                 <td className="px-4 py-3 font-medium text-gray-900">
                   {(() => {
@@ -461,7 +487,8 @@ export default function PurchasesPODetail({ id }: { id: string }) {
                   )}
                 </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
           <tfoot>
             <tr className="border-t border-gray-200 bg-gray-50">

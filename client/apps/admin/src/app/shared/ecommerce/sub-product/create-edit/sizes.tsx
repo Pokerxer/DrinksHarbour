@@ -1414,7 +1414,7 @@ function SizeVariantRow({
             label={watch(`subProductData.sizes.${index}.displayName`) || watch(`subProductData.sizes.${index}.size`) || 'variant'}
             onRemove={() => {
               remove(index);
-              toast.success('Size removed from form');
+              toast.success('Size deleted from product');
             }}
           />
         </div>

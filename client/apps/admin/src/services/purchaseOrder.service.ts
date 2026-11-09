@@ -179,6 +179,11 @@ export interface POItem {
   taxRate?: number;
   totalCost?: number;
   returnedQty?: number;
+  // Presentation lines: 'section' is a titled heading and 'note' is standalone
+  // free text; both carry no qty/price (mirrors the sales document model).
+  lineType?: 'product' | 'section' | 'note';
+  name?: string;
+  description?: string;
 }
 
 export interface PurchaseSettings {

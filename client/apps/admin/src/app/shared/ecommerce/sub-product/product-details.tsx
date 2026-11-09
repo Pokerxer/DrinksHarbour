@@ -18,6 +18,7 @@ import {
   type SubProductData,
 } from '@/services/subproduct.service';
 import { PiSpinner, PiMagnifyingGlassBold } from 'react-icons/pi';
+import { resolveSizePrices } from '@/utils/sub-product-pricing';
 
 type DisplayReference = string | { name?: string; slug?: string };
 type CatalogueProduct = Record<string, unknown> & {
@@ -77,6 +78,24 @@ function activeSale(
     !!enabled &&
     (!starts || Date.parse(starts) <= now) &&
     (!ends || Date.parse(ends) >= now)
+  );
+}
+
+/**
+ * The toolbar Price stat is the SIZE price(s) whenever the listing sells size
+ * variants — a sized listing has no meaningful single base price (each size
+ * prices itself, and an active per-size sale uses its salePrice). See
+ * resolveSizePrices in utils/sub-product-pricing (shared with the list
+ * cards); the fallback is the sub-product's sale/base price.
+ */
+function toolbarPrice(
+  viewModel: ListingSummary
+): { price: number; priceMax?: number } {
+  return resolveSizePrices(
+    viewModel.sizes ?? [],
+    (viewModel.isOnSale ? viewModel.salePrice : undefined) ??
+      viewModel.baseSellingPrice ??
+      0
   );
 }
 
@@ -238,11 +257,7 @@ export default function SubProductDetails() {
         status={viewModel.status || 'draft'}
         published={!!viewModel.isPublished}
         stock={Number(viewModel.stock ?? 0)}
-        price={Number(
-          (viewModel.isOnSale ? viewModel.salePrice : undefined) ??
-            viewModel.baseSellingPrice ??
-            0
-        )}
+        {...toolbarPrice(viewModel)}
         currency={currency}
         token={token}
         onChanged={() => setReload((value) => value + 1)}

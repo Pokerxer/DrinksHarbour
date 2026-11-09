@@ -15,6 +15,16 @@ export function localSizeGuidance(type: string, tenantIndustries?: readonly stri
 
 const manualSizes = ['custom', 'variable'];
 
+// Before per-type guidance took over the picker, beverage businesses saw the
+// whole static size pool (all bottle families, glassware, gift sets, single
+// serves…). Their per-type presets must narrow the context, not delete the
+// rest — so beverage gets the most-retailed bottles first, then the complete
+// pool, then the type-only preset extras.
+const BEVERAGE_COMMON_BASELINE = [
+  '75cl', '70cl', '50cl', '1L', '1.5L', '2L', '3L',
+  '33cl', '35cl', '25cl', '5cl', '10cl', '20cl',
+] as const;
+
 export function availableCustomSize(used: readonly string[]): string | undefined {
   const occupied = new Set(used);
   return Array.from({ length: 20 }, (_, index) =>
@@ -29,13 +39,30 @@ export function businessSizeOptions(
   tenantIndustries?: readonly string[] | null
 ) {
   const business = catalogBusiness(type);
-  const byCode = new Map(options.map(option => [option.value, option]));
+  // Keep the FIRST metadata for a duplicated size code — the Wine & Champagne
+  // entry carries the richer label ("75cl (Standard)") ahead of the plain
+  // Spirits listing later in the static option pool.
+  const byCode = new Map<string, { value: string; label: string; category: string }>();
+  for (const option of options) if (!byCode.has(option.value)) byCode.set(option.value, option);
   const presets = type && guidance?.length ? guidance : localSizeGuidance(type, tenantIndustries);
-  return [...new Set([...presets, ...manualSizes])].map(value => {
+  // Beverage businesses get the standard bottle families back, ahead of the
+  // type-specific presets, so quick-add keeps surfacing the common bottles.
+  const baseline = business === 'beverage' ? beverageBaselineValues(byCode) : [];
+  return [...new Set([...baseline, ...presets, ...manualSizes])].map(value => {
     const existing = byCode.get(value);
     if (existing && (business === 'beverage' || manualSizes.includes(value))) return existing;
     return { value, ...describeSize(value) };
   });
+}
+
+function beverageBaselineValues(
+  byCode: Map<string, { value: string; label: string; category: string }>
+): string[] {
+  // Common bottles lead (so the 12 quick-add chips surface 75cl/70cl/50cl),
+  // then the full static pool keeps the picker as plentiful as it was before
+  // per-type guidance, deduped — preset-only extras follow separately.
+  const common = [...BEVERAGE_COMMON_BASELINE].filter(code => byCode.has(code));
+  return [...new Set([...common, ...byCode.keys()])];
 }
 
 function describeSize(value: string) {
@@ -88,7 +115,7 @@ export function sizePresetMeasurements(value: string) {
       : pack?.[1] === 'case' ? 'count_case' : pack ? 'count_pack' : 'count_unit',
     volumeMl: measure === 'ml' ? quantity : measure === 'cl' ? quantity * 10 : measure === 'l' ? quantity * 1000 : namedVolume ?? null,
     weightGrams: measure === 'kg' ? quantity * 1000 : measure === 'g' ? quantity : null,
-    unitsPerPack: pack ? Number(pack[2]) : 1,
-    packaging: /^(pack|case)-/.test(value) ? value : undefined,
+    unitsPerPack: pack ? Number(pack[2]) : 6,
+    packaging: /^(pack|case)-/.test(value) ? value : 'pack-6',
   };
 }

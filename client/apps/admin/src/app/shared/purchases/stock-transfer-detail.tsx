@@ -798,6 +798,31 @@ export default function StockTransferDetail({ id }: { id: string }) {
             </thead>
             <tbody className="divide-y divide-gray-100">
               {transfer.items.map((item, i) => {
+                const lineType = item.lineType;
+                if (lineType === 'section') {
+                  return (
+                    <tr key={i} className="bg-gray-50/80">
+                      <td
+                        colSpan={transfer.status !== 'completed' ? 10 : 9}
+                        className="px-4 py-2.5 text-sm font-bold text-gray-900"
+                      >
+                        {item.name}
+                      </td>
+                    </tr>
+                  );
+                }
+                if (lineType === 'note') {
+                  return (
+                    <tr key={i} className="bg-amber-50/40">
+                      <td
+                        colSpan={transfer.status !== 'completed' ? 10 : 9}
+                        className="px-4 py-2.5 text-xs italic text-gray-600"
+                      >
+                        {item.description}
+                      </td>
+                    </tr>
+                  );
+                }
                 const done = item.transferredQty >= item.quantity;
                 const pct = Math.min(100, Math.round((item.transferredQty / item.quantity) * 100));
                 const name =

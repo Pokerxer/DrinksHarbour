@@ -29,7 +29,7 @@ import {
   PiTrolley,
 } from 'react-icons/pi';
 import ProductStep from './product-step';
-import { resolveSubProductPricing } from '@/utils/sub-product-pricing';
+import { resolveSubProductPricing, resolveToolbarPrice } from '@/utils/sub-product-pricing';
 import { clearSubProductDraft } from './draft-cleanup';
 import { requestDuplicate } from './duplicate-intent';
 import { subProductSaveTarget } from './save-target';
@@ -1160,7 +1160,9 @@ function SubProductForm({
             }}
             stats={{
               stock: Number(watch('subProductData.totalStock')) || 0,
-              price: resolveSubProductPricing(watch('subProductData')).baseSellingPrice,
+              // Price = the size price(s) when the form carries priced size
+              // rows (range across sizes); base price only as fallback.
+              ...resolveToolbarPrice(watch('subProductData')),
               currency: watch('subProductData.currency') || 'NGN',
               purchased: statPurchased,
               sold: statSold,

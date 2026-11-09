@@ -6,6 +6,7 @@ import { PiPencilSimpleBold } from 'react-icons/pi';
 import type { SizeVariant } from '../filtering';
 import type { ProductGridCardProps } from './ProductGridCard';
 import SubProductImage from './SubProductImage';
+import { resolveSizePrices } from '@/utils/sub-product-pricing';
 import {
   currencySymbols,
   getBgGradient,
@@ -26,13 +27,13 @@ export default function ProductGridCardCompact({
   const base = product.baseSellingPrice || 0;
   const bg = getBgGradient(product.product?.type);
 
-  const ps =
-    product.sizes
-      ?.map((s: SizeVariant) => s.sellingPrice || base)
-      .filter((p: number) => p > 0) || [];
-  const effective = ps.length ? ps : base > 0 ? [base] : [];
-  const lo = effective.length ? Math.min(...effective) : 0;
-  const hi = effective.length ? Math.max(...effective) : 0;
+  // Price = the size price(s) when the listing carries priced size variants
+  // (range across sizes); the listing base price is only a fallback. Shared
+  // resolver with the grid card / toolbars (sale prices honoured per row).
+  const { price: lo, priceMax: hi } = resolveSizePrices(
+    product.sizes ?? [],
+    base
+  );
 
   return (
     <div
@@ -79,7 +80,7 @@ export default function ProductGridCardCompact({
           <span className="text-[11px] font-bold tabular-nums text-gray-900">
             {symbol}
             {lo.toLocaleString()}
-            {lo !== hi ? (
+            {hi !== undefined && hi !== lo ? (
               <span className="font-normal text-gray-400">
                 –{hi.toLocaleString()}
               </span>

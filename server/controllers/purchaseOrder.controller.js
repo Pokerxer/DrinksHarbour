@@ -30,6 +30,10 @@ const {
   ValidationError,
   ForbiddenError,
 } = require("../utils/errors");
+const {
+  sanitizePurchaseOrderLines,
+  lineTypeOf,
+} = require("../utils/purchaseOrderItems");
 
 /**
  * Helper to get tenant ID
@@ -108,17 +112,24 @@ const enrichPOItems = async (items, tenantId) => {
 };
 
 /**
- * Validate that subProductIds exist in tenant's catalog
+ * Validate that subProductIds exist in tenant's catalog. Presentation lines
+ * ('section'/'note') carry no catalog reference and are skipped; the
+ * "at least one valid id" guard only applies when actual product lines exist.
  */
 const validateSubProducts = async (items, tenantId) => {
   if (!items || !Array.isArray(items)) return;
 
   const subProductIds = items
-    .filter((item) => item.subProductId)
+    .filter((item) => item.subProductId && lineTypeOf(item) === 'product')
     .map((item) => new mongoose.Types.ObjectId(item.subProductId));
 
+  const hasProductLines = items.some((item) => lineTypeOf(item) === 'product');
   if (subProductIds.length === 0) {
-    throw new ValidationError("At least one item must have a valid subProductId");
+    if (hasProductLines) {
+      throw new ValidationError("At least one item must have a valid subProductId");
+    }
+    // Pure presentation payload (sections/notes only) — nothing to validate.
+    return;
   }
 
   const existingSubProducts = await SubProduct.find({
@@ -362,16 +373,7 @@ const createPurchaseOrder = asyncHandler(async (req, res) => {
   }
 
   // Validate items have subProductId and normalise frontend field names → schema names
-  for (const item of items) {
-    if (!item.subProductId) {
-      throw new ValidationError(
-        "Each item must have subProductId",
-      );
-    }
-    if (!item.subProductName && item.productName) item.subProductName = item.productName;
-    if (item.unitCost === undefined || item.unitCost === null) item.unitCost = item.unitPrice ?? 0;
-    if (item.packagingQty === undefined || item.packagingQty === null) item.packagingQty = item.packSize ?? 1;
-  }
+  sanitizePurchaseOrderLines(items);
 
   // Validate subProducts exist in tenant's catalog
   await validateSubProducts(items, tenantId);
@@ -624,6 +626,9 @@ const updatePurchaseOrder = asyncHandler(async (req, res) => {
       }
       if (resolved && resolved.taxRate !== null) item.taxRate = resolved.taxRate;
     }
+    // Normalise wire names + zero presentation ('section'/'note') lines before
+    // validation and enrichment copy them into po.items.
+    sanitizePurchaseOrderLines(items);
     await validateSubProducts(items, tenantId);
     po.items = await enrichPOItems(items, tenantId);
   }

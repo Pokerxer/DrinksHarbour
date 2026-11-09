@@ -68,6 +68,11 @@ export interface TransferItem {
   shortfallQty?: number;
   /** Units per pack snapshot for the "5 packs & 1 bottle" breakdown. */
   packSize?: number;
+  // Presentation lines: 'section' is a titled heading and 'note' is standalone
+  // free text; both carry no quantity/price (mirrors the purchase-order model).
+  lineType?: 'product' | 'section' | 'note';
+  name?: string;
+  description?: string;
 }
 
 export interface TransferCreator {

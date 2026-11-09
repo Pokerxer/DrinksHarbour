@@ -22,4 +22,49 @@ for (const Card of [ProductGridCard, ProductGridCardCompact]) {
     fireEvent.click(screen.getByRole('link', { name: 'Edit Beverage' }));
     expect(select).toHaveBeenCalledTimes(1);
   });
+
+  it(`prices ${Card.name} from the size rows, not the base price`, () => {
+    const sized = render(
+      <Card
+        product={{
+          ...product,
+          baseSellingPrice: 10000000,
+          sizes: [
+            { _id: 'a', size: '35cl', sellingPrice: 2500 },
+            { _id: 'b', size: '75cl', sellingPrice: 5000 },
+          ],
+        }}
+        isSelected={false}
+        onSelect={vi.fn()}
+      />
+    );
+    const text = sized.container.textContent || '';
+    expect(text).toContain('2,500');
+    expect(text).toContain('5,000');
+    expect(text).not.toContain('10,000,000');
+
+    const uniform = render(
+      <Card
+        product={{
+          ...product,
+          sizes: [
+            { _id: 'a', size: '35cl', sellingPrice: 3000 },
+            { _id: 'b', size: '75cl', sellingPrice: 3000 },
+          ],
+        }}
+        isSelected={false}
+        onSelect={vi.fn()}
+      />
+    );
+    expect(uniform.container.textContent).toContain('3,000');
+
+    const unsized = render(
+      <Card
+        product={{ ...product, baseSellingPrice: 750, sizes: [] }}
+        isSelected={false}
+        onSelect={vi.fn()}
+      />
+    );
+    expect(unsized.container.textContent).toContain('750');
+  });
 }

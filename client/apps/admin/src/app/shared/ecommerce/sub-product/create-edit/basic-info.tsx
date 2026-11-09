@@ -19,6 +19,7 @@ import {
   PiImages,
   PiStar,
   PiTrash,
+  PiDownload,
   PiCaretRight,
   PiWarning,
 } from 'react-icons/pi';
@@ -27,6 +28,7 @@ import Image from 'next/image';
 import { uploadService } from '@/services/upload.service';
 import toast from 'react-hot-toast';
 import cn from '@core/utils/class-names';
+import downloadProductImage from './image-download';
 
 import {
   ProductSearchInput,
@@ -1053,6 +1055,19 @@ export default function SubProductBasicInfo({
                         Primary
                       </div>
                     )}
+                    <button
+                      type="button"
+                      aria-label={`Download image ${index + 1}`}
+                      onClick={() => {
+                        downloadProductImage(image.url).catch(() =>
+                          toast.error('Download failed — try opening the image directly.')
+                        );
+                      }}
+                      className="absolute bottom-2 right-2 flex items-center gap-1 rounded-full bg-white/90 px-2 py-1 text-[10px] font-semibold text-gray-800 shadow hover:bg-white"
+                    >
+                      <PiDownload className="h-3 w-3" />
+                      Download
+                    </button>
                   </div>
                 ))}
               </div>
@@ -1125,6 +1140,25 @@ export default function SubProductBasicInfo({
                         Primary
                       </motion.button>
                     )}
+                    <motion.button
+                      whileHover={{ scale: 1.1 }}
+                      whileTap={{ scale: 0.9 }}
+                      type="button"
+                      aria-label={`Download image ${index + 1}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        // Saved media — downloads the original bytes when
+                        // reachable (Cloudinary CORS), falls back to opening
+                        // the stored URL for the browser to handle.
+                        downloadProductImage(image.url || image.thumbnail).catch(() =>
+                          toast.error('Download failed — try opening the image directly.')
+                        );
+                      }}
+                      className="flex items-center gap-1 rounded-full bg-blue-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-600"
+                    >
+                      <PiDownload className="h-3 w-3" />
+                      Download
+                    </motion.button>
                     <motion.button
                       whileHover={{ scale: 1.1 }}
                       whileTap={{ scale: 0.9 }}

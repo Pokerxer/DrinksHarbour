@@ -64,6 +64,9 @@ type RawProduct = {
     availableStock?: number;
     stock?: number;
     unitsPerPack?: number;
+    colorName?: string | null;
+    optionName?: string | null;
+    unitType?: string | null;
   }[];
 };
 
@@ -108,6 +111,9 @@ export function mapCatalogueProduct(sp: RawProduct): CatalogProduct {
       wholesalePrice: s.wholesalePrice,
       availableStock: s.availableStock ?? s.stock ?? 0,
       unitsPerPack: s.unitsPerPack ?? 1,
+      colorName: s.colorName ?? undefined,
+      optionName: s.optionName ?? undefined,
+      unitType: s.unitType ?? undefined,
     })),
   };
 }

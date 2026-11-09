@@ -4,6 +4,7 @@ import type {
   POSBundleDeal,
 } from '@/app/shared/point-of-sale/types';
 import type { ProductLineSelection } from './product-line-search';
+import { defaultPackagingForLine } from '../purchases/types';
 
 export type CatalogSalesPricing = { unitPrice: number; quantity: number };
 
@@ -43,6 +44,11 @@ export interface CatalogSize {
   wholesalePrice?: number;
   availableStock?: number;
   unitsPerPack?: number;
+  // Retail variant identity — passed straight through to catalogue selections
+  // so the purchase form can set the retail packaging noun at line entry.
+  colorName?: string | null;
+  optionName?: string | null;
+  unitType?: string | null;
 }
 
 /** Effective price for a sizeless product after pricelist/bundle rules. */
@@ -137,6 +143,9 @@ export function sizeSelection(
     unitsPerPack: s.unitsPerPack,
     sizeId: s.size,
     sizeName: s.displayName ?? s.size,
+    // Retail-row packaging default ('units'/'pieces'); undefined for
+    // beverage rows, same rule as the purchase search (DRI-14).
+    packaging: defaultPackagingForLine(s),
     availableStock: s.availableStock ?? undefined,
     bundleDeals: p.bundleDeals,
     originalPrice: s.sellingPrice || p.baseSellingPrice,

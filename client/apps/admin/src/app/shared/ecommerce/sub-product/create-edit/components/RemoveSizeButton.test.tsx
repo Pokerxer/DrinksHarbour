@@ -1,45 +1,109 @@
 // @vitest-environment jsdom
-import { afterEach, expect, test, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/react';
+import { afterEach, expect, it, vi } from 'vitest';
 import RemoveSizeButton from './RemoveSizeButton';
 
-vi.mock('next-auth/react', () => ({ useSession: () => ({ data: { user: { token: 'test-token' } } }) }));
-vi.mock('./FormDialog', () => ({ default: ({ open, title, children, footer }: { open: boolean; title: string; children: React.ReactNode; footer: React.ReactNode }) => open ? <div role="dialog"><h2>{title}</h2>{children}{footer}</div> : null }));
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+vi.mock('next-auth/react', () => ({
+  useSession: () => ({ data: { user: { token: 'tenant-token' } } }),
+}));
 
-test('checks saved size history before allowing a confirmed removal', async () => {
-  const remove = vi.fn();
-  const fetcher = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ success: true, data: { allowed: true, reason: null } }) });
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
+
+const eligibility = (allowed = true, reason = null) => ({
+  ok: true,
+  json: async () => ({
+    success: true,
+    data: { allowed, reason },
+  }),
+});
+
+it('deletes a saved size in the database immediately and only then removes the row', async () => {
+  const fetcher = vi
+    .fn()
+    .mockResolvedValueOnce(eligibility(true))
+    .mockResolvedValueOnce({ ok: true, json: async () => ({ success: true }) });
   vi.stubGlobal('fetch', fetcher);
-  render(<RemoveSizeButton productId="product" sizeId="size" label="75cl" onRemove={remove} />);
+  const onRemove = vi.fn();
+  render(
+    <RemoveSizeButton
+      productId="subproduct-1"
+      sizeId="size-2"
+      label="75cl"
+      onRemove={onRemove}
+    />
+  );
+
+  // Open the dialog — eligibility check fires.
   fireEvent.click(screen.getByRole('button', { name: 'Remove size 75cl' }));
-  expect(remove).not.toHaveBeenCalled();
-  await waitFor(() => expect(screen.getByRole('button', { name: 'Remove size' }).hasAttribute('disabled')).toBe(false));
-  expect(fetcher.mock.calls[0][0]).toContain('/product/sizes/size/deletion');
+  await waitFor(() =>
+    expect(screen.getByText(/deleted immediately|database/i))
+  );
+
   fireEvent.click(screen.getByRole('button', { name: 'Remove size' }));
-  expect(remove).toHaveBeenCalledOnce();
+
+  await waitFor(() => expect(onRemove).toHaveBeenCalled());
+  const [deleteCall] = fetcher.mock.calls.slice(1);
+  expect(deleteCall[0]).toBe(
+    'http://localhost:5001/api/subproducts/subproduct-1/sizes/size-2'
+  );
+  expect(deleteCall[1].method).toBe('DELETE');
+  expect(deleteCall[1].headers.Authorization).toBe('Bearer tenant-token');
 });
 
-test.each(['history', 'network'])('keeps a saved size when blocked by %s', async kind => {
-  const remove = vi.fn();
-  vi.stubGlobal('fetch', kind === 'history'
-    ? vi.fn().mockResolvedValue({ ok: true, json: async () => ({ success: true, data: { allowed: false, reason: 'This size has sales history.' } }) })
-    : vi.fn().mockRejectedValue(new Error('Unable to check history.')));
-  render(<RemoveSizeButton productId="product" sizeId="size" label="75cl" onRemove={remove} />);
+it('keeps the row and shows the server reason when the database delete is rejected', async () => {
+  const fetcher = vi
+    .fn()
+    .mockResolvedValueOnce(eligibility(true))
+    .mockResolvedValueOnce({
+      ok: false,
+      json: async () => ({
+        success: false,
+        message: 'Cannot delete 75cl: This size has history or is still used in Order.',
+      }),
+    });
+  vi.stubGlobal('fetch', fetcher);
+  const onRemove = vi.fn();
+  render(
+    <RemoveSizeButton
+      productId="subproduct-1"
+      sizeId="size-2"
+      label="75cl"
+      onRemove={onRemove}
+    />
+  );
+
   fireEvent.click(screen.getByRole('button', { name: 'Remove size 75cl' }));
-  await waitFor(() => expect(screen.getByRole('status').textContent).toMatch(/history/));
-  expect(screen.getByRole('button', { name: 'Remove size' }).hasAttribute('disabled')).toBe(true);
-  fireEvent.click(screen.getByRole('button', { name: 'Keep size' }));
-  expect(remove).not.toHaveBeenCalled();
+  await waitFor(() => expect(screen.getByText(/deleted immediately|database/i)));
+
+  fireEvent.click(screen.getByRole('button', { name: 'Remove size' }));
+
+  await waitFor(() =>
+    expect(screen.getByText(/still used in Order/))
+  );
+  expect(onRemove).not.toHaveBeenCalled();
 });
 
-test('unsaved sizes can be removed without requesting history', () => {
+it('removes an unsaved row locally without hitting the database', async () => {
   const fetcher = vi.fn();
   vi.stubGlobal('fetch', fetcher);
-  const remove = vi.fn();
-  render(<RemoveSizeButton label="new variant" onRemove={remove} />);
-  fireEvent.click(screen.getByRole('button', { name: 'Remove size new variant' }));
+  const onRemove = vi.fn();
+  render(
+    <RemoveSizeButton productId="subproduct-1" sizeId="" label="75cl" onRemove={onRemove} />
+  );
+
+  fireEvent.click(screen.getByRole('button', { name: 'Remove size 75cl' }));
+  await waitFor(() => expect(screen.getByText(/database/i)));
   fireEvent.click(screen.getByRole('button', { name: 'Remove size' }));
+
+  await waitFor(() => expect(onRemove).toHaveBeenCalled());
   expect(fetcher).not.toHaveBeenCalled();
-  expect(remove).toHaveBeenCalledOnce();
 });

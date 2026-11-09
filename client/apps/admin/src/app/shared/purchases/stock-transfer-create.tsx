@@ -2,10 +2,11 @@
 
 import { sizeVariantLabel } from '@/utils/size-variant-label';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
+import dynamic from 'next/dynamic';
 import {
   PiPlus,
   PiTrash,
@@ -20,6 +21,10 @@ import {
   PiArrowElbowRightDown,
   PiSpinner,
   PiPaperPlaneTilt,
+  PiBookmarkSimple,
+  PiTextT,
+  PiSquaresFour,
+  PiCamera,
 } from 'react-icons/pi';
 import toast from 'react-hot-toast';
 import { routes } from '@/config/routes';
@@ -31,30 +36,75 @@ import { computeTransferTotals } from './transfer-money';
 import TransferTotalsCard from './transfer-totals-card';
 import PackSizeInput from './pack-size-input';
 import { useWarehouseTransferPrefill, type PreparedWarehouseTransfer } from './use-warehouse-transfer-prefill';
+import {
+  appendPresentationLine,
+  computeSectionSubtotals,
+  lineTypeOf,
+  type PurchaseLineType,
+} from './purchases-create-lines';
+import {
+  appendTransferScannedLines,
+  transferPayloadLines,
+  type TransferLine,
+} from './stock-transfer-lines';
+import TransferCatalogModal, {
+  type TransferCatalogRow,
+} from './stock-transfer-catalog-modal';
+import PurchasesScanDrawer from './purchases-scan-drawer';
+import type { PurchaseLineDraft } from './purchases-scan-selection';
+
+const TransferCatalogModalDynamic = dynamic(
+  () => import('./stock-transfer-catalog-modal'),
+  {
+    ssr: false,
+    loading: () => (
+      <div
+        role="status"
+        className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40"
+      >
+        <span className="rounded-xl bg-white p-5 text-sm text-gray-700">
+          Opening source stock catalogue…
+        </span>
+      </div>
+    ),
+  }
+);
+
+const PurchasesScanDrawerDynamic = dynamic(
+  () => import('./purchases-scan-drawer'),
+  {
+    ssr: false,
+    loading: () => (
+      <div
+        role="status"
+        className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40"
+      >
+        <span className="rounded-xl bg-white p-5 text-sm text-gray-700">
+          Opening Scan &amp; Match…
+        </span>
+      </div>
+    ),
+  }
+);
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+
+/** Wire shape of a transfer item the create/update service accepts. */
+type TransferItemPayload = Omit<
+  import('@/services/stockTransfer.service').TransferItem,
+  '_id' | 'transferredQty' | 'receivedQty'
+>;
 
 /** Where a line's default unit price came from — shown under the price input. */
 type PriceSource = 'wholesale' | 'cost' | null;
 
-interface LineItem {
-  subProductId: string;
-  subProductName: string;
-  sku: string;
-  sizeId?: string;
-  sizeName?: string;
-  quantity: number;
+interface LineItem extends TransferLine {
+  // Presentation identity (lineType/name/description) comes from the transfer
+  // base type: 'section' lines carry a title with no qty/money; 'note' lines
+  // are standalone text. Both are excluded from money, dispatch, receiving,
+  // shortfalls and returns (server zeroes them too).
+  /** Source warehouse stock snapshot at pick time (honours stockKey). */
   sourceStock?: number;
-  costPrice?: number;
-  /** Destination purchase terms — what the destination pays the source. */
-  discountRate: number;
-  taxRate: number;
-  /** Units per pack snapshot (Size.unitsPerPack) for the packs breakdown. */
-  packSize: number;
-  /** Immutable cost-source price from the pick — the Cost toggle re-seeds from it. */
-  costSourcePrice: number;
-  /** Wholesale-source price from the pick (0 when the size has none). */
-  wholesalePrice: number;
   priceSource?: PriceSource;
 }
 
@@ -84,6 +134,7 @@ function lineLabel(item: { subProductName: string; sizeName?: string }) {
 
 function blankItem(): LineItem {
   return {
+    lineType: 'product',
     subProductId: '',
     subProductName: '',
     sku: '',
@@ -96,6 +147,27 @@ function blankItem(): LineItem {
     costSourcePrice: 0,
     wholesalePrice: 0,
     priceSource: null,
+  };
+}
+
+/** Presentation blank ("Add a section"/"Add a note"): zeroed so money, stock
+ *  movement and validation skip it (mirrors blankItem, minus the product). */
+function blankPresentationItem(type: 'section' | 'note'): LineItem {
+  return {
+    lineType: type,
+    subProductId: '',
+    subProductName: '',
+    sku: '',
+    quantity: 0,
+    sourceStock: 0,
+    costPrice: 0,
+    discountRate: 0,
+    taxRate: 0,
+    packSize: 1,
+    costSourcePrice: 0,
+    wholesalePrice: 0,
+    priceSource: null,
+    ...(type === 'section' ? { name: '' } : { description: '' }),
   };
 }
 
@@ -348,6 +420,9 @@ export default function StockTransferCreate({
   const [overIndex, setOverIndex] = useState<number | null>(null);
   const [stockMap, setStockMap] = useState<Record<string, number>>({});
   const [stockRows, setStockRows] = useState<StockRowOption[]>([]);
+  // Mirror for stable callbacks (Scan & Match mapping should not re-create on
+  // every stock refresh).
+  const stockRowsRef = useRef<StockRowOption[]>([]);
   const [loadingStock, setLoadingStock] = useState(false);
   // Bulk pricing controls: seed/re-seed every line from the chosen source.
   const [priceMode, setPriceMode] = useState<'cost' | 'wholesale'>('cost');
@@ -398,6 +473,11 @@ export default function StockTransferCreate({
         setDestWarehouse(asWarehouse(t.destinationWarehouse));
         setItems(
           (t.items ?? []).map((it) => ({
+            lineType: (it.lineType ?? 'product') as PurchaseLineType,
+            // Presentation lines keep their body text so the edit form can
+            // render and re-save them.
+            name: it.name,
+            description: it.description,
             subProductId: it.subProductId,
             // Store the BASE name — the size is appended for display only, so
             // edit/save round-trips can't grow "– 75cl – 75cl – …" tails.
@@ -523,6 +603,7 @@ export default function StockTransferCreate({
         }
         setStockMap(map);
         setStockRows(Array.from(rowMap.values()));
+        stockRowsRef.current = Array.from(rowMap.values());
         setItems((prev) =>
           prev.map((it) => ({
             ...it,
@@ -557,10 +638,129 @@ export default function StockTransferCreate({
   }
 
   const addItem = useCallback(() => setItems((p) => [...p, blankItem()]), []);
+
+  /** "Add a section"/"Add a note" — an unfinished trailing product row stays
+   *  *beneath* the new presentation line, mirroring the PO/sales forms. */
+  const addPresentationLine = useCallback(
+    (type: 'section' | 'note') =>
+      setItems((p) => appendPresentationLine(p, type, blankPresentationItem)),
+    []
+  );
+
+  /** One accepted row from the Scan & Match drawer. Presentation blanks are
+   *  preserved (appendTransferScannedLines stops at non-product rows); the
+   *  stock snapshot comes from the loaded source-warehouse stock when present. */
+  const addScannedLine = useCallback((draft: PurchaseLineDraft) => {
+    const key = `${draft.subProductId}::${draft.sizeId || ''}`;
+    const row = stockRowsRef.current.find(
+      (r) => `${r.subProductId}::${r.sizeId || ''}` === key
+    );
+    setItems((p) =>
+      appendTransferScannedLines(
+        p,
+        [
+          {
+            subProductId: draft.subProductId,
+            subProductName: draft.productName.split(' – ')[0],
+            sku: draft.sku,
+            sizeId: draft.sizeId,
+            sizeName: draft.sizeName,
+            quantity: draft.quantity,
+            // Scanned prices are cost prices; the Cost toggle re-seeds
+            // from the snapshot below.
+            costPrice: draft.unitPrice,
+            costSourcePrice: row?.costPrice ?? draft.unitPrice,
+            wholesalePrice: row?.wholesalePrice ?? 0,
+            packSize: row?.unitsPerPack ?? Math.max(1, draft.packSize),
+            sourceStock: row?.quantity ?? 0,
+          },
+        ],
+        blankItem
+      )
+    );
+  }, []);
+
   const removeItem = useCallback(
     (i: number) => setItems((p) => p.filter((_, idx) => idx !== i)),
     []
   );
+
+  // ── Source-stock catalogue → line list ─────────────────────────────────────
+  const [catalogOpen, setCatalogOpen] = useState(false);
+  const [scanOpen, setScanOpen] = useState(false);
+  const transferStockKey = (subProductId: string, sizeId?: string) =>
+    `${subProductId}::${sizeId || ''}`;
+  const catalogQuantities = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const it of items) {
+      if (lineTypeOf(it) !== 'product' || !it.subProductId) continue;
+      const key = transferStockKey(it.subProductId, it.sizeId);
+      map[key] = (map[key] || 0) + it.quantity;
+    }
+    return map;
+  }, [items]);
+
+  const reseedPrice = (row: TransferCatalogRow) =>
+    priceMode === 'wholesale'
+      ? row.wholesalePrice || row.costPrice
+      : row.costPrice;
+
+  const addFromCatalog = useCallback(
+    (row: TransferCatalogRow) => {
+      setItems((p) =>
+        appendTransferScannedLines(
+          p,
+          [
+            {
+              subProductId: row.subProductId,
+              subProductName: row.name,
+              sku: row.sku,
+              sizeId: row.sizeId,
+              sizeName: row.sizeName,
+              quantity: 1,
+              costPrice: reseedPrice(row),
+              costSourcePrice: row.costPrice,
+              wholesalePrice: row.wholesalePrice,
+              packSize: row.unitsPerPack,
+              priceSource: reseedPrice(row) > 0 ? priceMode : null,
+              sourceStock: row.quantity,
+            },
+          ],
+          blankItem
+        )
+      );
+    },
+    [priceMode]
+  );
+
+  const setCatalogQty = useCallback(
+    (row: TransferCatalogRow, quantity: number) => {
+      const key = transferStockKey(row.subProductId, row.sizeId);
+      setItems((p) =>
+        p.map((it) =>
+          lineTypeOf(it) === 'product' &&
+          transferStockKey(it.subProductId, it.sizeId) === key
+            ? { ...it, quantity: Math.max(1, Math.round(quantity)) }
+            : it
+        )
+      );
+    },
+    []
+  );
+
+  const removeCatalogLine = useCallback((row: TransferCatalogRow) => {
+    const key = transferStockKey(row.subProductId, row.sizeId);
+    setItems((p) => {
+      const kept = p.filter(
+        (it) =>
+          !(
+            lineTypeOf(it) === 'product' &&
+            transferStockKey(it.subProductId, it.sizeId) === key
+          )
+      );
+      return kept.length ? kept : [blankItem()];
+    });
+  }, []);
   const reorderLines = useCallback((from: number, to: number) => {
     setItems((prev) => {
       const next = [...prev];
@@ -575,9 +775,24 @@ export default function StockTransferCreate({
     );
   }, []);
 
-  const filledItems = items.filter((it) => it.subProductId.trim());
+  const filledItems = items.filter(
+    (it) =>
+      lineTypeOf(it) === 'product' &&
+      it.subProductId.trim() &&
+      it.subProductName.trim()
+  );
   // Advisory figures for the UI; the server recomputes every number on save.
   const money = computeTransferTotals(items.map(it => ({...it, costPrice: it.costPrice ?? 0})), deliveryCharge);
+  // Section running "cost subtotal": Σ costPrice × quantity of the product
+  // lines beneath each section until the next one.
+  const sectionSubtotals = useMemo(
+    () => computeSectionSubtotals(items, (it) => (it.costPrice ?? 0) * it.quantity),
+    [items]
+  );
+  // "Add a product" is gated until the buyer fills the empty row (PO parity).
+  const hasEmptyProductRow = items.some(
+    (it) => lineTypeOf(it) === 'product' && !it.subProductId
+  );
 
   function getLineErrors(): Record<number, LineError> {
     const errors: Record<number, LineError> = {};
@@ -650,18 +865,9 @@ export default function StockTransferCreate({
         ...(recommendation.reference ? {warehouseRecommendation:recommendation.reference} : {}),
         sourceWarehouse: sourceWarehouse._id,
         destinationWarehouse: destWarehouse._id,
-        items: filledItems.map((it) => ({
-          subProductId: it.subProductId,
-          subProductName: it.subProductName,
-          sku: it.sku,
-          sizeId: it.sizeId,
-          sizeName: it.sizeName,
-          quantity: it.quantity,
-          costPrice: it.costPrice ?? 0,
-          discountRate: it.discountRate,
-          taxRate: it.taxRate,
-          packSize: it.packSize,
-        })),
+        // Presentation lines ('section'/'note') ride along zeroed; product
+        // lines keep the legacy wire shape. Order is preserved exactly as edited.
+        items: transferPayloadLines(items) as TransferItemPayload[],
         notes: notes || undefined,
         scheduledDate: scheduledDate || undefined,
         deliveryCharge: deliveryCharge || undefined,
@@ -918,14 +1124,6 @@ export default function StockTransferCreate({
                   </button>
                 ))}
               </div>
-
-              <button
-                type="button"
-                onClick={addItem}
-                className="flex items-center gap-1.5 rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-200"
-              >
-                <PiPlus className="h-3.5 w-3.5" /> Add Line
-              </button>
             </div>
           </div>
 
@@ -933,6 +1131,7 @@ export default function StockTransferCreate({
              {items.map((item, i) => {
                const errors = lineErrors[i];
                const line = money.lines[i];
+              const type = lineTypeOf(item);
               return (
                 <div
                   key={i}
@@ -957,19 +1156,76 @@ export default function StockTransferCreate({
                     setDragIndex(null);
                     setOverIndex(null);
                   }}
-                  className={`px-5 py-4 ${dragIndex === i ? 'opacity-40' : ''} ${overIndex === i && dragIndex !== null && dragIndex !== i ? 'ring-2 ring-[#b20202]/40 rounded-lg' : ''}`}
+                  className={`px-5 py-4 ${type !== 'product' ? (type === 'section' ? 'bg-gray-50/70' : 'bg-amber-50/40') : ''} ${dragIndex === i ? 'opacity-40' : ''} ${overIndex === i && dragIndex !== null && dragIndex !== i ? 'ring-2 ring-[#b20202]/40 rounded-lg' : ''}`}
                 >
-                  {/* Product search row */}
+                  {/* Leading row: drag grip + badge (number for products,
+                      icon for presentation lines) + per-type body + remove. */}
                   <div className="mb-3 flex items-start gap-3">
                     <span
                       title="Drag to reorder"
-                      className="mt-1 shrink-0 cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500"
+                      className={`mt-1 shrink-0 cursor-grab active:cursor-grabbing ${
+                        type === 'section'
+                          ? 'text-gray-400 hover:text-gray-600'
+                          : type === 'note'
+                            ? 'text-amber-400 hover:text-amber-600'
+                            : 'text-gray-300 hover:text-gray-500'
+                      }`}
                     >
                       <PiDotsSixVertical className="h-5 w-5" />
                     </span>
-                    <span className="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xs font-semibold text-gray-500">
-                      {i + 1}
-                    </span>
+                    {type !== 'product' ? (
+                      <span
+                        aria-hidden
+                        className="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white/80 text-gray-500"
+                      >
+                        {type === 'section' ? (
+                          <PiBookmarkSimple className="h-3 w-3" />
+                        ) : (
+                          <PiTextT className="h-3 w-3" />
+                        )}
+                      </span>
+                    ) : (
+                      <span className="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xs font-semibold text-gray-500">
+                        {i + 1}
+                      </span>
+                    )}
+
+                    {type === 'section' ? (
+                      /* Section heading: editable bold title + running cost
+                         subtotal of the product lines beneath it. */
+                      <div className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-2 pr-2">
+                        <input
+                          type="text"
+                          aria-label="Section title"
+                          autoFocus={!item.name}
+                          value={item.name ?? ''}
+                          onChange={(e) =>
+                            updateItem(i, { name: e.target.value })
+                          }
+                          placeholder="Section title"
+                          className="min-w-0 flex-1 rounded-md border-0 border-b border-transparent bg-transparent px-1 py-1 text-sm font-bold text-gray-900 placeholder-gray-400 focus:border-[#b20202] focus:outline-none focus:ring-0"
+                        />
+                        <span className="text-[11px] font-medium text-gray-500">
+                          Cost subtotal {currency}{' '}
+                          {fmtCur(sectionSubtotals.get(item) ?? 0, currency)}
+                        </span>
+                      </div>
+                    ) : type === 'note' ? (
+                      /* Note: standalone free text — no product, qty or money. */
+                      <div className="min-w-0 flex-1 pr-2">
+                        <textarea
+                          aria-label="Note text"
+                          autoFocus={!item.description}
+                          value={item.description ?? ''}
+                          onChange={(e) =>
+                            updateItem(i, { description: e.target.value })
+                          }
+                          placeholder="Add a note…"
+                          rows={2}
+                          className="w-full resize-y rounded-md border-0 bg-transparent px-1 py-1 text-xs text-gray-600 placeholder-gray-400 focus:outline-none focus:ring-0"
+                        />
+                      </div>
+                    ) : (
                     <div className="flex-1">
                       <SourceProductSearch
                         value={lineLabel(item)}
@@ -1032,6 +1288,7 @@ export default function StockTransferCreate({
                         </div>
                       )}
                     </div>
+                    )}
                     <button
                       type="button"
                       onClick={() => removeItem(i)}
@@ -1042,7 +1299,8 @@ export default function StockTransferCreate({
                     </button>
                   </div>
 
-                  {/* Line fields */}
+                  {/* Line fields — presentation lines carry none. */}
+                  {type === 'product' && (
                   <div className="ml-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-8">
                     <div>
                       <label className="mb-1 block text-[10px] font-medium text-gray-500">
@@ -1177,10 +1435,10 @@ export default function StockTransferCreate({
                           eff. {fmtCur(line?.effectiveUnitCost ?? 0, currency)}
                           /unit
                         </p>
-                      )}
+                      )} 
                     </div>
                   </div>
-
+                  )}
                   {errors?.duplicate && (
                     <div className="ml-8 mt-2 flex items-center gap-1.5 rounded-lg bg-amber-50 px-3 py-1.5 text-xs text-amber-700">
                       <PiWarning className="h-3.5 w-3.5 shrink-0" />
@@ -1193,12 +1451,49 @@ export default function StockTransferCreate({
           </div>
 
           <div className="border-t border-gray-100 px-5 py-3">
+            {/* Action bar — mirrors the PO/sales create forms (Add a product /
+                section / note / Catalogue / Scan & Match). */}
             <button
               type="button"
               onClick={addItem}
+              disabled={hasEmptyProductRow}
+              title={
+                hasEmptyProductRow
+                  ? 'Select a product on the empty row first'
+                  : undefined
+              }
+              className="flex items-center gap-1.5 text-xs font-medium text-[#b20202] hover:underline disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <PiPlus className="h-3.5 w-3.5" /> Add a product
+            </button>
+            <button
+              type="button"
+              onClick={() => addPresentationLine('section')}
               className="flex items-center gap-1.5 text-xs font-medium text-[#b20202] hover:underline"
             >
-              <PiPlus className="h-3.5 w-3.5" /> Add another line
+              <PiBookmarkSimple className="h-3.5 w-3.5" /> Add a section
+            </button>
+            <button
+              type="button"
+              onClick={() => addPresentationLine('note')}
+              className="flex items-center gap-1.5 text-xs font-medium text-[#b20202] hover:underline"
+            >
+              <PiTextT className="h-3.5 w-3.5" /> Add a note
+            </button>
+            <button
+              type="button"
+              onClick={() => setCatalogOpen(true)}
+              className="flex items-center gap-1.5 text-xs font-medium text-[#b20202] hover:underline"
+            >
+              <PiSquaresFour className="h-3.5 w-3.5" /> Catalogue
+            </button>
+            <button
+              type="button"
+              onClick={() => setScanOpen(true)}
+              title="Photograph, upload or paste a line list"
+              className="flex items-center gap-1.5 text-xs font-medium text-[#b20202] hover:underline"
+            >
+              <PiCamera className="h-3.5 w-3.5" /> Scan &amp; Match
             </button>
           </div>
         </div>
@@ -1278,6 +1573,27 @@ export default function StockTransferCreate({
           ) : null}
         </div>
       </div>
+
+      <TransferCatalogModalDynamic
+        open={catalogOpen}
+        sourceName={sourceWarehouse?.name}
+        currency={currency}
+        priceMode={priceMode}
+        rows={stockRows}
+        loading={loadingStock}
+        qtyMap={catalogQuantities}
+        onClose={() => setCatalogOpen(false)}
+        onAdd={addFromCatalog}
+        onSetQty={setCatalogQty}
+        onRemove={removeCatalogLine}
+      />
+
+      <PurchasesScanDrawerDynamic
+        open={scanOpen}
+        token={token}
+        onClose={() => setScanOpen(false)}
+        onAdd={addScannedLine}
+      />
     </div>
   );
 }

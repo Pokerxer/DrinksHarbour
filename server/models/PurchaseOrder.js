@@ -154,14 +154,39 @@ const PurchaseOrderSchema = new Schema(
     },
     items: [
       {
+        // Line discrimination: 'product' (default) is a catalog-linked line;
+        // 'section' is a titled heading and 'note' is standalone free text —
+        // both carry no qty/price and are excluded from totals, receiving,
+        // posting and billing. Mirrors the sales document line model.
+        lineType: {
+          type: String,
+          enum: ["product", "section", "note"],
+          default: "product",
+        },
+        // Section heading text (lineType 'section').
+        name: {
+          type: String,
+          trim: true,
+        },
+        // Note body (lineType 'note').
+        description: {
+          type: String,
+        },
         subProductId: {
           type: ObjectId,
           ref: "SubProduct",
-          required: true,
+          // Catalog reference is mandatory on product lines only.
+          required: function () {
+            const t = this && this.lineType;
+            return !t || t === "product";
+          },
         },
         subProductName: {
           type: String,
-          required: true,
+          required: function () {
+            const t = this && this.lineType;
+            return !t || t === "product";
+          },
         },
         sku: {
           type: String,
@@ -175,7 +200,13 @@ const PurchaseOrderSchema = new Schema(
         },
         quantity: {
           type: Number,
-          required: true,
+          required: function () {
+            const t = this && this.lineType;
+            return !t || t === "product";
+          },
+          // Presentation lines are zeroed by sanitizePurchaseOrderLines and
+          // must never be a positive quantity anywhere downstream.
+          min: 0,
         },
         receivedQty: {
           type: Number,

@@ -2,7 +2,7 @@
 
 import { sizeVariantLabel } from '@/utils/size-variant-label';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import Link from 'next/link';
@@ -18,9 +18,13 @@ import {
   PiWarning,
   PiCaretRight,
   PiStorefront,
-  PiSparkle,
+  PiCamera,
+  PiBookmarkSimple,
+  PiTextT,
+  PiSquaresFour,
   PiDotsSixVertical,
 } from 'react-icons/pi';
+import dynamic from 'next/dynamic';
 import toast from 'react-hot-toast';
 import { routes } from '@/config/routes';
 import { purchaseOrderService } from '@/services/purchaseOrder.service';
@@ -49,6 +53,35 @@ import {
   appendScannedLines,
   type PurchaseLineDraft,
 } from './purchases-scan-selection';
+import {
+  appendPresentationLine,
+  catalogQtyMap,
+  catalogDraftFromSelection,
+  computeSectionSubtotals,
+  derivePurchasePack,
+  lineTypeOf,
+  purchasePayloadLines,
+  type PurchaseLine,
+  type PurchaseLineType,
+} from './purchases-create-lines';
+import type { ProductLineSelection } from '../sales/product-line-search';
+
+const PurchasesCatalogModal = dynamic(
+  () => import('./purchases-catalog-modal'),
+  {
+    ssr: false,
+    loading: () => (
+      <div
+        role="status"
+        className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40"
+      >
+        <span className="rounded-xl bg-white p-5 text-sm text-gray-700">
+          Opening product catalogue…
+        </span>
+      </div>
+    ),
+  }
+);
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -75,24 +108,12 @@ interface ProductOption {
   sizes: SizeOption[];
 }
 
-interface LineItem {
-  subProductId: string;
-  productName: string;
-  sku: string;
-  sizeId?: string;
-  sizeName?: string;
-  // Packaging noun set at line entry ('units'/'pieces' for retail rows,
-  // undefined for legacy beverage rows). Must be a string the prints can
-  // consume via packNounOf — see defaultPackagingForLine below.
-  packaging?: string;
-  quantity: number;
-  packSize: number;
-  packQty: number;
-  unitPrice: number;
-  packPrice: number;
+interface LineItem extends PurchaseLine {
+  // Presentation identity (lineType/name/description) comes from the base
+  // type: 'product' lines are catalog-linked purchases; 'section' lines
+  // carry a bold title with no qty/price; 'note' lines are standalone text.
   type: string;
   uom: string;
-  taxRate: number;
 }
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -115,6 +136,31 @@ function blankItem(): LineItem {
     type: 'unit',
     uom: 'unit',
     taxRate: 0,
+  };
+}
+
+/**
+ * Presentation blank ("Add a section"/"Add a note"): no product, no qty, no
+ * price — zeroed so totals, receiving and billing never see it.
+ */
+function blankPresentationItem(type: PurchaseLineType): LineItem {
+  if (type === 'product') return blankItem();
+  return {
+    subProductId: '',
+    productName: '',
+    sku: '',
+    quantity: 0,
+    packSize: 1,
+    packQty: 0,
+    unitPrice: 0,
+    packPrice: 0,
+    // Nominal non-product fields kept for the LineItem shape; presentation
+    // lines carry no packaging/uom semantics.
+    type: 'unit',
+    uom: 'unit',
+    taxRate: 0,
+    lineType: type,
+    ...(type === 'section' ? { name: '' } : { description: '' }),
   };
 }
 
@@ -661,6 +707,7 @@ export default function PurchasesCreate() {
   const [items, setItems] = useState<LineItem[]>([blankItem()]);
   const [saving, setSaving] = useState(false);
   const [scanOpen, setScanOpen] = useState(false);
+  const [catalogOpen, setCatalogOpen] = useState(false);
 
   // Destination warehouse: where this order's goods are expected to land. Seeded
   // from the tenant's default receiving warehouse, then the isDefault flag.
@@ -718,6 +765,14 @@ export default function PurchasesCreate() {
 
   const addItem = useCallback(() => setItems((p) => [...p, blankItem()]), []);
 
+  /** "Add a section" / "Add a note": an unfinished trailing product row stays
+   *  *beneath* the new presentation line, mirroring the sales create form. */
+  const addPresentationLine = useCallback(
+    (type: 'section' | 'note') =>
+      setItems((p) => appendPresentationLine(p, type, blankPresentationItem)),
+    []
+  );
+
   /** One accepted row from the Scan & Match drawer. Called once per row, so the
    *  first call consumes the form's seeded blank line and the rest append. */
   const addScannedLine = useCallback((line: PurchaseLineDraft) => {
@@ -727,6 +782,71 @@ export default function PurchasesCreate() {
     (i: number) => setItems((p) => p.filter((_, idx) => idx !== i)),
     []
   );
+
+  // ── Catalogue selection → line list ────────────────────────────────────────
+  const catalogQuantities = useMemo(() => catalogQtyMap(items), [items]);
+
+  const addProductFromCatalog = useCallback(
+    (info: ProductLineSelection, qty = 1) => {
+      const inc = Math.max(1, Math.round(qty));
+      setItems((p) => {
+        const idx = p.findIndex(
+          (it) =>
+            lineTypeOf(it) === 'product' &&
+            it.subProductId === info.subProductId &&
+            (it.sizeId ?? '') === (info.sizeId ?? '')
+        );
+        if (idx >= 0) {
+          const next = [...p];
+          next[idx] = derivePurchasePack({
+            ...next[idx],
+            quantity: next[idx].quantity + inc,
+          });
+          return next;
+        }
+        // appendScannedLines drops the trailing blank product row and appends
+        // — a catalogue add behaves exactly like a Scan & Match accept.
+        return appendScannedLines(
+          p,
+          [catalogDraftFromSelection(info, inc)],
+          blankItem
+        );
+      });
+    },
+    []
+  );
+
+  const setCatalogLineQty = useCallback(
+    (info: ProductLineSelection, quantity: number) => {
+      setItems((p) =>
+        p.map((it) =>
+          lineTypeOf(it) === 'product' &&
+          it.subProductId === info.subProductId &&
+          (it.sizeId ?? '') === (info.sizeId ?? '')
+            ? derivePurchasePack({
+                ...it,
+                quantity: Math.max(1, Math.round(quantity)),
+              })
+            : it
+        )
+      );
+    },
+    []
+  );
+
+  const removeCatalogLine = useCallback((info: ProductLineSelection) => {
+    setItems((p) => {
+      const kept = p.filter(
+        (it) =>
+          !(
+            lineTypeOf(it) === 'product' &&
+            it.subProductId === info.subProductId &&
+            (it.sizeId ?? '') === (info.sizeId ?? '')
+          )
+      );
+      return kept.length ? kept : [blankItem()];
+    });
+  }, []);
 
   // Line drag-to-reorder: HTML5 DnD, no library. dragIndex = card being
   // dragged; overIndex = card currently hovered for the drop.
@@ -780,6 +900,17 @@ export default function PurchasesCreate() {
   const taxTotal = items.reduce((s, it) => s + lineTax(it), 0);
   const grandTotal = subtotal + taxTotal;
   const hasItems = items.some((it) => it.productName.trim());
+  // Section running subtotals: sum of the product lines beneath each section
+  // until the next one (lines before the first section are ignored).
+  const sectionSubtotals = useMemo(
+    () => computeSectionSubtotals(items, lineSubtotal),
+    [items]
+  );
+  // "Add a product" is gated until the buyer fills the empty row, exactly like
+  // the sales form — prevents a pile of blank rows.
+  const hasEmptyProductRow = items.some(
+    (it) => lineTypeOf(it) === 'product' && !it.subProductId
+  );
 
   async function handleSave(confirm = false) {
     if (restock.loading || restock.error) {
@@ -825,14 +956,7 @@ export default function PurchasesCreate() {
         validUntil: validUntil || undefined,
         notes: notes || undefined,
         termsConditions: termsConditions || undefined,
-        items: filled.map((it) => ({
-          ...it,
-          subProductName: it.productName,
-          unitCost: it.unitPrice,
-          packagingQty: it.packSize,
-          receivedQty: 0,
-          totalCost: lineSubtotal(it),
-        })),
+        items: purchasePayloadLines(items),
         status: confirm ? 'confirmed' : 'draft',
         // Wizard drafts are quotations: typed rfq so the detail page offers a
         // direct Confirm Order instead of the PO approval gate.
@@ -1041,27 +1165,10 @@ export default function PurchasesCreate() {
 
           {/* Order Lines */}
           <div className="rounded-xl border border-gray-200 bg-white">
-            <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3">
+            <div className="border-b border-gray-100 px-5 py-3">
               <h2 className="text-sm font-semibold text-gray-800">
                 Order Lines
               </h2>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setScanOpen(true)}
-                  className="flex items-center gap-1.5 rounded-lg bg-[#b20202]/10 px-3 py-1.5 text-xs font-medium text-[#b20202] hover:bg-[#b20202]/15"
-                  title="Photograph, upload or paste a vendor quotation"
-                >
-                  <PiSparkle className="h-3.5 w-3.5" /> Scan &amp; Match
-                </button>
-                <button
-                  type="button"
-                  onClick={addItem}
-                  className="flex items-center gap-1.5 rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-200"
-                >
-                  <PiPlus className="h-3.5 w-3.5" /> Add Line
-                </button>
-              </div>
             </div>
 
             <div className="divide-y divide-gray-100">
@@ -1069,6 +1176,7 @@ export default function PurchasesCreate() {
                 const sub = lineSubtotal(item);
                 const tax = lineTax(item);
                 const total = lineTotal(item);
+                const type = lineTypeOf(item);
                 return (
                   <div
                       key={i}
@@ -1094,35 +1202,89 @@ export default function PurchasesCreate() {
                         setDragIndex(null);
                         setOverIndex(null);
                       }}
-                      className={`px-5 py-4 ${dragIndex === i ? 'opacity-40' : ''} ${overIndex === i && dragIndex !== null && dragIndex !== i ? 'ring-2 ring-[#b20202]/40 rounded-lg' : ''}`}
+                      className={`px-5 py-4 ${
+                        type !== 'product'
+                          ? type === 'section'
+                            ? 'bg-gray-50/70'
+                            : 'bg-amber-50/40'
+                          : ''
+                      } ${dragIndex === i ? 'opacity-40' : ''} ${overIndex === i && dragIndex !== null && dragIndex !== i ? 'ring-2 ring-[#b20202]/40 rounded-lg' : ''}`}
                     >
-                    {/* Product search row */}
-                    <div className="mb-3 flex items-start gap-3">
+                    {/* Leading row: drag handle + badge (Number for products,
+                        icon for section/note) + per-type body + remove. */}
+                    <div className="ml-0 flex items-start gap-3">
                       <span
                         title="Drag to reorder"
-                        className="mt-1 shrink-0 cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500"
+                        className={`mt-1 shrink-0 cursor-grab active:cursor-grabbing ${
+                          type === 'section'
+                            ? 'text-gray-400 hover:text-gray-600'
+                            : type === 'note'
+                              ? 'text-amber-400 hover:text-amber-600'
+                              : 'text-gray-300 hover:text-gray-500'
+                        }`}
                       >
                         <PiDotsSixVertical className="h-5 w-5" />
                       </span>
-                      <span className="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xs font-semibold text-gray-500">
-                        {i + 1}
-                      </span>
-                      <div className="flex-1">
-                        <ProductSearch
-                          value={item.productName}
-                          token={token}
-                          onSelect={(
-                            name,
-                            sku,
-                            unitPrice,
-                            packSize,
-                            subProductId,
-                            sizeId,
-                            sizeName,
-                            packaging
-                          ) =>
-                            handleProductSelect(
-                              i,
+                      {type !== 'product' ? (
+                        <span
+                          aria-hidden
+                          className="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white/80 text-gray-500"
+                        >
+                          {type === 'section' ? (
+                            <PiBookmarkSimple className="h-3 w-3" />
+                          ) : (
+                            <PiTextT className="h-3 w-3" />
+                          )}
+                        </span>
+                      ) : (
+                        <span className="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xs font-semibold text-gray-500">
+                          {i + 1}
+                        </span>
+                      )}
+
+                      {type === 'section' ? (
+                        /* Section heading row: editable bold title + the
+                           running untaxed subtotal of the product lines
+                           beneath it. No qty/price cells. */
+                        <div className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-2 pr-2">
+                          <input
+                            type="text"
+                            aria-label="Section title"
+                            autoFocus={!item.name}
+                            value={item.name ?? ''}
+                            onChange={(e) =>
+                              updateItem(i, { name: e.target.value })
+                            }
+                            placeholder="Section title"
+                            className="min-w-0 flex-1 rounded-md border-0 border-b border-transparent bg-transparent px-1 py-1 text-sm font-bold text-gray-900 placeholder-gray-400 focus:border-[#b20202] focus:outline-none focus:ring-0"
+                          />
+                          <span className="text-[11px] font-medium text-gray-500">
+                            Untaxed subtotal {currency}{' '}
+                            {fmtAmount(sectionSubtotals.get(item) ?? 0)}
+                          </span>
+                        </div>
+                      ) : type === 'note' ? (
+                        /* Note row: standalone free text that prints on the
+                           document. No product, qty or price. */
+                        <div className="min-w-0 flex-1 pr-2">
+                          <textarea
+                            aria-label="Note text"
+                            autoFocus={!item.description}
+                            value={item.description ?? ''}
+                            onChange={(e) =>
+                              updateItem(i, { description: e.target.value })
+                            }
+                            placeholder="Add a note…"
+                            rows={2}
+                            className="w-full resize-y rounded-md border-0 bg-transparent px-1 py-1 text-xs text-gray-600 placeholder-gray-400 focus:outline-none focus:ring-0"
+                          />
+                        </div>
+                      ) : (
+                        <div className="min-w-0 flex-1">
+                          <ProductSearch
+                            value={item.productName}
+                            token={token}
+                            onSelect={(
                               name,
                               sku,
                               unitPrice,
@@ -1131,10 +1293,23 @@ export default function PurchasesCreate() {
                               sizeId,
                               sizeName,
                               packaging
-                            )
-                          }
-                        />
-                      </div>
+                            ) =>
+                              handleProductSelect(
+                                i,
+                                name,
+                                sku,
+                                unitPrice,
+                                packSize,
+                                subProductId,
+                                sizeId,
+                                sizeName,
+                                packaging
+                              )
+                            }
+                          />
+                        </div>
+                      )}
+
                       <button
                         type="button"
                         onClick={() => removeItem(i)}
@@ -1145,102 +1320,143 @@ export default function PurchasesCreate() {
                       </button>
                     </div>
 
-                    {/* Line fields */}
-                    <div className="ml-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
-                      <div>
-                        <label className="mb-1 block text-[10px] font-medium text-gray-500">
-                          SKU
-                        </label>
-                        <input
-                          value={item.sku}
-                          onChange={(e) =>
-                            updateItem(i, { sku: e.target.value })
-                          }
-                          placeholder="—"
-                          className="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-xs focus:border-[#b20202] focus:outline-none"
-                        />
-                      </div>
-                      <div>
-                        <label className="mb-1 block text-[10px] font-medium text-gray-500">
-                          Qty
-                        </label>
-                        <NumberInput
-                          min={1}
-                          step="any"
-                          value={item.quantity}
-                          onCommit={(v) => updateItem(i, { quantity: v })}
-                          className="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-xs focus:border-[#b20202] focus:outline-none"
-                        />
-                      </div>
-                      <PackSizeInput
-                        value={item.packSize}
-                        onApply={(patch) => updateItem(i, patch)}
-                      />
-                      <div>
-                        <label className="mb-1 block text-[10px] font-medium text-gray-500">
-                          Packs
-                        </label>
-                        <div className="flex items-center rounded-lg border border-gray-100 bg-gray-50 px-2 py-1.5">
-                          <span className="text-xs font-semibold text-gray-800">
-                            {packsLabel(item.quantity, item.packSize)}
-                          </span>
+                    {/* Product line fields — presentation lines carry none. */}
+                    {type === 'product' && (
+                      <>
+                        <div className="ml-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
+                          <div>
+                            <label className="mb-1 block text-[10px] font-medium text-gray-500">
+                              SKU
+                            </label>
+                            <input
+                              value={item.sku}
+                              onChange={(e) =>
+                                updateItem(i, { sku: e.target.value })
+                              }
+                              placeholder="—"
+                              className="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-xs focus:border-[#b20202] focus:outline-none"
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-[10px] font-medium text-gray-500">
+                              Qty
+                            </label>
+                            <NumberInput
+                              min={1}
+                              step="any"
+                              value={item.quantity}
+                              onCommit={(v) => updateItem(i, { quantity: v })}
+                              className="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-xs focus:border-[#b20202] focus:outline-none"
+                            />
+                          </div>
+                          <PackSizeInput
+                            value={item.packSize}
+                            onApply={(patch) => updateItem(i, patch)}
+                          />
+                          <div>
+                            <label className="mb-1 block text-[10px] font-medium text-gray-500">
+                              Packs
+                            </label>
+                            <div className="flex items-center rounded-lg border border-gray-100 bg-gray-50 px-2 py-1.5">
+                              <span className="text-xs font-semibold text-gray-800">
+                                {packsLabel(item.quantity, item.packSize)}
+                              </span>
+                            </div>
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-[10px] font-medium text-gray-500">
+                              Unit Price
+                            </label>
+                            <NumberInput
+                              min={0}
+                              step="0.01"
+                              value={item.unitPrice}
+                              onCommit={(v) => updateItem(i, { unitPrice: v })}
+                              className="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-xs focus:border-[#b20202] focus:outline-none"
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-[10px] font-medium text-gray-500">
+                              Tax %
+                            </label>
+                            <NumberInput
+                              min={0}
+                              max={100}
+                              step="any"
+                              value={item.taxRate}
+                              onCommit={(v) => updateItem(i, { taxRate: v })}
+                              className="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-xs focus:border-[#b20202] focus:outline-none"
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-[10px] font-medium text-gray-500">
+                              Line Total
+                            </label>
+                            <div className="flex items-center rounded-lg border border-gray-100 bg-gray-50 px-2 py-1.5">
+                              <span className="text-xs font-semibold text-gray-800">
+                                {currency} {fmtAmount(total)}
+                              </span>
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                      <div>
-                        <label className="mb-1 block text-[10px] font-medium text-gray-500">
-                          Unit Price
-                        </label>
-                        <NumberInput
-                          min={0}
-                          step="0.01"
-                          value={item.unitPrice}
-                          onCommit={(v) => updateItem(i, { unitPrice: v })}
-                          className="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-xs focus:border-[#b20202] focus:outline-none"
-                        />
-                      </div>
-                      <div>
-                        <label className="mb-1 block text-[10px] font-medium text-gray-500">
-                          Tax %
-                        </label>
-                        <NumberInput
-                          min={0}
-                          max={100}
-                          step="any"
-                          value={item.taxRate}
-                          onCommit={(v) => updateItem(i, { taxRate: v })}
-                          className="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-xs focus:border-[#b20202] focus:outline-none"
-                        />
-                      </div>
-                      <div>
-                        <label className="mb-1 block text-[10px] font-medium text-gray-500">
-                          Line Total
-                        </label>
-                        <div className="flex items-center rounded-lg border border-gray-100 bg-gray-50 px-2 py-1.5">
-                          <span className="text-xs font-semibold text-gray-800">
-                            {currency} {fmtAmount(total)}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
 
-                    {item.taxRate > 0 && (
-                      <p className="ml-8 mt-1.5 text-[10px] text-gray-400">
-                        Subtotal {currency} {fmtAmount(sub)} + Tax {currency}{' '}
-                        {fmtAmount(tax)}
-                      </p>
+                        {item.taxRate > 0 && (
+                          <p className="ml-8 mt-1.5 text-[10px] text-gray-400">
+                            Subtotal {currency} {fmtAmount(sub)} + Tax {currency}{' '}
+                            {fmtAmount(tax)}
+                          </p>
+                        )}
+                      </>
                     )}
                   </div>
                 );
               })}
             </div>
 
-            <div className="border-t border-gray-100 px-5 py-3">
+            {/* Action bar — mirrors the sales create form (Add a product /
+                section / note / Catalogue / Scan & Match). */}
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-gray-100 px-5 py-3">
               <button
                 type="button"
                 onClick={addItem}
+                disabled={hasEmptyProductRow}
+                title={
+                  hasEmptyProductRow
+                    ? 'Select a product on the empty row first'
+                    : undefined
+                }
+                className="flex items-center gap-1.5 text-xs font-medium text-[#b20202] hover:underline disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <PiPlus className="h-3.5 w-3.5" /> Add a product
+              </button>
+              <button
+                type="button"
+                onClick={() => addPresentationLine('section')}
                 className="flex items-center gap-1.5 text-xs font-medium text-[#b20202] hover:underline"
               >
-                <PiPlus className="h-3.5 w-3.5" /> Add another line
+                <PiBookmarkSimple className="h-3.5 w-3.5" /> Add a section
+              </button>
+              <button
+                type="button"
+                onClick={() => addPresentationLine('note')}
+                className="flex items-center gap-1.5 text-xs font-medium text-[#b20202] hover:underline"
+              >
+                <PiTextT className="h-3.5 w-3.5" /> Add a note
+              </button>
+              <button
+                type="button"
+                onClick={() => setCatalogOpen(true)}
+                className="flex items-center gap-1.5 text-xs font-medium text-[#b20202] hover:underline"
+              >
+                <PiSquaresFour className="h-3.5 w-3.5" /> Catalogue
+              </button>
+              <button
+                type="button"
+                onClick={() => setScanOpen(true)}
+                title="Photograph, upload or paste a vendor quotation"
+                className="flex items-center gap-1.5 text-xs font-medium text-[#b20202] hover:underline"
+              >
+                <PiCamera className="h-3.5 w-3.5" /> Scan &amp; Match
               </button>
             </div>
           </div>
@@ -1326,6 +1542,21 @@ export default function PurchasesCreate() {
         token={token}
         onClose={() => setScanOpen(false)}
         onAdd={addScannedLine}
+      />
+
+      <PurchasesCatalogModal
+        open={catalogOpen}
+        token={token}
+        warehouseId={warehouseId || undefined}
+        warehouseName={
+          warehouses.find((w) => w._id === warehouseId)?.name
+        }
+        currency={currency}
+        qtyMap={catalogQuantities}
+        onClose={() => setCatalogOpen(false)}
+        onAdd={addProductFromCatalog}
+        onSetQty={setCatalogLineQty}
+        onRemove={removeCatalogLine}
       />
     </div>
   );

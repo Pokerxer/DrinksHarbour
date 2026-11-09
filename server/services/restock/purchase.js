@@ -11,8 +11,12 @@ async function validateRestockPurchase(tenantId, body, service = getPlan) {
     !Array.isArray(reference.lines) ||
     !reference.lines.length ||
     reference.lines.length > 500 ||
+    // Presentation lines ('section'/'note') interleave with products; only
+    // product lines can match recommendation plan lines.
     !Array.isArray(body.items) ||
-    body.items.length !== reference.lines.length
+    body.items.filter((item) => item && (!item.lineType || item.lineType === 'product'))
+      .length !==
+      reference.lines.length
   )
     throw new ValidationError('Invalid restock plan reference');
   const plan = await service(tenantId, {

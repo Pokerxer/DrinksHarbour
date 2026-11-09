@@ -254,6 +254,9 @@ interface TestLine {
   type: string;
   uom: string;
   taxRate: number;
+  lineType?: 'product' | 'section' | 'note';
+  name?: string;
+  description?: string;
 }
 
 const blank = (): TestLine => ({
@@ -352,6 +355,22 @@ describe('appendScannedLines', () => {
 
     expect(next[0].type).toBe('unit');
     expect(next[0].uom).toBe('unit');
+  });
+
+  it('never deletes a presentation line (section/note) when dropping blanks', () => {
+    // A section heading has no productName, but it is deliberate content —
+    // a Scan & Match accept must not swallow it like an untouched blank row.
+    const section = {
+      ...blank(),
+      lineType: 'section' as const,
+      name: 'Beer crates',
+    };
+
+    const next = appendScannedLines([section], [draft()], blank);
+
+    expect(next).toHaveLength(2);
+    expect(next[0].lineType).toBe('section');
+    expect(next[1].productName).toBe('Hennessy VS – 70cl');
   });
 
   it('appends several scanned rows in order', () => {

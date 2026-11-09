@@ -143,12 +143,22 @@ export function appendScannedLines<
     quantity: number;
     unitPrice: number;
     packPrice: number;
+    // Presentation lines ('section'/'note') are deliberate content even though
+    // they have no productName — a scan append must never swallow them.
+    lineType?: string;
   },
->(items: T[], drafts: PurchaseLineDraft[], blank: () => T): T[] {
+>(
+  items: T[],
+  drafts: Partial<T>[],
+  blank: () => T
+): T[] {
   if (drafts.length === 0) return items;
 
   const kept = [...items];
-  while (kept.length > 0 && !kept[kept.length - 1].productName.trim()) {
+  while (kept.length > 0) {
+    const last = kept[kept.length - 1];
+    if (last.lineType && last.lineType !== 'product') break;
+    if (last.productName.trim()) break;
     kept.pop();
   }
 

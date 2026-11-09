@@ -28,6 +28,8 @@ export interface ProductLineSelection {
   availableStock?: number;
   bundleDeals?: POSBundleDeal[];
   originalPrice?: number;
+  /** Retail-row packaging noun ('units'/'pieces') set at line entry (DRI-14). */
+  packaging?: string;
 }
 
 interface SizeOption {

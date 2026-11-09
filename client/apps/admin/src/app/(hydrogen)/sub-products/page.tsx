@@ -2,7 +2,6 @@
 import SubProductsTable from '@/app/shared/ecommerce/sub-product/sub-product-list/table';
 import { metaObject } from '@/config/site.config';
 import POSNavHeader from '@/app/shared/point-of-sale/pos-nav-header';
-import EcommercePageHeader from '@/app/shared/ecommerce/ecommerce-page-header';
 import { DEFAULT_SUBPRODUCT_PAGE_SIZE } from '@/utils/sub-product-pagination';
 
 export const metadata = {
@@ -30,9 +29,7 @@ export default async function SubProductsPage({
             <POSNavHeader />
           </div>
         </div>
-      ) : (
-        <EcommercePageHeader hideHero />
-      )}
+      ) : null}
       <div className={fromPOS ? '' : 'mt-4'}>
         <SubProductsTable pageSize={DEFAULT_SUBPRODUCT_PAGE_SIZE} />
       </div>

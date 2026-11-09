@@ -13,6 +13,9 @@ const eligibilityResponse = z.object({
   message: z.string().optional(),
   data: z.object({ allowed: z.boolean(), reason: z.string().nullable() }).optional(),
 });
+const deleteFailureResponse = z.object({
+  message: z.string().optional(),
+});
 
 export default function RemoveSizeButton({
   productId, sizeId, label, onRemove,
@@ -31,6 +34,8 @@ export default function RemoveSizeButton({
     setOpen(true);
     setStatus(null);
     if (!sizeId) {
+      // Unsaved form row — nothing exists in the database yet, so confirming
+      // only drops the row from the form.
       setStatus({ allowed: true, reason: null });
       return;
     }
@@ -54,6 +59,40 @@ export default function RemoveSizeButton({
     }
   }
 
+  // Confirm is a database deletion, not a form edit: the saved Size document
+  // and its WarehouseStock rows are deleted right now (server re-checks
+  // stock/history before deleting), then the row leaves the form. An unsaved
+  // row (no sizeId) has no document to delete — removing it is form-local.
+  async function remove() {
+    if (!sizeId) {
+      setOpen(false);
+      onRemove();
+      return;
+    }
+    setBusy(true);
+    try {
+      if (!productId || !session?.user?.token) throw new Error('Please sign in again before removing this size.');
+      const base = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+      const response = await fetch(`${base}/api/subproducts/${encodeURIComponent(productId)}/sizes/${encodeURIComponent(sizeId)}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${session.user.token}` },
+        cache: 'no-store',
+      });
+      const result = deleteFailureResponse.safeParse(await response.json());
+      if (!response.ok) {
+        throw new Error(result.success ? (result.data.message || 'Unable to delete this size. Please retry.') : 'Unable to delete this size. Please retry.');
+      }
+      setOpen(false);
+      onRemove();
+    } catch (error) {
+      // Keep the dialog open and surface why the size survived (stock or
+      // recorded history appeared since the eligibility check).
+      setStatus({ allowed: false, reason: error instanceof Error ? error.message : 'Unable to delete this size. Please retry.' });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <>
       <Button type="button" variant="outline" size="sm" aria-label={`Remove size ${label}`} onClick={check} className="text-red-600 hover:bg-red-50">
@@ -62,11 +101,11 @@ export default function RemoveSizeButton({
       <FormDialog open={open} busy={busy} onClose={() => setOpen(false)} title={`Remove ${label}?`}
         footer={<>
           <Button type="button" variant="outline" disabled={busy} onClick={() => setOpen(false)}>Keep size</Button>
-          <Button type="button" disabled={busy || !status?.allowed} onClick={() => { setOpen(false); onRemove(); }}>Remove size</Button>
+          <Button type="button" disabled={busy || !status?.allowed} onClick={remove}>Remove size</Button>
         </>}>
         <p className="text-sm text-gray-700" role="status">
-          {busy ? 'Checking stock and history…' : status?.allowed
-            ? 'This size will be deleted when the product is saved. Sizes with stock or recorded history cannot be deleted.'
+          {busy ? 'Deleting…' : status?.allowed
+            ? 'The size is deleted from the database immediately — no save needed. Sizes with stock or recorded history cannot be deleted.'
             : status?.reason}
         </p>
       </FormDialog>

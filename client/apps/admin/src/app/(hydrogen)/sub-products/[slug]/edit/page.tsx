@@ -1,6 +1,7 @@
-// @ts-nocheck
+// The sub-products layout renders the module chrome (Sub-Products nav) for
+// every route in this group — pages must not stack another header on top of
+// it (that read as two headers stacked: Marketplace + Sub-Products).
 import SubProductCreateEdit from '@/app/shared/ecommerce/sub-product/create-edit';
-import EcommercePageHeader from '@/app/shared/ecommerce/ecommerce-page-header';
 import { metaObject } from '@/config/site.config';
 
 export const metadata = {
@@ -16,7 +17,6 @@ export default async function EditSubProductPage({
 
   return (
     <>
-      <EcommercePageHeader hideHero />
       <div className="mt-4">
         <SubProductCreateEdit slug={slug} id={slug} />
       </div>

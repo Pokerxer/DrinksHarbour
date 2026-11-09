@@ -2,7 +2,7 @@
 
 import { sizeVariantLabel } from '@/utils/size-variant-label';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import Link from 'next/link';
@@ -19,13 +19,18 @@ import {
   PiCaretRight,
   PiStorefront,
   PiLockKey,
-  PiSparkle,
+  PiCamera,
   PiPrinter,
+  PiBookmarkSimple,
+  PiTextT,
+  PiSquaresFour,
   PiDotsSixVertical,
 } from 'react-icons/pi';
+import dynamic from 'next/dynamic';
 import toast from 'react-hot-toast';
 import { routes } from '@/config/routes';
 import { purchaseOrderService } from '@/services/purchaseOrder.service';
+import type { POItem } from '@/services/purchaseOrder.service';
 import { vendorService } from '@/services/vendor.service';
 import { subproductService } from '@/services/subproduct.service';
 import { useTenant } from '@/context/TenantContext';
@@ -43,6 +48,34 @@ import NumberInput from '@/components/ui/number-input';
 import { moveItem } from './line-dnd';
 import WarehouseSelect, { useActiveWarehouses } from './warehouse-select';
 import PurchasesScanDrawer from './purchases-scan-drawer';
+import {
+  appendPresentationLine,
+  catalogDraftFromSelection,
+  catalogQtyMap,
+  computeSectionSubtotals,
+  derivePurchasePack,
+  lineTypeOf,
+  type PurchaseLine,
+  type PurchaseLineType,
+} from './purchases-create-lines';
+import type { ProductLineSelection } from '../sales/product-line-search';
+
+const PurchasesCatalogModal = dynamic(
+  () => import('./purchases-catalog-modal'),
+  {
+    ssr: false,
+    loading: () => (
+      <div
+        role="status"
+        className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40"
+      >
+        <span className="rounded-xl bg-white p-5 text-sm text-gray-700">
+          Opening product catalogue…
+        </span>
+      </div>
+    ),
+  }
+);
 import {
   appendScannedLines,
   type PurchaseLineDraft,
@@ -69,20 +102,12 @@ interface ProductOption {
   sizes: SizeOption[];
 }
 
-interface LineItem {
-  subProductId: string;
-  productName: string;
-  sku: string;
-  sizeId?: string;
-  sizeName?: string;
-  quantity: number;
-  packSize: number;
-  packQty: number;
-  unitPrice: number;
-  packPrice: number;
+interface LineItem extends PurchaseLine {
+  // Presentation identity (lineType/name/description) comes from the base
+  // type so POs built in the create form ("Add a section"/"Add a note")
+  // round-trip through the edit form unchanged.
   type: string;
   uom: string;
-  taxRate: number;
   receivedQty: number;
 }
 
@@ -107,6 +132,28 @@ function blankItem(): LineItem {
     uom: 'unit',
     taxRate: 0,
     receivedQty: 0,
+  };
+}
+
+/** Presentation blank ("Add a section"/"Add a note") for the edit form. */
+function blankPresentationItem(type: PurchaseLineType): LineItem {
+  if (type === 'product') return blankItem();
+  return {
+    subProductId: '',
+    productName: '',
+    sku: '',
+    quantity: 0,
+    packSize: 1,
+    packQty: 0,
+    unitPrice: 0,
+    packPrice: 0,
+    // Nominal non-product fields kept for the LineItem shape.
+    type: 'unit',
+    uom: 'unit',
+    taxRate: 0,
+    receivedQty: 0,
+    lineType: type,
+    ...(type === 'section' ? { name: '' } : { description: '' }),
   };
 }
 
@@ -702,7 +749,7 @@ export default function PurchasesEdit({ id }: { id: string }) {
           const unitPrice = (item as any).unitCost ?? item.unitPrice ?? 0;
           const packSize = (item as any).packagingQty ?? item.packSize ?? 1;
           const quantity = item.quantity ?? 1;
-          return {
+        return {
             // getPurchaseOrder populates subProductId/sizeId into objects —
             // round-tripping them verbatim sends "[object Object]" as the id.
             subProductId: refIdOf(item.subProductId),
@@ -719,6 +766,11 @@ export default function PurchasesEdit({ id }: { id: string }) {
             uom: item.uom ?? 'unit',
             taxRate: item.taxRate ?? 0,
             receivedQty: item.receivedQty ?? 0,
+            // Presentation lines ("Add a section"/"Add a note") keep their
+            // body text so the edit form can render and re-save them.
+            lineType: item.lineType ?? 'product',
+            name: item.name,
+            description: item.description,
           };
         });
         setItems(mapped);
@@ -738,6 +790,14 @@ export default function PurchasesEdit({ id }: { id: string }) {
 
   const addItem = useCallback(() => setItems((p) => [...p, blankItem()]), []);
 
+  /** "Add a section"/"Add a note" — an unfinished trailing product row stays
+   *  beneath the new presentation line (sales parity). */
+  const addPresentationLine = useCallback(
+    (type: 'section' | 'note') =>
+      setItems((p) => appendPresentationLine(p, type, blankPresentationItem)),
+    []
+  );
+
   /** One accepted row from the Scan & Match drawer. Called once per row, so the
    *  first call consumes a trailing blank line and the rest append. */
   const addScannedLine = useCallback((line: PurchaseLineDraft) => {
@@ -748,6 +808,72 @@ export default function PurchasesEdit({ id }: { id: string }) {
     (i: number) => setItems((p) => p.filter((_, idx) => idx !== i)),
     []
   );
+
+  // ── Catalogue selection → line list ────────────────────────────────────────
+  const [catalogOpen, setCatalogOpen] = useState(false);
+  const catalogQuantities = useMemo(() => catalogQtyMap(items), [items]);
+
+  const addProductFromCatalog = useCallback(
+    (info: ProductLineSelection, qty = 1) => {
+      const inc = Math.max(1, Math.round(qty));
+      setItems((p) => {
+        const idx = p.findIndex(
+          (it) =>
+            lineTypeOf(it) === 'product' &&
+            it.subProductId === info.subProductId &&
+            (it.sizeId ?? '') === (info.sizeId ?? '')
+        );
+        if (idx >= 0) {
+          const next = [...p];
+          next[idx] = derivePurchasePack({
+            ...next[idx],
+            quantity: next[idx].quantity + inc,
+          });
+          return next;
+        }
+        // appendScannedLines drops the trailing blank product row and appends
+        // — a catalogue add behaves exactly like a Scan & Match accept.
+        return appendScannedLines(
+          p,
+          [catalogDraftFromSelection(info, inc)],
+          blankItem
+        );
+      });
+    },
+    []
+  );
+
+  const setCatalogLineQty = useCallback(
+    (info: ProductLineSelection, quantity: number) => {
+      setItems((p) =>
+        p.map((it) =>
+          lineTypeOf(it) === 'product' &&
+          it.subProductId === info.subProductId &&
+          (it.sizeId ?? '') === (info.sizeId ?? '')
+            ? derivePurchasePack({
+                ...it,
+                quantity: Math.max(1, Math.round(quantity)),
+              })
+            : it
+        )
+      );
+    },
+    []
+  );
+
+  const removeCatalogLine = useCallback((info: ProductLineSelection) => {
+    setItems((p) => {
+      const kept = p.filter(
+        (it) =>
+          !(
+            lineTypeOf(it) === 'product' &&
+            it.subProductId === info.subProductId &&
+            (it.sizeId ?? '') === (info.sizeId ?? '')
+          )
+      );
+      return kept.length ? kept : [blankItem()];
+    });
+  }, []);
 
   // Line drag-to-reorder: HTML5 DnD, no library. dragIndex = card being
   // dragged; overIndex = card currently hovered for the drop.
@@ -800,12 +926,25 @@ export default function PurchasesEdit({ id }: { id: string }) {
   const subtotal = items.reduce((s, it) => s + lineSubtotal(it), 0);
   const taxTotal = items.reduce((s, it) => s + lineTax(it), 0);
   const grandTotal = subtotal + taxTotal;
-  const hasItems = items.some((it) => it.productName.trim());
+  const hasItems = items.some(
+    (it) => lineTypeOf(it) === 'product' && it.productName.trim()
+  );
+  // Section running subtotals (product lines beneath each section heading).
+  const sectionSubtotals = useMemo(
+    () => computeSectionSubtotals(items, lineSubtotal),
+    [items]
+  );
+  // "Add a product" is gated until the buyer fills the empty row (create parity).
+  const hasEmptyProductRow = items.some(
+    (it) => lineTypeOf(it) === 'product' && !it.subProductId
+  );
 
   // ── Save ──────────────────────────────────────────────────────────────────
 
   async function handleSave(confirmToo = false) {
-    const filled = items.filter((it) => it.productName.trim());
+    const filled = items.filter(
+      (it) => lineTypeOf(it) === 'product' && it.productName.trim()
+    );
     if (filled.length === 0) {
       toast.error('Add at least one product line');
       return;
@@ -824,26 +963,59 @@ export default function PurchasesEdit({ id }: { id: string }) {
         validUntil: validUntil || undefined,
         notes: notes || undefined,
         termsConditions: termsConditions || undefined,
-        items: filled.map((it) => ({
-          subProductId: it.subProductId,
-          productName: it.productName,
-          subProductName: it.productName,
-          sku: it.sku,
-          sizeId: it.sizeId,
-          sizeName: it.sizeName,
-          quantity: it.quantity,
-          packSize: it.packSize,
-          packagingQty: it.packSize,
-          packQty: it.packQty,
-          unitPrice: it.unitPrice,
-          unitCost: it.unitPrice,
-          packPrice: it.packPrice,
-          type: it.type,
-          uom: it.uom,
-          taxRate: it.taxRate,
-          receivedQty: it.receivedQty,
-          totalCost: lineSubtotal(it),
-        })),
+        // Presentation lines ('section'/'note') ride along zeroed (they carry
+        // no money); product lines keep the full wire contract incl. receivedQty.
+        items: items.flatMap<Partial<POItem>>((it) => {
+          const t = lineTypeOf(it);
+          if (t !== 'product') {
+            const body =
+              t === 'section'
+                ? it.name
+                : it.description;
+            if (!String(body ?? '').trim()) return [];
+            return [
+              {
+                lineType: t,
+                name: t === 'section' ? it.name : undefined,
+                description: t === 'note' ? it.description : undefined,
+                sku: '',
+                quantity: 0,
+                packSize: 1,
+                packQty: 0,
+                unitPrice: 0,
+                unitCost: 0,
+                packPrice: 0,
+                packagingQty: 1,
+                receivedQty: 0,
+                totalCost: 0,
+              },
+            ];
+          }
+          if (!it.productName.trim()) return [];
+          return [
+            {
+              subProductId: it.subProductId,
+              productName: it.productName,
+              subProductName: it.productName,
+              sku: it.sku,
+              sizeId: it.sizeId,
+              sizeName: it.sizeName,
+              quantity: it.quantity,
+              packSize: it.packSize,
+              packagingQty: it.packSize,
+              packQty: it.packQty,
+              unitPrice: it.unitPrice,
+              unitCost: it.unitPrice,
+              packPrice: it.packPrice,
+              type: it.type,
+              uom: it.uom,
+              taxRate: it.taxRate,
+              receivedQty: it.receivedQty,
+              totalCost: lineSubtotal(it),
+              lineType: 'product' as const,
+            },
+          ];
+        }),
       };
       await purchaseOrderService.updatePurchaseOrder(id, payload, token);
       if (confirmToo) {
@@ -1119,25 +1291,8 @@ export default function PurchasesEdit({ id }: { id: string }) {
 
         {/* ── Order Lines card ── */}
         <div className="rounded-xl border border-gray-200 bg-white">
-          <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3">
+          <div className="border-b border-gray-100 px-5 py-3">
             <h2 className="text-sm font-semibold text-gray-800">Order Lines</h2>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setScanOpen(true)}
-                className="flex items-center gap-1.5 rounded-lg bg-[#b20202]/10 px-3 py-1.5 text-xs font-medium text-[#b20202] hover:bg-[#b20202]/15"
-                title="Photograph, upload or paste a vendor quotation"
-              >
-                <PiSparkle className="h-3.5 w-3.5" /> Scan &amp; Match
-              </button>
-              <button
-                type="button"
-                onClick={addItem}
-                className="flex items-center gap-1.5 rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-200"
-              >
-                <PiPlus className="h-3.5 w-3.5" /> Add Line
-              </button>
-            </div>
           </div>
 
           <div className="divide-y divide-gray-100">
@@ -1145,6 +1300,7 @@ export default function PurchasesEdit({ id }: { id: string }) {
               const sub = lineSubtotal(item);
               const tax = lineTax(item);
               const total = lineTotal(item);
+              const type = lineTypeOf(item);
               return (
                 <div
                       key={i}
@@ -1170,8 +1326,61 @@ export default function PurchasesEdit({ id }: { id: string }) {
                         setDragIndex(null);
                         setOverIndex(null);
                       }}
-                      className={`px-5 py-4 ${dragIndex === i ? 'opacity-40' : ''} ${overIndex === i && dragIndex !== null && dragIndex !== i ? 'ring-2 ring-[#b20202]/40 rounded-lg' : ''}`}
+                      className={`px-5 py-4 ${
+                        type !== 'product'
+                          ? type === 'section'
+                            ? 'bg-gray-50/70'
+                            : 'bg-amber-50/40'
+                          : ''
+                      } ${dragIndex === i ? 'opacity-40' : ''} ${overIndex === i && dragIndex !== null && dragIndex !== i ? 'ring-2 ring-[#b20202]/40 rounded-lg' : ''}`}
                     >
+                  {/* Section / note lines carry no product, qty or price. */}
+                  {type !== 'product' ? (
+                    <>
+                      {type === 'section' && (
+                        <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 pr-2">
+                          <input
+                            type="text"
+                            aria-label="Section title"
+                            value={item.name ?? ''}
+                            onChange={(e) =>
+                              updateItem(i, { name: e.target.value })
+                            }
+                            placeholder="Section title"
+                            className="min-w-0 flex-1 rounded-md border-0 border-b border-transparent bg-transparent px-1 py-1 text-sm font-bold text-gray-900 placeholder-gray-400 focus:border-[#b20202] focus:outline-none focus:ring-0"
+                          />
+                          <span className="text-[11px] font-medium text-gray-500">
+                            Untaxed subtotal {currency}{' '}
+                            {fmtAmount(sectionSubtotals.get(item) ?? 0)}
+                          </span>
+                        </div>
+                      )}
+                      {type === 'note' && (
+                        <div className="min-w-0 pr-2">
+                          <textarea
+                            aria-label="Note text"
+                            value={item.description ?? ''}
+                            onChange={(e) =>
+                              updateItem(i, { description: e.target.value })
+                            }
+                            placeholder="Add a note…"
+                            rows={2}
+                            className="w-full resize-y rounded-md border-0 bg-transparent px-1 py-1 text-xs text-gray-600 placeholder-gray-400 focus:outline-none focus:ring-0"
+                          />
+                        </div>
+                      )}
+                      <div className="mt-2 flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() => removeItem(i)}
+                          className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-500"
+                        >
+                          <PiTrash className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                  <>
                   {/* Product search row */}
                   <div className="mb-3 flex items-start gap-3">
                     <span
@@ -1309,18 +1518,57 @@ export default function PurchasesEdit({ id }: { id: string }) {
                       will not affect received stock
                     </p>
                   )}
+                  </>
+                  )}
                 </div>
               );
             })}
           </div>
 
-          <div className="border-t border-gray-100 px-5 py-3">
+          {/* Action bar — mirrors the sales create form (Add a product /
+              section / note / Catalogue / Scan & Match). */}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-gray-100 px-5 py-3">
             <button
               type="button"
               onClick={addItem}
+              disabled={hasEmptyProductRow}
+              title={
+                hasEmptyProductRow
+                  ? 'Select a product on the empty row first'
+                  : undefined
+              }
+              className="flex items-center gap-1.5 text-xs font-medium text-[#b20202] hover:underline disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <PiPlus className="h-3.5 w-3.5" /> Add a product
+            </button>
+            <button
+              type="button"
+              onClick={() => addPresentationLine('section')}
               className="flex items-center gap-1.5 text-xs font-medium text-[#b20202] hover:underline"
             >
-              <PiPlus className="h-3.5 w-3.5" /> Add another line
+              <PiBookmarkSimple className="h-3.5 w-3.5" /> Add a section
+            </button>
+            <button
+              type="button"
+              onClick={() => addPresentationLine('note')}
+              className="flex items-center gap-1.5 text-xs font-medium text-[#b20202] hover:underline"
+            >
+              <PiTextT className="h-3.5 w-3.5" /> Add a note
+            </button>
+            <button
+              type="button"
+              onClick={() => setCatalogOpen(true)}
+              className="flex items-center gap-1.5 text-xs font-medium text-[#b20202] hover:underline"
+            >
+              <PiSquaresFour className="h-3.5 w-3.5" /> Catalogue
+            </button>
+            <button
+              type="button"
+              onClick={() => setScanOpen(true)}
+              title="Photograph, upload or paste a vendor quotation"
+              className="flex items-center gap-1.5 text-xs font-medium text-[#b20202] hover:underline"
+            >
+              <PiCamera className="h-3.5 w-3.5" /> Scan &amp; Match
             </button>
           </div>
         </div>
@@ -1414,6 +1662,21 @@ export default function PurchasesEdit({ id }: { id: string }) {
         token={token}
         onClose={() => setScanOpen(false)}
         onAdd={addScannedLine}
+      />
+
+      <PurchasesCatalogModal
+        open={catalogOpen}
+        token={token}
+        warehouseId={warehouseId || undefined}
+        warehouseName={
+          warehouses.find((w) => w._id === warehouseId)?.name
+        }
+        currency={currency}
+        qtyMap={catalogQuantities}
+        onClose={() => setCatalogOpen(false)}
+        onAdd={addProductFromCatalog}
+        onSetQty={setCatalogLineQty}
+        onRemove={removeCatalogLine}
       />
     </div>
   );

@@ -46,7 +46,24 @@ export function buildTransferInvoice(transfer: StockTransfer, companyName: strin
     return net + tax;
   };
 
-  const rows: DocCell[][] = transfer.items.map((item) => {
+  const rows: DocCell[][] = transfer.items.flatMap((item) => {
+    // Presentation lines ('section'/'note') print as a styled name row and a
+    // gray note row — the print model rows zip 1:1 against the 8 columns, so
+    // the remaining cells are blank rather than zero-quantity product stats.
+    if (item.lineType === 'section' || item.lineType === 'note') {
+      const cells: DocCell[] = [
+        {
+          text:
+            item.lineType === 'section'
+              ? (item.name ?? '')
+              : (item.description ?? ''),
+          strong: item.lineType === 'section',
+          color: item.lineType === 'note' ? '#6b7280' : undefined,
+        },
+      ];
+      while (cells.length < 8) cells.push({ text: '' });
+      return [cells];
+    }
     const name =
       item.sizeName && !item.subProductName.includes(item.sizeName)
         ? `${item.subProductName} – ${item.sizeName}`
@@ -55,27 +72,29 @@ export function buildTransferInvoice(transfer: StockTransfer, companyName: strin
     const done = recv >= item.quantity;
     const pending = Math.max(0, item.quantity - recv);
     return [
-      {
-        text: name,
-        ...(item.returnedQty
-          ? {
-              sub: `${item.returnedQty} returned · ${Math.max(0, recv - item.returnedQty)} retained`,
-            }
-          : {}),
-      },
-      { text: packsLabel(item.quantity, linePackSize(item)) },
-      { text: String(item.quantity) },
-      done
-        ? { text: String(recv), color: '#16a34a', strong: true }
-        : {
-            text: String(recv),
-            sub: pending > 0 ? `${pending} pending` : undefined,
-            color: '#6b7280',
-          },
-      { text: fmtAmt(item.costPrice ?? 0, currency) },
-      { text: item.discountRate ? `${item.discountRate}%` : '—' },
-      { text: item.taxRate ? `${item.taxRate}%` : '—' },
-      { text: fmtAmt(lineTotalOf(item), currency), strong: true },
+      [
+        {
+          text: name,
+          ...(item.returnedQty
+            ? {
+                sub: `${item.returnedQty} returned · ${Math.max(0, recv - item.returnedQty)} retained`,
+              }
+            : {}),
+        },
+        { text: packsLabel(item.quantity, linePackSize(item)) },
+        { text: String(item.quantity) },
+        done
+          ? { text: String(recv), color: '#16a34a', strong: true }
+          : {
+              text: String(recv),
+              sub: pending > 0 ? `${pending} pending` : undefined,
+              color: '#6b7280',
+            },
+        { text: fmtAmt(item.costPrice ?? 0, currency) },
+        { text: item.discountRate ? `${item.discountRate}%` : '—' },
+        { text: item.taxRate ? `${item.taxRate}%` : '—' },
+        { text: fmtAmt(lineTotalOf(item), currency), strong: true },
+      ],
     ];
   });
 

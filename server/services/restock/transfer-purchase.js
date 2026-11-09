@@ -4,12 +4,16 @@ const { ValidationError, ConflictError } = require('../../utils/errors');
 async function validateTransferPreparation(tenantId, body, service = getPlan) {
   if (body.warehouseRecommendation === undefined) return;
   const ref = body.warehouseRecommendation;
+  // Presentation lines ('section'/'note') interleave with the recommendation's
+  // single product line; only product lines can match it.
+  const productItems = Array.isArray(body.items)
+    ? body.items.filter((item) => item && (!item.lineType || item.lineType === 'product'))
+    : [];
   if (
     !ref ||
     typeof ref.key !== 'string' ||
     ![7, 14, 30].includes(ref.coverDays) ||
-    !Array.isArray(body.items) ||
-    body.items.length !== 1
+    productItems.length !== 1
   )
     throw new ValidationError('Invalid warehouse transfer recommendation');
   const plan = await service(tenantId, {
@@ -21,8 +25,7 @@ async function validateTransferPreparation(tenantId, body, service = getPlan) {
     source = line?.transferPlan?.sources.find(
       (s) => s.sourceWarehouseId === id(body.sourceWarehouse),
     ),
-    item = body.items[0];
-  if (
+    item = productItems[0];  if (
     !line ||
     !source ||
     line.warehouseId !== id(body.destinationWarehouse) ||
