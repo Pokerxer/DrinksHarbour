@@ -133,3 +133,26 @@ it('accepts a manually typed barcode as a fallback', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Check price' }));
   expect(onScan).toHaveBeenCalledTimes(1);
 });
+
+it('offers night mode after 15s of capture silence and boosts exposure', async () => {
+  torchSupport.apply = vi.fn(async () => {});
+  vi.useFakeTimers();
+  try {
+    render(<PhoneScanner slug="counter" session="pair-0000000001" onScan={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Start camera' }));
+    await vi.advanceTimersByTimeAsync(15_000);
+    const chip = screen.getByRole('button', { name: /night mode/i });
+    fireEvent.click(chip);
+    // torch from the capture toggle path + exposure boost attempt
+    await vi.advanceTimersByTimeAsync(50);
+    expect(torchSupport.apply).toHaveBeenCalledWith({
+      advanced: [{ torch: true }],
+    });
+    expect(torchSupport.apply).toHaveBeenCalledWith({
+      advanced: [{ exposureCompensation: 2 }],
+    });
+    expect(screen.getByText(/night mode/i)).toBeTruthy();
+  } finally {
+    vi.useRealTimers();
+  }
+});
