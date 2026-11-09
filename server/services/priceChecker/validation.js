@@ -21,6 +21,7 @@ const defaults = {
   resetSeconds: 8,
   outOfStock: 'DISPLAY',
   theme: 'light',
+  language: 'en',
   welcomeMessage: '',
   resultMessage: 'Ask a member of staff for assistance.',
   notFoundMessage: "We couldn't find this barcode. Please ask a member of staff for assistance.",
@@ -79,6 +80,8 @@ function validateSettings(input = {}) {
       if (!['DISPLAY', 'HIDE', 'STAFF_MESSAGE'].includes(value)) fail('Invalid stock behavior.');
     } else if (key === 'theme') {
       if (!['light', 'dark'].includes(value)) fail('Invalid theme.');
+    } else if (key === 'language') {
+      if (!['en', 'ha', 'pig'].includes(value)) fail('Invalid language.');
     } else {
       if (typeof value !== 'string' || value.length > (key === 'logo' ? 2048 : 300))
         fail(`Invalid ${key}.`);

@@ -16,6 +16,7 @@ export interface KioskSettings {
   resetSeconds: number;
   outOfStock: 'DISPLAY' | 'HIDE' | 'STAFF_MESSAGE';
   theme: 'light' | 'dark';
+  language: 'en' | 'ha' | 'pig';
   welcomeMessage: string;
   resultMessage: string;
   notFoundMessage: string;

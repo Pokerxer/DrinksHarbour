@@ -10,6 +10,7 @@ const settingsSchema = new Schema(
     resetSeconds: { type: Number, min: 3, max: 30, default: 8 },
     outOfStock: { type: String, enum: ['DISPLAY', 'HIDE', 'STAFF_MESSAGE'], default: 'DISPLAY' },
     theme: { type: String, enum: ['light', 'dark'], default: 'light' },
+    language: { type: String, enum: ['en', 'ha', 'pig'], default: 'en' },
     ...Object.fromEntries(
       ['welcomeMessage', 'resultMessage', 'notFoundMessage', 'logo', 'background', 'accent'].map(
         (key) => [

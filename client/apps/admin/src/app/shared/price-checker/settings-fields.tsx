@@ -86,6 +86,14 @@ export function SettingsFields({ register }: { register: UseFormRegister<KioskIn
             </select>
           </label>
           <label>
+            Language
+            <select {...register('settings.language')}>
+              <option value="en">English</option>
+              <option value="ha">Hausa</option>
+              <option value="pig">Pidgin</option>
+            </select>
+          </label>
+          <label>
             Accent color
             <input type="color" {...register('settings.accent')} />
           </label>
