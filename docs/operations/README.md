@@ -6,6 +6,7 @@
 - [Source-code handover and sale checklist](source-handover.md)
 - [Server dependency migration](server-security-migration.md)
 - [Client dependency migration](client-security-migration.md)
+- [Atlas connection headroom (audit + warm-container runbook)](atlas-connection-headroom.md)
 
 These are procedures, not evidence that hosting controls, backups, approvals or
 monitoring have been configured. Record successful exercises and their dates.

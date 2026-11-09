@@ -35,8 +35,12 @@ const SERVER_SELECTION_TIMEOUT_MS =
 const HEARTBEAT_FREQUENCY_MS =
   Number(process.env.MONGO_HEARTBEAT_FREQUENCY_MS) || 5000;
 
-// Connection budget for an M0 (free-tier) Atlas cluster, whose hard ceiling is
-// 500 concurrent connections. Exceeding it is what produced the intermittent
+// Connection budget for an Atlas M0 (free-tier) or Flex cluster — both tiers
+// hard-cap concurrent connections at 500 (validated against the Atlas Flex
+// limitations reference, 2026-11-09: "Flex clusters have a maximum of 500
+// connections"), so moving M0 → Flex does NOT raise this budget. Flex also
+// caps throughput at 500 ops/sec with a sub-second per-connection cooldown.
+// Exceeding the connection ceiling is what produced the intermittent
 // `MongooseServerSelectionError` / transient `tlsv1 alert internal error`
 // blips: Atlas refuses new connections at the limit, so healthy-looking nodes
 // fail selection and then recover once connections drain.
