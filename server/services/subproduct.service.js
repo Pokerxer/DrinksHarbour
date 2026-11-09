@@ -4685,8 +4685,9 @@ const getAllSubProducts = async (filters = {}) => {
   const query = { isPublished: true, status: 'active', visibleInOnlineStore: { $ne: false } };
   if (status) query.status = status;
   if (search) {
+    const term = escapeRegex(search.trim());
     query.$or = [
-      { sku: { $regex: search, $options: 'i' } },
+      { sku: { $regex: term, $options: 'i' } },
     ];
   }
 

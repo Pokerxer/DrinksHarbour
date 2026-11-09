@@ -32,6 +32,7 @@ const {
   buildOrderDemandMap,
   buildDemandExpr,
   getOrderDemandMap,
+  resetDemandMapCacheForTests,
   ORDER_DEMAND_MATCH,
 } = require('../services/orderDemand.helper');
 
@@ -130,6 +131,8 @@ test('getOrderDemandMap runs the demand aggregation on the orders collection', a
   const id = oid();
   const seen = [];
 
+  resetDemandMapCacheForTests();
+
   const map = await getOrderDemandMap({ aggregate: async (p) => { seen.push(p); return [{ _id: id, totalSold: 90 }]; } });
 
   assert.equal(map[String(id)], 90);
@@ -144,8 +147,48 @@ test('getOrderDemandMap runs the demand aggregation on the orders collection', a
 test('a demand-outage degrades the map to an empty object, not a crash', async (t) => {
   // The shop pipeline must keep rendering even if the orders query fails —
   // popularity just renders as the POS-only order instead of killing the page.
+  // Cache-cold case: no map was ever fetched on this process, so the outage
+  // must surface immediately as an empty map.
+  resetDemandMapCacheForTests();
+
   const failing = { aggregate: async () => { throw new Error('db timeout'); } };
 
   const map = await getOrderDemandMap(failing);
   assert.deepEqual(map, {});
+});
+
+test('the demand map is served from the process cache within its TTL', async (t) => {
+  // Popularity ranking re-queries the whole orders collection on every
+  // otherwise-slow search request; that extra pass on a parked M0 cluster is
+  // part of the 2026-11-08 300s timeouts. A short TTL is shipped with the
+  // ranking contract: within the window, a second call must NOT re-run the
+  // aggregation.
+  resetDemandMapCacheForTests();
+
+  const id = oid();
+  let calls = 0;
+  const Order = { aggregate: async (p) => { calls += 1; return [{ _id: id, totalSold: 90 }]; } };
+
+  const first = await getOrderDemandMap(Order);
+  const second = await getOrderDemandMap(Order);
+
+  assert.equal(first[String(id)], 90);
+  assert.equal(second[String(id)], 90);
+  assert.equal(calls, 1, 'the second call inside the TTL must hit the cache');
+});
+
+test('a warm process serving a stale map tolerates a later demand outage', async (t) => {
+  // Cache-warm outage: serving the minute-old map beats serving nothing to a
+  // live storefront; the pending request dedupe also guarantees that many
+  // concurrent callers share one fetch instead of queueing extras on the pool.
+  const id = oid();
+  resetDemandMapCacheForTests();
+
+  const good = { aggregate: async () => [{ _id: id, totalSold: 42 }] };
+  await getOrderDemandMap(good); // warm the cache
+
+  const failing = { aggregate: async () => { throw new Error('db timeout'); } };
+  const map = await getOrderDemandMap(failing);
+
+  assert.equal(map[String(id)], 42, 'stale-but-good demand survives an outage');
 });

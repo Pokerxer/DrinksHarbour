@@ -109,14 +109,54 @@ function buildDemandExpr(demandMap) {
 /**
  * Convenience: fetch + shape in one call. Returns `{}` on any failure so a
  * demand outage degrades the ranking rather than breaking the shop.
+ *
+ * Perf (2026-11-08 300s timeouts): every relevance/popular/bestselling search
+ * re-aggregated the whole orders collection for its popularity sort — one full
+ * extra collection pass per search request (measured 0.3s best case, ~4s when
+ * the M0 cluster is under load). Demand figures feed only the RANKING, so a
+ * short process-local TTL changes nothing users can perceive: rankings stay
+ * accurate to within the TTL. `ORDER_DEMAND_CACHE_SECONDS=0` (or any negative)
+ * restores always-fresh behaviour; Redis remains intentionally unused
+ * (standalone runtime agreement) — this is per-process, in-memory only.
  */
+const DEMAND_MAP_TTL_MS = Math.max(0, Number(process.env.ORDER_DEMAND_CACHE_SECONDS || 60)) * 1000;
+const demandCache = { map: null, at: 0, pending: null };
+
 async function getOrderDemandMap(Order) {
   try {
+    if (DEMAND_MAP_TTL_MS > 0) {
+      if (demandCache.map && Date.now() - demandCache.at < DEMAND_MAP_TTL_MS) {
+        return demandCache.map;
+      }
+      // One aggregate at a time per process — three concurrent searches share
+      // the same in-flight map instead of queueing three reads on the pool.
+      if (demandCache.pending) return demandCache.pending;
+      const at = Date.now();
+      demandCache.pending = fetchOrderDemandRows(Order)
+        .then(buildOrderDemandMap)
+        .then((map) => {
+          demandCache.map = map;
+          demandCache.at = at;
+          return map;
+        })
+        .catch((error) => {
+          console.error('Error building order demand map:', error.message);
+          return {};
+        })
+        .finally(() => { demandCache.pending = null; });
+      return demandCache.pending;
+    }
     return buildOrderDemandMap(await fetchOrderDemandRows(Order));
   } catch (error) {
     console.error('Error building order demand map:', error.message);
     return {};
   }
+}
+
+function resetDemandMapCacheForTests() {
+  demandCache.map = null;
+  demandCache.at = 0;
+  demandCache.pending = null;
 }
 
 module.exports = {
@@ -125,4 +165,5 @@ module.exports = {
   buildOrderDemandMap,
   buildDemandExpr,
   getOrderDemandMap,
+  resetDemandMapCacheForTests,
 };

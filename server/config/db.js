@@ -63,6 +63,25 @@ const MAX_POOL_SIZE = Number(process.env.MONGO_MAX_POOL_SIZE) || 5;
 const MIN_POOL_SIZE = Number(process.env.MONGO_MIN_POOL_SIZE) || 0;
 const MAX_IDLE_TIME_MS = Number(process.env.MONGO_MAX_IDLE_TIME_MS) || 60000;
 
+// Bounded pool-wait queue (the 2026-11-08 300-second Vercel timeouts).
+//
+// The driver's `waitQueueTimeoutMS` defaults to UNLIMITED: when a warm
+// container's whole pool (maxPoolSize=5) is busy inside slow aggregations,
+// every further query in that process queues forever and the request sits
+// with no error and no response until Vercel kills the task — the exact
+// "Vercel Runtime Timeout Error: Task timed out after 300 seconds" seen
+// simultaneously on /api/products/search, /trending and /slug on 2026-11-08
+// (those requests all started ~5 min before their shared kill time).
+//
+// Bounding the wait turns the queue-overflow case into an immediate
+// MongooseServerSelectionError, which the /api connectDB middleware already
+// maps to a 503 with `Retry-After` — otherwise-identical failure semantics,
+// 300s sooner. Aligned with SERVER_SELECTION_TIMEOUT_MS so nothing inside a
+// container can block longer than acquiring a connection could have.
+const WAIT_QUEUE_TIMEOUT_MS =
+  Number(process.env.MONGO_WAIT_QUEUE_TIMEOUT_MS) ||
+  (process.env.VERCEL ? 10000 : 30000);
+
 // `mongoose.connect()` resolves to the mongoose instance; the live socket state
 // lives on its default connection. 1 = connected, 2 = connecting — anything else
 // (disconnected / disconnecting / uninitialized) is a dead handle, and because
@@ -122,6 +141,7 @@ async function connectDB() {
       bufferCommands: false, // Disable buffering for serverless
       serverSelectionTimeoutMS: SERVER_SELECTION_TIMEOUT_MS,
       socketTimeoutMS: 45000, // Socket timeout
+      waitQueueTimeoutMS: WAIT_QUEUE_TIMEOUT_MS, // Bound the pool wait queue — see note above
       // The driver's default heartbeat is 10s, so a dead monitor goes unnoticed
       // for up to a full cycle and server selection has to start from scratch
       // inside `serverSelectionTimeoutMS` — which is only 10s too. Halving the
