@@ -478,3 +478,15 @@
 .kiosk-session .kiosk-quiet {
   font-size: 0.8em;
 }
+
+/* ── round 6 — recap share ───────────────────────────────────────────────── */
+.kiosk-session-share {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.kiosk-session-share .kiosk-quiet {
+  min-height: 44px;
+  padding: 8px 16px;
+  font-size: 0.75em;
+}

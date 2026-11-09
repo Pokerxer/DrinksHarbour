@@ -6,6 +6,7 @@ import { usePhonePairing } from './use-phone-pairing';
 import { useOfflineBook } from './use-offline';
 import { compareSummary, type CompareSummary } from './session-summary';
 import { useStaleSession, COMPARE_MS, IDLE_MS } from './use-idle-timer';
+import { buildShareLinks, shareMessage } from './share';
 import { formatMoney } from './money';
 import { LANGUAGES, LanguageProvider, useCopy, type Language } from './copy';
 import { PhonePair } from './phone-pair';
@@ -304,9 +305,51 @@ function KioskScreen({
                       to: money(summary.to),
                     })}`}
                 </p>
-                <button className="kiosk-quiet" onClick={kiosk.openCompare}>
-                  {t('recapAgain')}
-                </button>
+                <div className="kiosk-session-share">
+                  <button className="kiosk-quiet" onClick={kiosk.openCompare}>
+                    {t('recapAgain')}
+                  </button>
+                  <button
+                    className="kiosk-quiet"
+                    aria-label={t('shareWhatsapp')}
+                    onClick={() => {
+                      const links = buildShareLinks(
+                        shareMessage(summary, config?.store?.name ?? null, lang)
+                      );
+                      if (links.whatsapp) window.open(links.whatsapp, '_blank');
+                    }}
+                  >
+                    {t('shareWhatsapp')}
+                  </button>
+                  <button
+                    className="kiosk-quiet"
+                    aria-label={t('shareSms')}
+                    onClick={() => {
+                      const link = buildShareLinks(
+                        shareMessage(summary, config?.store?.name ?? null, lang)
+                      ).sms;
+                      if (link) window.location.href = link;
+                    }}
+                  >
+                    {t('shareSms')}
+                  </button>
+                  <button
+                    className="kiosk-quiet"
+                    aria-label={t('shareCopy')}
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(
+                          shareMessage(summary, config?.store?.name ?? null, lang)
+                        );
+                        setMessage(t('shareCopied'));
+                      } catch {
+                        /* clipboard blocked — WhatsApp/SMS remain */
+                      }
+                    }}
+                  >
+                    {t('shareCopy')}
+                  </button>
+                </div>
               </div>
             )}
             {pairUrl && <PhonePair url={pairUrl} />}
