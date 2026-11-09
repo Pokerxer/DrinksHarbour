@@ -165,3 +165,28 @@ wiped on any scan/tray change), phone undo (5s window on the newest scan;
 `Checked.at` added) and "Show all (n)" once >3 entries; `product-result`
 render has a shimmer-free price count-up. Suites: 43 server / 122 client /
 tsc clean.
+
+## Round 5 — wedge tuning + phone feedback/detail (2026-11-09)
+
+- **Kiosk wedge** (`scanner.ts`): terminators now `Enter`/`NumpadEnter`/`Tab`;
+  **idle decode** fires ~120ms after keystroke silence (client option
+  `createScanner({ idleDecodeMs, onIdleDecode })`) — only bursts that look
+  like barcodes (≥8 chars, contains a digit after AIM strip) are trusted,
+  junk discards quietly; GS1 AIM prefixes `]xx` are stripped on decode
+  (`stripAimPrefix`). `use-kiosk.ts` wires `idleDecodeMs: 120` so
+  terminator-less wedges "just work". Duplicate-guard (700ms) and 128-cap
+  unchanged.
+- **Phone**: `mergeScan(results, entry)` dedupes at session level — a re-scan
+  of the same barcode moves the existing entry to the top with a fresh
+  timestamp instead of adding a duplicate, plus a transient "Already on
+  your list" notice server-side of the flash. Capture feedback: haptic
+  (`navigator.vibrate(40)`), light-sweep animation over the viewfinder,
+  "✓ Scanned" pill (~900ms), green corner flash.
+- **Detail sheet** (`phone-detail.tsx`): any result card is now a button-like
+  element (role=button, keyboard + Enter/Space) opening a bottom sheet with
+  the full record — image, brand, price + savings, tax, size/ABV/volume,
+  origin, type, stock pill, barcode. Escape/✕/backdrop dismisses; focus
+  lands on ✕ on open. `PhoneResults` gained `onSelect`.
+- Tests: wedge cases in `scanner.test.ts`; `mergeScan` + undo + collapse in
+  `phone-results.test.tsx`; sheet in `phone-detail.test.tsx`. Suites:
+  43 server / 129 client / tsc clean.
