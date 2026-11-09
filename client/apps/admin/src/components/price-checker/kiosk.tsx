@@ -6,6 +6,7 @@ import { usePhonePairing } from './use-phone-pairing';
 import { useOfflineBook } from './use-offline';
 import { compareSummary, type CompareSummary } from './session-summary';
 import { formatMoney } from './money';
+import { LANGUAGES, LanguageProvider, useCopy, type Language } from './copy';
 import { PhonePair } from './phone-pair';
 import { ProductResult } from './product-result';
 import { CompareTray } from './compare-tray';
@@ -16,10 +17,69 @@ import { validBarcode } from './scanner';
 import './kiosk.css';
 import './kiosk-display.css';
 import './kiosk-motion.css';
+
+const LANG_KEY = (slug: string) => `price-checker-lang-${slug}`;
+
+function readStoredLang(slug: string): Language | null {
+  try {
+    const value = sessionStorage.getItem(LANG_KEY(slug));
+    return value === 'en' || value === 'ha' || value === 'pig' ? value : null;
+  } catch {
+    return null;
+  }
+}
+
 export default function PriceCheckerKiosk({ slug }: { slug: string }) {
   const offlineBook = useOfflineBook(slug);
   const kiosk = useKiosk(slug, offlineBook.support ?? undefined);
   const compare = useCompare(slug);
+  const [langOverride, setLangOverride] = useState<Language | null>(() =>
+    readStoredLang(slug)
+  );
+  const lang = langOverride ?? kiosk.config?.settings.language ?? 'en';
+  const cycleLanguage = useCallback(() => {
+    const next = LANGUAGES[(LANGUAGES.findIndex((row) => row.id === lang) + 1) % LANGUAGES.length]
+      .id;
+    setLangOverride(next);
+    try {
+      sessionStorage.setItem(LANG_KEY(slug), next);
+    } catch {
+      /* private mode — language lives in memory only */
+    }
+  }, [lang, slug]);
+  return (
+    <LanguageProvider lang={lang}>
+      <KioskScreen
+        slug={slug}
+        kiosk={kiosk}
+        compare={compare}
+        offline={offlineBook.book}
+        lang={lang}
+        onCycleLanguage={cycleLanguage}
+      />
+    </LanguageProvider>
+  );
+}
+
+interface KioskScreenProps {
+  slug: string;
+  kiosk: ReturnType<typeof useKiosk>;
+  compare: ReturnType<typeof useCompare>;
+  offline: ReturnType<typeof useOfflineBook>['book'];
+  lang: Language;
+  onCycleLanguage: () => void;
+}
+
+function KioskScreen({
+  kiosk,
+  compare,
+  offline,
+  lang,
+  onCycleLanguage,
+  slug,
+}: KioskScreenProps) {
+  const { t } = useCopy();
+  const [summary, setSummary] = useState<CompareSummary | null>(null);
   const [manual, setManual] = useState(false);
   const [pairSession] = useState(() => crypto.randomUUID());
   const pairApiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
@@ -40,21 +100,16 @@ export default function PriceCheckerKiosk({ slug }: { slug: string }) {
   const productAlreadyHeld = Boolean(
     product && compare.items.some((item) => compareKey(item) === compareKey(product))
   );
-  // Decision recap shown after a comparison closes (screen returns to idle).
-  const [summary, setSummary] = useState<CompareSummary | null>(null);
   const closeCompare = useCallback(() => {
     if (compare.items.length >= 2) setSummary(compareSummary(compare.items));
     kiosk.reset();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [compare.items, kiosk]);
-  const scannerHousekeepingCleanup = useCallback(() => {}, []);
-  void scannerHousekeepingCleanup;
   // Any new scan or tray change wipes a stale recap immediately.
   useEffect(() => {
     if (screen !== 'idle' && screen !== 'compare') setSummary(null);
   }, [screen, compare.items.length]);
-  // Phone pairing: the QR session id doubles as the socket room name. Only
-  // shown while the kiosk is usable; scans land in the comparison tray.
+  // Phone pairing: the QR session id doubles as the socket room name.
   const pairEnabled = Boolean(
     config?.settings.enablePhoneScan &&
       !['compare', 'initializing', 'offline', 'closed'].includes(screen)
@@ -66,7 +121,7 @@ export default function PriceCheckerKiosk({ slug }: { slug: string }) {
         )}/m/${pairSession}`
       : '';
   const onPhoneScan = useCallback(
-    (product: KioskProduct) => compare.add(product),
+    (scanned: KioskProduct) => compare.add(scanned),
     [compare]
   );
   usePhonePairing(pairUrl ? pairApiUrl : '', pairSession, onPhoneScan);
@@ -76,23 +131,24 @@ export default function PriceCheckerKiosk({ slug }: { slug: string }) {
         await document.documentElement.requestFullscreen();
       else await document.exitFullscreen();
     } catch {
-      setMessage('Use your browser’s fullscreen option to fill this screen.');
+      setMessage(t('fullscreenFallback'));
     }
   }
   const title =
     screen === 'closed'
-      ? 'Kiosk unavailable'
+      ? t('closedTitle')
       : screen === 'offline'
-        ? 'Connection unavailable'
+        ? t('offlineTitle')
         : screen === 'missing'
-          ? 'Product not recognised'
-          : 'Please ask a member of staff';
+          ? t('missingTitle')
+          : t('staffTitle');
   const detail =
     screen === 'missing'
       ? settings?.notFoundMessage
       : screen === 'offline'
-        ? 'Please try again or ask a staff member for assistance.'
-        : 'We cannot display a price for this item here. Please ask a member of staff for assistance.';
+        ? t('offlineBody')
+        : t('staffBody');
+  const money = (value: number) => formatMoney(value, config?.currency ?? 'NGN');
   return (
     <div
       className="price-kiosk"
@@ -115,13 +171,14 @@ export default function PriceCheckerKiosk({ slug }: { slug: string }) {
         </div>
         {kiosk.offline && (
           <div className="kiosk-offline-pill" role="status">
-            Offline · prices from{' '}
-            {offlineBook.book
-              ? new Date(offlineBook.book.generatedAt).toLocaleTimeString([], {
-                  hour: '2-digit',
-                  minute: '2-digit',
-                })
-              : 'cache'}
+            {t('offlinePill', {
+              time: offline
+                ? new Date(offline.generatedAt).toLocaleTimeString([], {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })
+                : '—',
+            })}
           </div>
         )}
         {config?.store && (
@@ -139,13 +196,21 @@ export default function PriceCheckerKiosk({ slug }: { slug: string }) {
             </span>
           </div>
         )}
+        <button
+          className="kiosk-quiet kiosk-lang"
+          aria-label={t('language')}
+          title={t('language')}
+          onClick={onCycleLanguage}
+        >
+          {lang.toUpperCase()}
+        </button>
         {settings?.fullscreen && (
           <button
             className="kiosk-quiet"
             onClick={fullscreen}
-            aria-label="Toggle fullscreen"
+            aria-label={t('fullscreen')}
           >
-            ⛶ <span>Fullscreen</span>
+            ⛶ <span>{t('fullscreen')}</span>
           </button>
         )}
       </header>
@@ -186,29 +251,28 @@ export default function PriceCheckerKiosk({ slug }: { slug: string }) {
           </>
         ) : ['idle', 'initializing', 'loading'].includes(screen) ? (
           <section className="kiosk-status">
-            <span className="kiosk-eyebrow">Your in-store price guide</span>
+            <span className="kiosk-eyebrow">{t('idleEyebrow')}</span>
             <ScannerMark loading={screen !== 'idle'} />
             <h1>
               {screen === 'loading' ? (
-                'Checking product…'
+                t('loading')
               ) : screen === 'initializing' ? (
-                'Getting ready…'
+                t('initializing')
               ) : (
                 <>
-                  Check a<br />
-                  <span>Product Price</span>
+                  {t('titleLine1')}
+                  <br />
+                  <span>{t('titleLine2')}</span>
                 </>
               )}
             </h1>
             <p>
-              {screen === 'idle'
-                ? 'Scan a product barcode to see its current price'
-                : 'Just a moment'}
+              {screen === 'idle' ? t('idlePrompt') : t('justMoment')}
             </p>
             {settings?.welcomeMessage && (
               <p className="kiosk-small">{settings.welcomeMessage}</p>
             )}
-                {config?.store && (
+            {config?.store && (
               <div className="kiosk-store-pill">
                 {config.store.name} — {config.store.location}
               </div>
@@ -216,13 +280,16 @@ export default function PriceCheckerKiosk({ slug }: { slug: string }) {
             {summary && (
               <div className="kiosk-session" role="status">
                 <p>
-                  Compared {summary.count} bottles · best value{' '}
-                  <strong>{summary.bestName}</strong>
+                  {t('recapIntro', { n: summary.count })} ·{' '}
+                  {t('recapBest', { name: summary.bestName })}
                   {summary.saved > 0 &&
-                    ` · from ${formatMoney(summary.from, config?.currency ?? 'NGN')} to ${formatMoney(summary.to, config?.currency ?? 'NGN')}`}
+                    ` · ${t('recapBand', {
+                      from: money(summary.from),
+                      to: money(summary.to),
+                    })}`}
                 </p>
                 <button className="kiosk-quiet" onClick={kiosk.openCompare}>
-                  Compare again
+                  {t('recapAgain')}
                 </button>
               </div>
             )}
@@ -233,9 +300,7 @@ export default function PriceCheckerKiosk({ slug }: { slug: string }) {
             <ScannerMark />
             <h1>{title}</h1>
             <p>
-              {screen === 'closed'
-                ? 'This price checker is currently unavailable. Please ask a member of staff.'
-                : detail}
+              {screen === 'closed' ? t('closedBody') : detail}
             </p>
             {screen !== 'closed' && (
               <button
@@ -246,7 +311,7 @@ export default function PriceCheckerKiosk({ slug }: { slug: string }) {
                     : kiosk.reset()
                 }
               >
-                Try again
+                {t('tryAgain')}
               </button>
             )}
           </section>
@@ -267,19 +332,19 @@ export default function PriceCheckerKiosk({ slug }: { slug: string }) {
         <div>
           <strong>
             {screen === 'closed'
-              ? 'Please ask a member of staff'
+              ? t('footerStaff')
               : screen === 'offline'
-                ? 'Waiting for connection'
+                ? t('footerWaiting')
                 : screen === 'compare'
-                  ? 'Comparing bottles'
+                  ? t('footerComparing')
                   : screen === 'idle'
-                    ? 'Ready to scan'
-                    : 'Scan another product'}
+                    ? t('footerReady')
+                    : t('footerAnother')}
           </strong>
           <span>
             {kiosk.remaining > 0
-              ? `Returning to scan screen in ${kiosk.remaining} seconds`
-              : 'Hold the barcode under the scanner'}
+              ? t('footerCountdown', { n: kiosk.remaining })
+              : t('footerScanHold')}
           </span>
         </div>
         {settings?.manualEntry &&
@@ -295,7 +360,7 @@ export default function PriceCheckerKiosk({ slug }: { slug: string }) {
                 setMessage('');
               }}
             >
-              Enter barcode
+              {t('manualEntry')}
             </button>
           )}
       </footer>
@@ -315,9 +380,7 @@ export default function PriceCheckerKiosk({ slug }: { slug: string }) {
               event.preventDefault();
               const value = validBarcode(code);
               if (!value) {
-                setBarcodeError(
-                  'Enter a barcode of 5 to 128 printable characters.'
-                );
+                setBarcodeError(t('manualError'));
                 return;
               }
               closeManual();
@@ -326,7 +389,7 @@ export default function PriceCheckerKiosk({ slug }: { slug: string }) {
               void kiosk.scan(value);
             }}
           >
-            <label htmlFor="manual-barcode">Product barcode</label>
+            <label htmlFor="manual-barcode">{t('manualLabel')}</label>
             <input
               id="manual-barcode"
               value={code}
@@ -343,10 +406,10 @@ export default function PriceCheckerKiosk({ slug }: { slug: string }) {
               autoFocus
             />
             <button className="kiosk-primary" type="submit">
-              Check price
+              {t('checkPrice')}
             </button>
             <button className="kiosk-quiet" type="button" onClick={closeManual}>
-              Close
+              {t('close')}
             </button>
             {barcodeError && (
               <p

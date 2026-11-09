@@ -97,6 +97,7 @@ const en = {
   downTitle: 'Price checker unavailable',
   downBody: 'Please open this link again from the price checker screen.',
   checking: 'Checking price…',
+  checkPrice: 'Check price',
   dedupeNotice: 'Already on your list — moved to the top ✓',
   sentToStore: 'Sent to the store screen ✓',
   bestSoFar: 'Best so far',
@@ -116,6 +117,15 @@ const en = {
   langEnglish: 'English',
   langHausa: 'Hausa',
   langPidgin: 'Pidgin',
+  headlineBoth: 'Both bottles share {lead}. Main difference: {difference}.',
+  headlineAll: 'All {n} bottles share {lead}. Main difference: {difference}.',
+  headlineLeadOnly: 'Main difference: {difference}.',
+  diffPrice: 'price ({value})',
+  diffSize: 'size ({values})',
+  diffBrand: 'brand ({values})',
+  diffBelow: 'the details shown below',
+  sharedAll: 'All: {value}',
+  allBottlesAria: 'All bottles: {value}',
 };
 
 const ha: typeof en = {
@@ -151,7 +161,7 @@ const ha: typeof en = {
   ageTitle: 'Kana da shekaru 18 ko sama?',
   ageBody: 'Tabbatar da shekararka don ganin wannan abin sha mai kamar giya.',
   ageYes: 'Ina da shekaru 18 ko sama',
-  ageSkip: 'Kana iya shellar k\'yaayyaki.',
+  ageSkip: 'Kana iya saka wasu kayayyaki.',
   resultAria: 'Farashin kayayyaki',
   inStock: 'Yana nan',
   lowStock: 'Kaɗan ya rage',
@@ -207,6 +217,7 @@ const ha: typeof en = {
   downTitle: 'Mai duba farashi ba ya nan',
   downBody: 'Don Allah buɗe wannan hanyar sake daga allon duba farashi.',
   checking: 'Ana duba farashi…',
+  checkPrice: 'Duba farashi',
   dedupeNotice: 'A riga an saka a jerinka — an kai zuwa sama ✓',
   sentToStore: 'An tura zuwa allo ✓',
   bestSoFar: 'Mafi kyau har yanzu',
@@ -226,6 +237,15 @@ const ha: typeof en = {
   langEnglish: 'Turanci',
   langHausa: 'Hausa',
   langPidgin: 'Pidgin',
+  headlineBoth: 'Gilashin biyu suna da {lead}. Babban bambanci: {difference}.',
+  headlineAll: 'Dukan gilashin {n} suna da {lead}. Babban bambanci: {difference}.',
+  headlineLeadOnly: 'Babban bambanci: {difference}.',
+  diffPrice: 'farashi ({value})',
+  diffSize: 'girmi ({values})',
+  diffBrand: 'alama ({values})',
+  diffBelow: 'cikakkun bayanai a ƙasa',
+  sharedAll: 'Duka: {value}',
+  allBottlesAria: 'Duka gilashi: {value}',
 };
 
 const pig: typeof en = {
@@ -317,6 +337,7 @@ const pig: typeof en = {
   downTitle: 'Price checker no dey',
   downBody: 'Abeg open dis link again from di price checker screen.',
   checking: 'We dey check price…',
+  checkPrice: 'Check price',
   dedupeNotice: 'E dey your list before — e don come up ✓',
   sentToStore: 'E don land for di store screen ✓',
   bestSoFar: 'Best so far',
@@ -336,6 +357,15 @@ const pig: typeof en = {
   langEnglish: 'English',
   langHausa: 'Hausa',
   langPidgin: 'Pidgin',
+  headlineBoth: 'Di two bottles get {lead}. Main difference: {difference}.',
+  headlineAll: 'Di {n} bottles get {lead}. Main difference: {difference}.',
+  headlineLeadOnly: 'Main difference: {difference}.',
+  diffPrice: 'price ({value})',
+  diffSize: 'size ({values})',
+  diffBrand: 'name brand ({values})',
+  diffBelow: 'di details wey dey below',
+  sharedAll: 'All: {value}',
+  allBottlesAria: 'All bottles: {value}',
 };
 
 const dictionaries: Record<Language, typeof en> = { en, ha, pig };
@@ -346,11 +376,14 @@ export function keysOf(lang: Language): string[] {
 
 export function t(
   lang: Language,
-  key: keyof typeof en,
+  key: string,
   vars?: Record<string, string | number>
 ): string {
   const tables = dictionaries[lang] ?? dictionaries.en;
-  const text = tables[key] ?? dictionaries.en[key] ?? String(key);
+  const text =
+    (tables as Record<string, string>)[key] ??
+    (dictionaries.en as unknown as Record<string, string>)[key] ??
+    key;
   if (!vars) return text;
   let out = text;
   for (const [name, value] of Object.entries(vars)) {
@@ -367,5 +400,9 @@ export function LanguageProvider({ lang, children }: { lang: Language; children:
 
 export function useCopy() {
   const lang = useContext(LanguageContext);
-  return { lang, t: (key: keyof typeof en, vars?: Record<string, string | number>) => t(lang, key, vars) };
+  return {
+    lang,
+    t: (key: string, vars?: Record<string, string | number>) =>
+      t(lang, key, vars),
+  };
 }

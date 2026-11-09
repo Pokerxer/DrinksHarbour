@@ -467,3 +467,14 @@
 .kiosk-session strong {
   color: var(--kiosk-accent);
 }
+
+/* ── round 6 — language switcher ─────────────────────────────────────────── */
+.kiosk-lang {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.08em;
+  min-height: 48px;
+  font-size: 14px;
+}
+.kiosk-session .kiosk-quiet {
+  font-size: 0.8em;
+}

@@ -5,6 +5,7 @@ import { formatMoney } from './money';
 import { bestValueRank, pricePerDrink, pricePerMl } from './metrics';
 import { decisionHeadline, rowsFor, type CompareRow } from './compare-rows';
 import { compareKey } from './use-compare';
+import { useCopy } from './copy';
 
 interface CardProps {
   product: KioskProduct;
@@ -25,6 +26,7 @@ function CompareCard({
   onRemove,
   currency,
 }: CardProps) {
+  const { t } = useCopy();
   const money = (value: number) => formatMoney(value, currency);
   const key = compareKey(product);
   return (
@@ -39,7 +41,7 @@ function CompareCard({
     >
       <button
         className="kiosk-compare-drop"
-        aria-label={`Remove ${product.name}`}
+        aria-label={t('removeNamed', { name: product.name })}
         onClick={(event) => {
           event.stopPropagation();
           onRemove(key);
@@ -59,10 +61,12 @@ function CompareCard({
       )}
       <p className="kiosk-eyebrow">{product.brand || ' '}</p>
       <p className="kiosk-compare-name">{product.name}</p>
-      {rank === 0 && <p className="kiosk-compare-best">Best value</p>}
+      {rank === 0 && <p className="kiosk-compare-best">{t('bestValue')}</p>}
       <p className="kiosk-price">{money(product.price)}</p>
       {product.originalPrice !== undefined && (
-        <p className="kiosk-small">Save {money(product.savings ?? 0)}</p>
+        <p className="kiosk-small">
+          {t('save', { value: money(product.savings ?? 0) })}
+        </p>
       )}
     </div>
   );
@@ -79,9 +83,10 @@ export function CompareScreen({
   onRemove: (key: string) => void;
   onClose: () => void;
 }) {
+  const { t, lang } = useCopy();
   const ranks = bestValueRank(items);
-  const rows = rowsFor(items);
-  const headline = decisionHeadline(items, currency);
+  const rows = rowsFor(items, lang);
+  const headline = decisionHeadline(items, currency, lang);
   const [focusKey, setFocusKey] = useState<string | null>(null);
   const toggleFocus = (key: string) =>
     setFocusKey((current) => (current === key ? null : key));
@@ -93,7 +98,7 @@ export function CompareScreen({
   const perMl = items.map((product) => pricePerMl(product.price, product.volumeMl));
   if (perMl.some(Boolean))
     computed.push({
-      label: 'Price per ml',
+      label: t('pricePerMl'),
       values: perMl.map((value) =>
         value === null ? undefined : `${symbol}${value.toFixed(2)}/ml`
       ),
@@ -104,7 +109,7 @@ export function CompareScreen({
   );
   if (perDrink.every(Boolean))
     computed.push({
-      label: 'Cost per drink',
+      label: t('costPerDrink'),
       values: perDrink.map((value) =>
         value === null ? undefined : `${symbol}${value.toFixed(2)}/drink`
       ),
@@ -116,9 +121,9 @@ export function CompareScreen({
     if (row.shared) {
       const value = row.values[0];
       return (
-        <tr key={row.label} aria-label={`All bottles: ${value}`}>
+        <tr key={row.label} aria-label={t('allBottlesAria', { value: value ?? '' })}>
           <th scope="row">{row.label}</th>
-          <td colSpan={items.length}>All: {value}</td>
+          <td colSpan={items.length}>{t('sharedAll', { value: value ?? '' })}</td>
         </tr>
       );
     }
@@ -133,11 +138,11 @@ export function CompareScreen({
   };
 
   return (
-    <section className="kiosk-compare" aria-label="Bottle comparison">
+    <section className="kiosk-compare" aria-label={t('compareEyebrow')}>
       <div className="kiosk-compare-head">
         <div>
-          <span className="kiosk-eyebrow">Compare bottles</span>
-          <p>Pick the bottle that suits you best.</p>
+          <span className="kiosk-eyebrow">{t('compareEyebrow')}</span>
+          <p>{t('comparePrompt')}</p>
         </div>
         <button
           className="kiosk-quiet"
@@ -146,11 +151,11 @@ export function CompareScreen({
             onClose();
           }}
         >
-          Close
+          {t('close')}
         </button>
       </div>
-      <div className="kiosk-compare-grid" role="list" aria-label="Compared bottles">
-        {items.map((product, index) => (
+      <div className="kiosk-compare-grid" role="list" aria-label={t('trayAria')}>
+      {items.map((product, index) => (
           <CompareCard
             key={compareKey(product)}
             product={product}

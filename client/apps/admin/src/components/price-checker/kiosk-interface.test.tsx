@@ -167,7 +167,7 @@ it('keeps the tray across a reset and opens the comparison screen', () => {
   fireEvent.click(compare);
   state.screen = 'compare';
   view.rerender(<PriceCheckerKiosk slug="counter" />);
-  expect(screen.getByRole('region', { name: 'Bottle comparison' })).toBeTruthy();
+  expect(screen.getByRole('region', { name: 'Compare bottles' })).toBeTruthy();
   expect(screen.getByText('Best value')).toBeTruthy();
 });
 

@@ -1,34 +1,36 @@
 import type { KioskProduct } from './types';
 import { formatMoney } from './money';
 import { typeLabel } from './metrics';
+import { t, type Language } from './copy';
 
 const STOCK: Record<string, string> = {
-  IN_STOCK: 'In stock',
-  LOW_STOCK: 'Low stock',
-  OUT_OF_STOCK: 'Out of stock',
+  IN_STOCK: 'inStock',
+  LOW_STOCK: 'lowStock',
+  OUT_OF_STOCK: 'outOfStock',
 };
 
 interface RowDef {
-  label: string;
-  value: (product: KioskProduct) => string | undefined;
+  labelKey: Parameters<typeof t>[1];
+  value: (product: KioskProduct, lang: Language) => string | undefined;
 }
 
 const defs: RowDef[] = [
-  { label: 'Brand', value: (product) => product.brand },
-  { label: 'Size', value: (product) => product.size || product.volume },
-  { label: 'Type', value: (product) => typeLabel(product.beverageType) },
+  { labelKey: 'brand', value: (product) => product.brand },
+  { labelKey: 'size', value: (product) => product.size || product.volume },
+  { labelKey: 'type', value: (product) => typeLabel(product.beverageType) },
   {
-    label: 'ABV',
+    labelKey: 'abv',
     value: (product) => (product.abv !== undefined ? `${product.abv}%` : undefined),
   },
-  { label: 'Origin', value: (product) => product.origin },
+  { labelKey: 'origin', value: (product) => product.origin },
   {
-    label: 'Category',
+    labelKey: 'category',
     value: (product) => (product.alcoholic ? 'Alcoholic' : 'Non-alcoholic'),
   },
   {
-    label: 'Stock',
-    value: (product) => (product.availability ? STOCK[product.availability] : undefined),
+    labelKey: 'stock',
+    value: (product, lang) =>
+      product.availability ? t(lang, STOCK[product.availability] as never) : undefined,
   },
 ];
 
@@ -39,13 +41,13 @@ export interface CompareRow {
   shared: boolean;
 }
 
-export function rowsFor(items: KioskProduct[]): CompareRow[] {
+export function rowsFor(items: KioskProduct[], lang: Language = 'en'): CompareRow[] {
   return defs
     .map((def) => {
-      const values = items.map((product) => def.value(product));
+      const values = items.map((product) => def.value(product, lang));
       const defined = values.filter((value) => value !== undefined);
       return {
-        label: def.label,
+        label: t(lang, def.labelKey) as string,
         values,
         shared:
           defined.length === items.length && new Set(defined).size === 1,
@@ -62,15 +64,15 @@ export function rowsFor(items: KioskProduct[]): CompareRow[] {
  */
 export function decisionHeadline(
   items: KioskProduct[],
-  currency: string
+  currency: string,
+  lang: Language = 'en'
 ): string | null {
   if (items.length < 2) return null;
-  const rows = rowsFor(items);
+  const rows = rowsFor(items, lang);
   const sharedRows = rows.filter((row) => row.shared);
   const prices = items.map((product) => product.price);
   if (sharedRows.length === rows.length && new Set(prices).size === 1)
     return null;
-  const who = items.length === 2 ? 'Both bottles' : `All ${items.length} bottles`;
   const lead = sharedRows
     .map((row) => row.values[0])
     .slice(0, 3)
@@ -78,22 +80,25 @@ export function decisionHeadline(
   let difference: string;
   if (new Set(prices).size > 1) {
     const spread = Math.max(...prices) - Math.min(...prices);
-    difference = `price (${formatMoney(spread, currency)})`;
+    difference = t(lang, 'diffPrice', { value: formatMoney(spread, currency) });
   } else {
     const sizing = items.map((product) => product.size || product.volume);
     difference =
       new Set(sizing.filter(Boolean)).size > 1
-        ? `size (${sizing.filter(Boolean).join(' vs ')})`
+        ? t(lang, 'diffSize', { values: sizing.filter(Boolean).join(' vs ') })
         : new Set(items.map((product) => product.brand)).size > 1
-          ? `brand (${items
-              .map((product) => product.brand)
-              .filter(Boolean)
-              .join(' vs ')})`
-          : 'the details shown below';
+          ? t(lang, 'diffBrand', {
+              values: items.map((product) => product.brand).filter(Boolean).join(' vs '),
+            })
+          : t(lang, 'diffBelow');
   }
   const sentence =
     lead.length > 0
-      ? `${who} share ${lead}. Main difference: ${difference}.`
-      : `Main difference: ${difference}.`;
+      ? t(
+          lang,
+          items.length === 2 ? 'headlineBoth' : 'headlineAll',
+          { lead, difference, n: items.length }
+        )
+      : t(lang, 'headlineLeadOnly', { difference });
   return sentence;
 }

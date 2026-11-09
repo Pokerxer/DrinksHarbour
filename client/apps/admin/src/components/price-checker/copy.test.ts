@@ -17,7 +17,7 @@ describe('copy dictionary', () => {
     expect(t('pig', 'footerCountdown', { n: 7 })).toContain('7');
   });
   it('falls back to english for a missing key', () => {
-    expect(t('ha', 'definitelyMissing' as keyof never)).toBe('definitelyMissing');
+    expect(t('ha', 'definitelyMissing')).toBe('definitelyMissing');
   });
   it('keeps unknown variables literal-empty rather than crashing', () => {
     expect(t('en', 'footerCountdown', {})).not.toContain('undefined');
