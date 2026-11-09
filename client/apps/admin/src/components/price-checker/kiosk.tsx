@@ -5,6 +5,7 @@ import { useCompare, compareKey } from './use-compare';
 import { usePhonePairing } from './use-phone-pairing';
 import { useOfflineBook } from './use-offline';
 import { compareSummary, type CompareSummary } from './session-summary';
+import { useStaleSession, COMPARE_MS, IDLE_MS } from './use-idle-timer';
 import { formatMoney } from './money';
 import { LANGUAGES, LanguageProvider, useCopy, type Language } from './copy';
 import { PhonePair } from './phone-pair';
@@ -109,6 +110,21 @@ function KioskScreen({
   useEffect(() => {
     if (screen !== 'idle' && screen !== 'compare') setSummary(null);
   }, [screen, compare.items.length]);
+  // Customer-walked-away guard: wipe tray + recap after inactivity so the
+  // next customer never sees the last one's prices. Idle-stale keeps the
+  // offline scan queue (server telemetry, not customer data).
+  const holdContent =
+    Boolean(config) &&
+    (screen !== 'idle' || compare.items.length > 0 || summary !== null);
+  useStaleSession(
+    holdContent ? `${screen}:${compare.items.length}:${summary ? 1 : 0}` : '',
+    () => {
+      compare.clear();
+      setSummary(null);
+      kiosk.reset();
+    },
+    { timeoutMs: screen === 'compare' ? COMPARE_MS : IDLE_MS, enabled: holdContent }
+  );
   // Phone pairing: the QR session id doubles as the socket room name.
   const pairEnabled = Boolean(
     config?.settings.enablePhoneScan &&

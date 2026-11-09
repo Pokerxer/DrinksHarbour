@@ -270,3 +270,25 @@ it('shows a session summary on the welcome screen after a comparison closes', ()
   expect(String(recap.textContent)).toContain('Stout one');
   expect(String(recap.textContent)).toContain('₦58,000');
 });
+
+it('wipes the customer session after five idle minutes', () => {
+  vi.useFakeTimers();
+  state.screen = 'result';
+  state.product = {
+    name: 'Idle bottle',
+    price: 12000,
+    currency: 'NGN',
+    alcoholic: false,
+    taxLabel: '',
+    barcode: '490187000013',
+  };
+  const view = render(<PriceCheckerKiosk slug="counter" />);
+  fireEvent.click(screen.getByRole('button', { name: 'Add to compare' }));
+  state.screen = 'idle';
+  state.product = null;
+  view.rerender(<PriceCheckerKiosk slug="counter" />);
+  expect(screen.getAllByRole('region', { name: 'Bottles to compare' })).toBeTruthy();
+  vi.advanceTimersByTime(5 * 60_000 + 200);
+  view.rerender(<PriceCheckerKiosk slug="counter" />);
+  expect(screen.queryByRole('region', { name: 'Bottles to compare' })).toBeNull();
+});
