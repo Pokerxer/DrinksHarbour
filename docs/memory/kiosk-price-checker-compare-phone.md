@@ -190,3 +190,30 @@ tsc clean.
 - Tests: wedge cases in `scanner.test.ts`; `mergeScan` + undo + collapse in
   `phone-results.test.tsx`; sheet in `phone-detail.test.tsx`. Suites:
   43 server / 129 client / tsc clean.
+
+## Round 6 — language system, idle-stale, night mode, share (2026-11-09, spec `2026-11-09-round6-design.md`)
+
+- **Language** (`copy.tsx`): `Language` = `en | ha | pig`; ~90-key dictionary in
+  all three voices (owner should proofread the Hausa/Pidgin lines — they are
+  my translations of the fixed strings); `t(lang, key, vars)` interpolates
+  `{name}`-style vars and falls back to English keys.
+  `LanguageProvider`/`useCopy()` wraps both surfaces. Kiosk wiring lives in a
+  wrapper/`KioskScreen` split (`kiosk.tsx`) so the provider wraps all strings;
+  the header pill `EN/HA/PIG` cycles + persists per customer
+  (`price-checker-lang-<slug>`, cleared by the stale reset since it's
+  sessionStorage). Phone reads `settings.language` from the /session config.
+- **Server**: `PriceCheckerKiosk.settings.language` (enum en/ha/pig, default
+  'en') — both server `defaults` and the schema field must be updated
+  together (the displayDefaults boolean loop no longer catches new strings;
+  language lives in `defaults` NOT `displayDefaults`).
+- **Idle-stale** (`use-idle-timer.ts useStaleSession(activityKey, onStale)`):
+  5 min idle (2 min in compare view) wipes tray + recap via
+  `compare.clear()` + `setSummary(null)` + `kiosk.reset()`; armed only while
+  content exists; offline scan queue deliberately untouched.
+- **Night mode** (`phone-scanner.tsx enableNightMode`): after 15s of camera
+  time with zero decodes a "Dim store?" chip appears; one tap = torch on +
+  a best-effort `exposureCompensation: 2` constraint (failures silent).
+- **Share** (`share.ts shareMessage/buildShareLinks`): the recap gains
+  WhatsApp / SMS / Copy buttons (`wa.me/?text=` + `sms:?&body=` encoded;
+  clipboard with silent failure). Language-aware message.
+- Suites: 44 server / 140 client / tsc clean.
