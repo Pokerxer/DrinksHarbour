@@ -49,10 +49,12 @@ export function mergeScan(results: Checked[], entry: Checked): {
 export function PhoneResults({
   results,
   onUndo,
+  onSelect,
   now = Date.now,
 }: {
   results: Checked[];
   onUndo?: (barcode: string) => void;
+  onSelect?: (entry: Checked) => void;
   now?: () => number;
 }) {
   const hits = results
@@ -108,37 +110,64 @@ export function PhoneResults({
                 className={`phone-hit${displayIndex === 0 ? ' phone-land' : ''}`}
                 key={`${barcode}-${at ?? ''}`}
               >
-                {result.product.image && (
-                  <img src={result.product.image} alt="" referrerPolicy="no-referrer" />
-                )}
-                <div>
-                  <p className="phone-name">{result.product.name}</p>
-                  <p className="phone-price">
-                    {formatMoney(result.product.price, result.product.currency)}
-                    {result.product.price === cheapest && (
-                      <span className="phone-badge">Best so far</span>
-                    )}
-                  </p>
-                  <p className="phone-toned">
-                    {[
-                      result.product.abv !== undefined ? `${result.product.abv}% ABV` : '',
-                      result.product.size || '',
-                    ]
-                      .filter(Boolean)
-                      .join(' · ')}
-                  </p>
-                  {result.product.availability && (
-                    <span
-                      className={`phone-stock ${String(result.product.availability).toLowerCase()}`}
-                    >
-                      {STOCK[result.product.availability] ?? 'Stock unknown'}
-                    </span>
+                <div
+                  className="phone-hit-button"
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`View details for ${result.product.name}`}
+                  onClick={() =>
+                    onSelect?.(
+                      results.find((row) => row.barcode === barcode) ??
+                        ({ barcode, result, at } as Checked)
+                    )
+                  }
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      onSelect?.(
+                        results.find((row) => row.barcode === barcode) ??
+                          ({ barcode, result, at } as Checked)
+                      );
+                    }
+                  }}
+                >
+                  {result.product.image && (
+                    <img src={result.product.image} alt="" referrerPolicy="no-referrer" />
                   )}
-                  <p className="phone-toned phone-sent">Sent to the store screen ✓</p>
+                  <div>
+                    <p className="phone-name">{result.product.name}</p>
+                    <p className="phone-price">
+                      {formatMoney(result.product.price, result.product.currency)}
+                      {result.product.price === cheapest && (
+                        <span className="phone-badge">Best so far</span>
+                      )}
+                    </p>
+                    <p className="phone-toned">
+                      {[
+                        result.product.abv !== undefined ? `${result.product.abv}% ABV` : '',
+                        result.product.size || '',
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </p>
+                    {result.product.availability && (
+                      <span
+                        className={`phone-stock ${String(result.product.availability).toLowerCase()}`}
+                      >
+                        {STOCK[result.product.availability] ?? 'Stock unknown'}
+                      </span>
+                    )}
+                    <p className="phone-toned phone-sent">Sent to the store screen ✓</p>
+                    <span className="phone-details-hint">Tap for details</span>
+                  </div>
                   {onUndo && displayIndex === 0 && undoVisible && at !== undefined && (
                     <button
+                      type="button"
                       className="phone-undo"
-                      onClick={() => onUndo(barcode)}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onUndo(barcode);
+                      }}
                     >
                       Undo {result.product.name} scan
                     </button>

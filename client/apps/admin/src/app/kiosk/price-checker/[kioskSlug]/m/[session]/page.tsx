@@ -7,6 +7,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { PhoneScanner } from '@/components/price-checker/phone-scanner';
 import { PhoneResults, mergeScan, type Checked } from '@/components/price-checker/phone-results';
+import { PhoneDetail } from '@/components/price-checker/phone-detail';
+import type { KioskProduct } from '@/components/price-checker/types';
 import { openSession, postPhoneScan } from './phone-api';
 import '../../kiosk-phone.css';
 
@@ -41,6 +43,8 @@ export default function PhonePriceCheckerPage({
   const [checked, setChecked] = useState<Checked[]>(() => readStored(''));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [selected, setSelected] = useState<KioskProduct | null>(null);
   const sessionData = useRef({ slug: '', session: '' });
   const slugState = useRef('');
   useEffect(() => {
@@ -76,15 +80,16 @@ export default function PhonePriceCheckerPage({
     setError('');
     try {
       const result = await postPhoneScan(slug, code, session);
-      setChecked((list) =>
-        mergeScan(list, { barcode: code, at: Date.now(), result }).results.slice(0, 12)
-      );
+      const outcome = mergeScan(checked, { barcode: code, at: Date.now(), result });
+      setChecked(outcome.results.slice(0, 12));
+      if (outcome.deduped)
+        setNotice('Already on your list — moved to the top ✓');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Check failed');
     } finally {
       setBusy(false);
     }
-  }, []);
+  }, [checked]);
   useEffect(() => {
     const slug = slugState.current;
     if (!slug) return;
@@ -130,16 +135,33 @@ export default function PhonePriceCheckerPage({
             {error}
           </p>
         )}
+        {notice && (
+          <p role="status" className="phone-notice">
+            {notice}
+          </p>
+        )}
         <PhoneResults
           results={checked}
           onUndo={(barcode) =>
             setChecked((list) => list.filter((entry) => entry.barcode !== barcode))
           }
+          onSelect={(entry) => {
+            setSelected(
+              entry.result.found && entry.result.product ? entry.result.product : null
+            );
+          }}
         />
         {!checked.length && phase === 'live' && (
           <p className="phone-toned">Scans appear here as you check bottles.</p>
         )}
       </div>
+      {selected && (
+        <PhoneDetail
+          product={selected}
+          currency={selected.currency}
+          onClose={() => setSelected(null)}
+        />
+      )}
     </main>
   );
 }
