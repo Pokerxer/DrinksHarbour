@@ -182,7 +182,10 @@ export function useKiosk(slug: string, offline?: OfflineSupport) {
     return () => clearInterval(timer);
   }, [screen, product, config, reset]);
   useEffect(() => {
-    const scanner = createScanner();
+    const scanner = createScanner({
+      idleDecodeMs: 120,
+      onIdleDecode: (code) => void scan(code),
+    });
     const onKey = (event: KeyboardEvent) => {
       if (event.ctrlKey || event.metaKey || event.altKey || event.isComposing)
         return;

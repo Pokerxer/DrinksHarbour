@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   createScanner,
   validBarcode,
@@ -74,4 +74,64 @@ it('origin validation uses the requested host when Next normalizes its internal 
   expect(
     sameOrigin('https://foreign.invalid', 'http://localhost:3107/api/x', '127.0.0.1:3107')
   ).toBe(false);
+});
+
+describe('wedge tuning', () => {
+  it('accepts Tab and numpad-style Enter terminators', () => {
+    const scanner = createScanner();
+    for (const key of '00123') scanner.feed(key, 100);
+    expect(scanner.feed('Tab', 110)).toBe('00123');
+    for (const key of '00456') scanner.feed(key, 120);
+    expect(scanner.feed('Enter', 130)).toBe('00456');
+  });
+  it('decodes a prefix-free burst ~120ms after the last keystroke', () => {
+    vi.useFakeTimers();
+    try {
+      const seen: string[] = [];
+      const scanner = createScanner({ idleDecodeMs: 120, onIdleDecode: (code) => seen.push(code) });
+      for (const key of '00123456') scanner.feed(key, 0);
+      expect(seen).toEqual([]); // still typing
+      vi.advanceTimersByTime(120);
+      expect(seen).toEqual(['00123456']);
+      // buffer cleared; nothing re-decodes mid-silence
+      vi.advanceTimersByTime(120);
+      expect(seen).toEqual(['00123456']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it('discards junk quietly on idle decode and strips AIM symbology prefixes', () => {
+    vi.useFakeTimers();
+    try {
+      const seen: string[] = [];
+      const scanner = createScanner({ idleDecodeMs: 120, onIdleDecode: (code) => seen.push(code) });
+      // AIM prefix: ]C1 (Code 128 identifier)
+      for (const key of ']C100123456') scanner.feed(key, 0);
+      vi.advanceTimersByTime(120);
+      expect(seen).toEqual(['00123456']);
+      // too-short junk after silence → nothing, no leak into later bursts
+      for (const key of 'ab') scanner.feed(key, 400);
+      vi.advanceTimersByTime(160);
+      expect(seen).toEqual(['00123456']);
+      // terminated scans strip AIM prefixes too
+      for (const key of ']E00010456') scanner.feed(key, 500);
+      expect(scanner.feed('Tab', 510)).toBe('0010456');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it('keeps real typing safe — idle decode never swallows slow human input', () => {
+    vi.useFakeTimers();
+    try {
+      const seen: string[] = [];
+      const scanner = createScanner({ idleDecodeMs: 120, onIdleDecode: (code) => seen.push(code) });
+      // a person typing "hello world" is short fragments — never ≥5 valid chars,
+      // so junk discards and nothing enters the field twice
+      for (const key of 'hello') scanner.feed(key, 0);
+      vi.advanceTimersByTime(120);
+      expect(seen).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
