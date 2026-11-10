@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { KioskProduct } from './types';
-import { MAX_COMPARE_ITEMS, addCompareItem, compareKey, removeCompareItem } from './use-compare';
+import {
+  MAX_COMPARE_ITEMS,
+  addCompareItem,
+  compareKey,
+  removeCompareItem,
+  replaceByKey,
+  replaceOldest,
+} from './use-compare';
 
 const bottle = (barcode: string, price = 10): KioskProduct => ({
   name: `Bottle ${barcode}`,
@@ -31,5 +38,24 @@ describe('compare tray helpers', () => {
   it('removes by compare key', () => {
     expect(removeCompareItem([item], '416000123456')).toEqual([]);
     expect(removeCompareItem([item], 'other')).toEqual([item]);
+  });
+});
+
+import { replaceByKey, replaceOldest } from './use-compare';
+
+describe('swap helpers', () => {
+  it('replaceOldest drops the first-held bottle and keeps the rest in order', () => {
+    const held = [bottle('1'), bottle('2'), bottle('3')];
+    const out = replaceOldest(held, bottle('5', 15));
+    expect(out.map((row) => row.barcode)).toEqual(['2', '3', '5']);
+  });
+  it('replaceByKey swaps in place, preserving order', () => {
+    const held = [bottle('1'), bottle('2'), bottle('3')];
+    const out = replaceByKey(held, bottle('9', 19), '2');
+    expect(out.map((row) => row.barcode)).toEqual(['1', '9', '3']);
+  });
+  it('replaceByKey leaves the tray untouched when the key is unknown', () => {
+    const held = [bottle('1'), bottle('2')];
+    expect(replaceByKey(held, bottle('2', 12), 'nope')).toEqual(held);
   });
 });
