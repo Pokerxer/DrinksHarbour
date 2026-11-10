@@ -2,6 +2,10 @@
 
 const brandService = require('../services/brand.service');
 const asyncHandler = require('../utils/asyncHandler');
+// withDbRetry: the crawler-hot public reads must survive the transient Atlas
+// blip (`MongoNetworkError: tlsv1 alert internal error`) the way the ERM
+// controllers already do — one short retry, then the global handler's 503.
+const { withDbRetry } = require('../utils/db-retry');
 const { successResponse } = require('../utils/response');
 const { NotFoundError } = require('../utils/errors');
 const Brand = require('../models/Brand');
@@ -172,7 +176,7 @@ exports.getBrandById = asyncHandler(async (req, res) => {
  * @access  Public
  */
 exports.getBrandBySlug = asyncHandler(async (req, res) => {
-  const brand = await brandService.getBrandBySlug(req.params.slug);
+  const brand = await withDbRetry(() => brandService.getBrandBySlug(req.params.slug));
   successResponse(res, { brand }, 'Brand retrieved successfully');
 });
 

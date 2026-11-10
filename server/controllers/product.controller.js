@@ -2,6 +2,9 @@
 
 const asyncHandler = require('../utils/asyncHandler');
 const productService = require('../services/product.service');
+// withDbRetry: crawler-hot public reads survive one transient connection blip —
+// same rescue the ERM controllers already use (see brand.controller.js).
+const { withDbRetry } = require('../utils/db-retry');
 const Product = require('../models/Product');
 const { ForbiddenError, ValidationError } = require('../utils/errors');
 const cartService = require('../services/cart.service');
@@ -648,7 +651,7 @@ const searchProducts = asyncHandler(async (req, res) => {
 
   if (req.query.matchMode === 'smart') {
     const { searchCatalogueProducts } = require('../services/catalogue-search.service');
-    const result = await searchCatalogueProducts({ query, type: req.query.type, limit: req.query.limit });
+    const result = await withDbRetry(() => searchCatalogueProducts({ query, type: req.query.type, limit: req.query.limit }));
     return res.status(200).json({ success: true, data: result });
   }
 
@@ -726,7 +729,7 @@ const searchProducts = asyncHandler(async (req, res) => {
     minRating: req.query.minRating ? parseFloat(req.query.minRating) : undefined,
   };
 
-  const result = await productService.searchProducts(searchParams);
+  const result = await withDbRetry(() => productService.searchProducts(searchParams));
 
   res.status(200).json({
     success: true,
@@ -1378,7 +1381,7 @@ const searchProductsPublic = asyncHandler(async (req, res) => {
     catalogChannel: 'retail',
   };
 
-  const result = await productService.searchProducts(searchParams);
+  const result = await withDbRetry(() => productService.searchProducts(searchParams));
 
   res.status(200).json({
     success: true,
@@ -1585,7 +1588,9 @@ const getProductBySlug = asyncHandler(async (req, res) => {
     ? catalogKind.DETAIL_SURFACES.TENANT_SITE
     : catalogKind.DETAIL_SURFACES.MARKETPLACE;
 
-  const product = await productService.getProductBySlug(slug, { shoppingLocation: req.shoppingLocation, tenantId: req.tenant?._id, surface });
+  const product = await withDbRetry(() =>
+    productService.getProductBySlug(slug, { shoppingLocation: req.shoppingLocation, tenantId: req.tenant?._id, surface })
+  );
 
   res.status(200).json({
     success: true,

@@ -2,6 +2,12 @@
 require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
+const { transientDbFailure, DB_UNAVAILABLE_RETRY_AFTER, DB_UNAVAILABLE_MESSAGE, DB_UNAVAILABLE_STATUS } = require('./utils/dbErrorHttp');
+const dbUnavailable = {
+  RETRY_AFTER: DB_UNAVAILABLE_RETRY_AFTER,
+  MESSAGE: DB_UNAVAILABLE_MESSAGE,
+  STATUS: DB_UNAVAILABLE_STATUS,
+};
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const morgan = require('morgan');
@@ -202,8 +208,8 @@ app.use('/api', async (req, res, next) => {
     // what distinguishes an Atlas outage from an IP-allowlist rejection or a
     // bad URI, and losing them would trade one opaque failure for another.
     console.error(`❌ DB unavailable for ${req.method} ${req.originalUrl}:`, err);
-    res.set('Retry-After', '5');
-    next(new AppError('Database temporarily unavailable. Please retry.', 503, true));
+    res.set('Retry-After', dbUnavailable.RETRY_AFTER);
+    next(new AppError(dbUnavailable.MESSAGE, dbUnavailable.STATUS, true));
   }
 });
 
@@ -420,6 +426,25 @@ app.use((err, req, res, next) => {
   }
 
   const statusCode = err.statusCode || err.status || 500;
+
+  // A transient MongoDB connectivity failure that got past the /api connectDB
+  // gate — the socket was healthy when the request entered, then lost its
+  // handshake mid-request (e.g. `MongoNetworkError: tlsv1 alert internal
+  // error` when Atlas refuses new TLS at its connection ceiling) — must get
+  // the SAME caller semantics as a failed dial: 503 + `Retry-After`, not the
+  // opaque 500 this handler defaults to. Answering one shape avoids telling
+  // callers and CDNs that a retryable blip is a permanent fault, which is
+  // exactly what made the 2026-11-10 crawler burst look like broken brand
+  // pages. `withDbRetry` rescues the request outright where it is wired; this
+  // mapping is the remaining net for everything else. See utils/dbErrorHttp.js.
+  const transientDb = transientDbFailure(err, statusCode);
+  if (transientDb) {
+    res.set('Retry-After', transientDb.retryAfter);
+    return res.status(transientDb.status).json({
+      success: false,
+      message: transientDb.message,
+    });
+  }
 
   // Diagnostics go in the RESPONSE only when NODE_ENV is explicitly
   // 'development'. This deliberately fails CLOSED. The previous test was
