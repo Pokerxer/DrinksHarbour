@@ -228,3 +228,32 @@ re-introduce `language` into `PriceCheckerKiosk.settings` — `displayDefaults`
 booleans auto-flow into the Mongoose schema, so a string setting there
 silently becomes a boolean and validation fails (this exact trap bit during
 the round-6 build).
+
+## Round 7 — comparison depth (2026-11-10, spec `2026-11-10-compare-depth-design.md`)
+
+Client-only. Full tray never dead-ends and the compare table carries only
+decisions:
+
+- **Swap-when-full** (`use-compare.ts`): pure `replaceOldest(items, product)`
+  and `replaceByKey(items, product, key)`; the hook gained
+  `oldest: first item`, `swapKey`, `armSwap/disarmSwap` — while armed, `add`
+  (kiosk OR paired-phone path) replaces that slot in place instead of
+  adding, then disarms. Result screen button becomes
+  **"Replace oldest — {name}"** when full. Tray thumbs carry a **⇄** button;
+  armed swaps show a "Next scan replaces X" banner with Cancel.
+- **Differences-only** (`compare-screen.tsx` kiosk-diff-toggle):
+  `aria-pressed` toggle hides shared collapsed rows entirely; divergent
+  cells carry `data-divergent` (heavier weight + accent tint in CSS). All
+  shared → verdict only. Note: perMl/perDrink computed rows treat a single
+  bottle's value as shared only when it repeats across bottles
+  (`new Set(filtered).size === 1 AND length > 1`), a deliberate fix so a
+  2-bottle tray with one volume-bearing bottle doesn't call the ml row shared.
+- **Value bars** (`metrics.ts valueRatios`): normalized 0→1 of the tray's
+  value metric (per-ml when every in-stock bottle has volumeMl, else price),
+  OOS → null. Rendered as `.kiosk-valuebar span[data-length]`; shortest bar
+  (cheapest) gets the accent.
+- **Stock-aware** (`metrics.ts bestValueRank` update): OUT_OF_STOCK bottles
+  rank `Infinity` — no crown, `data-rank` reflects it; OOS cards get
+  `.kiosk-compare-oos` (dimmed, grayscale image, struck muted price,
+  "Unavailable — pick another").
+- Suites: 43 server / 144 client / tsc clean.
