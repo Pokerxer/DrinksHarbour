@@ -207,6 +207,10 @@ function KioskScreen({ kiosk, compare, offline, slug }: KioskScreenProps) {
                     added: productAlreadyHeld,
                     full: !compare.canAdd,
                     onAdd: () => compare.add(kiosk.product as KioskProduct),
+                    replaces:
+                      !compare.canAdd && compare.oldest ? compare.oldest : undefined,
+                    onReplace: () =>
+                      compare.replaceOldestWith(kiosk.product as KioskProduct),
                   }
                 : undefined
             }
@@ -337,6 +341,9 @@ function KioskScreen({ kiosk, compare, offline, slug }: KioskScreenProps) {
           onScanAgain={kiosk.reset}
           onCompare={kiosk.openCompare}
           onHoldClear={compare.clear}
+          swapKey={compare.swapKey}
+          armSwap={compare.armSwap}
+          disarmSwap={compare.disarmSwap}
         />
       )}
       <footer className="kiosk-footer">

@@ -41,7 +41,6 @@ describe('compare tray helpers', () => {
   });
 });
 
-import { replaceByKey, replaceOldest } from './use-compare';
 
 describe('swap helpers', () => {
   it('replaceOldest drops the first-held bottle and keeps the rest in order', () => {

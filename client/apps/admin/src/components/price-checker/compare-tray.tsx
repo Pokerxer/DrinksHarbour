@@ -14,6 +14,9 @@ export function CompareTray({
   onScanAgain,
   onCompare,
   onHoldClear,
+  swapKey,
+  armSwap,
+  disarmSwap,
 }: {
   items: KioskProduct[];
   currency: string;
@@ -22,12 +25,26 @@ export function CompareTray({
   onScanAgain: () => void;
   onCompare: () => void;
   onHoldClear: () => void;
+  swapKey: string | null;
+  armSwap: (key: string) => void;
+  disarmSwap: () => void;
 }) {
   const hold = useHoldProgress(1500, onHoldClear);
   if (!items.length) return null;
   const ready = items.length >= 2;
+  const swapped = swapKey
+    ? items.find((item) => compareKey(item) === swapKey)
+    : undefined;
   return (
     <div className="kiosk-tray" role="region" aria-label="Bottles to compare">
+      {swapped && (
+        <div className="kiosk-tray-swap" role="status">
+          Next scan replaces <strong>{swapped.name}</strong>
+          <button className="kiosk-quiet kiosk-tray-cancel" onClick={disarmSwap}>
+            Cancel
+          </button>
+        </div>
+      )}
       {items.map((product) => (
         <div className="kiosk-tray-item" key={compareKey(product)}>
           {product.image && (
@@ -54,6 +71,17 @@ export function CompareTray({
             onClick={onScanAgain}
           >
             ↻
+          </button>
+          <button
+            className={`kiosk-tray-swap${swapKey === compareKey(product) ? ' is-armed' : ''}`}
+            aria-pressed={swapKey === compareKey(product)}
+            aria-label={`Next scan will replace ${product.name}`}
+            title="Swap for next scan"
+            onClick={() =>
+              swapKey === compareKey(product) ? disarmSwap() : armSwap(compareKey(product))
+            }
+          >
+            ⇄
           </button>
         </div>
       ))}

@@ -11,7 +11,14 @@ export function ProductResult({
 }: {
   product: KioskProduct;
   config: KioskConfig;
-  compareSlot?: { added: boolean; full: boolean; onAdd: () => void };
+  compareSlot?: {
+    added: boolean;
+    full: boolean;
+    onAdd: () => void;
+    /** When the tray is full: the oldest-held bottle this scan can swap out. */
+    replaces?: KioskProduct;
+    onReplace?: () => void;
+  };
 }) {
   const [confirmed, setConfirmed] = useState(false);
   const [imageFailed, setImageFailed] = useState(false);
@@ -106,14 +113,20 @@ export function ProductResult({
         {compareSlot && (
           <button
             className="kiosk-primary kiosk-add"
-            onClick={compareSlot.onAdd}
-            disabled={compareSlot.full && !compareSlot.added}
+            onClick={
+              compareSlot.full && compareSlot.replaces && compareSlot.onReplace
+                ? compareSlot.onReplace
+                : compareSlot.onAdd
+            }
+            disabled={compareSlot.full && !compareSlot.replaces && !compareSlot.added}
           >
             {compareSlot.added
               ? 'Added ✓'
-              : compareSlot.full
-                ? 'Tray full — remove a bottle'
-                : 'Add to compare'}
+              : compareSlot.full && compareSlot.replaces
+                ? `Replace oldest — ${compareSlot.replaces.name}`
+                : compareSlot.full
+                  ? 'Tray full — remove a bottle'
+                  : 'Add to compare'}
           </button>
         )}
       </div>

@@ -195,8 +195,14 @@ it('announces the tray as full once four bottles are held', () => {
   );
   const view = render(<PriceCheckerKiosk slug="counter" />);
   view.rerender(<PriceCheckerKiosk slug="counter" />);
-  const add = screen.getByRole('button', { name: 'Tray full — remove a bottle' });
-  expect(add.hasAttribute('disabled')).toBe(true);
+  // With the tray full the scanned bottle offers a one-tap swap of the
+  // oldest-held bottle instead of a dead end.
+  expect(
+    String(
+      screen.getByRole('button', { name: 'Replace oldest — Bottle 001' })
+        .textContent ?? ''
+    )
+  ).toContain('Replace oldest');
 });
 
 it('a quick tap on "Hold to clear" does not wipe the tray', () => {
@@ -291,4 +297,37 @@ it('wipes the customer session after five idle minutes', () => {
   vi.advanceTimersByTime(5 * 60_000 + 200);
   view.rerender(<PriceCheckerKiosk slug="counter" />);
   expect(screen.queryByRole('region', { name: 'Bottles to compare' })).toBeNull();
+});
+
+it('the tray swap button arms the next scan to replace that slot', () => {
+  state.screen = 'result';
+  state.product = {
+    name: 'Swap-in bottle',
+    price: 9000,
+    currency: 'NGN',
+    alcoholic: false,
+    taxLabel: '',
+    barcode: '490187000014',
+  };
+  const view = render(<PriceCheckerKiosk slug="counter" />);
+  fireEvent.click(screen.getByRole('button', { name: 'Add to compare' }));
+  const swap = screen.getByRole('button', { name: 'Next scan will replace Swap-in bottle' });
+  fireEvent.click(swap);
+  expect(screen.getByRole('status').textContent).toContain(
+    'Next scan replaces'
+  );
+  // The customer scans the next bottle: same add path, swapped in place.
+  state.product = {
+    name: 'Next bottle',
+    price: 11000,
+    currency: 'NGN',
+    alcoholic: false,
+    taxLabel: '',
+    barcode: '490187000015',
+  };
+  state.screen = 'result';
+  view.rerender(<PriceCheckerKiosk slug="counter" />);
+  fireEvent.click(screen.getByRole('button', { name: 'Add to compare' }));
+  expect(screen.queryByText('Swap-in bottle')).toBeNull();
+  expect(screen.getAllByText('Next bottle').length).toBeGreaterThan(0);
 });
