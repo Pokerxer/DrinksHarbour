@@ -19,8 +19,6 @@ export type CatalogQtyMap = Record<string, number>;
 export interface PurchasesCatalogModalProps {
   open: boolean;
   token: string;
-  warehouseId?: string;
-  warehouseName?: string;
   currency?: string;
   qtyMap: CatalogQtyMap;
   onClose: () => void;
@@ -31,14 +29,14 @@ export interface PurchasesCatalogModalProps {
 
 /**
  * Purchase-form catalogue: same full-screen search/filter/browse experience as
- * the sales catalogue, priced by cost. Selections flow straight into the
- * create/edit form's line list via onAdd/onSetQty/onRemove.
+ * the sales catalogue, priced by cost. NOT scoped by warehouse — a purchase
+ * order adds stock the destination does not have yet, so filtering by
+ * destination membership would empty the modal. Selections flow straight into
+ * the create/edit form's line list via onAdd/onSetQty/onRemove.
  */
 export default function PurchasesCatalogModal({
   open,
   token,
-  warehouseId,
-  warehouseName,
   currency = 'NGN',
   qtyMap,
   onClose,
@@ -46,7 +44,7 @@ export default function PurchasesCatalogModal({
   onSetQty,
   onRemove,
 }: PurchasesCatalogModalProps) {
-  const catalogue = usePurchaseCatalogue(open, token, warehouseId, qtyMap);
+  const catalogue = usePurchaseCatalogue(open, token, qtyMap);
   const {
     data,
     query,
@@ -63,7 +61,7 @@ export default function PurchasesCatalogModal({
   const scroll = useRef<HTMLDivElement>(null);
   useEffect(() => {
     scroll.current?.scrollTo?.({ top: 0 });
-  }, [catalogue.page, filters, warehouseId]);
+  }, [catalogue.page, filters]);
   const summary = useMemo(
     () =>
       Object.values(qtyMap).reduce(
@@ -95,11 +93,8 @@ export default function PurchasesCatalogModal({
                   Product catalogue
                 </DialogTitle>
                 <Description className="mt-1 text-xs text-gray-500">
-                  Add products and sizes to this purchase order ·{' '}
-                  {warehouseId
-                    ? warehouseName || 'Selected warehouse'
-                    : 'All locations'}{' '}
-                  · cost prices · {currency}
+                  Add products and sizes to this purchase order · cost prices ·{' '}
+                  {currency}
                 </Description>
               </div>
               <button
@@ -182,16 +177,12 @@ export default function PurchasesCatalogModal({
                   <h3 className="text-sm font-semibold text-gray-800">
                     {filtered
                       ? 'No matching products'
-                      : warehouseId
-                        ? 'No products in this warehouse'
-                        : 'Your catalogue is empty'}
+                      : 'Your catalogue is empty'}
                   </h3>
                   <p className="text-xs text-gray-500">
                     {filtered
                       ? 'Try another search or clear the filters.'
-                      : warehouseId
-                        ? 'Assign products to the selected warehouse to see them here.'
-                        : 'Create a product to start building this order.'}
+                      : 'Create a product to start building this order.'}
                   </p>
                   {filtered && (
                     <button

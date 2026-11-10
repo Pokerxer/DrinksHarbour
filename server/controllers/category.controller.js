@@ -46,7 +46,12 @@ const listCategories = (picker) => asyncHandler(async (req, res) => {
     .lean();
 
   // Category records remain live; these display counts may lag by up to 60s.
-  const counts = await navigationCounts('category').catch(() => ({}));
+  // Surface-aware (DRI-5, 2026-11-10): the main marketplace (and the public
+  // sitemap these responses feed) counts beverage-kind products only;
+  // tenant-storefront requests flagged with `x-is-tenant-site` keep the
+  // all-product tally so their retail chips stay truthful.
+  const marketplaceOnly = req.get('x-is-tenant-site') !== 'true';
+  const counts = await navigationCounts('category', { marketplaceOnly }).catch(() => ({}));
   const categoriesWithCount = categories.map(category => ({
     ...category,
     productCount: counts[String(category._id)] ?? 0,

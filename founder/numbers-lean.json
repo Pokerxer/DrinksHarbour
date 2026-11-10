@@ -1,0 +1,25 @@
+{
+  "business": "DrinksHarbour — variant: lean fixed costs (Bear-state burn until 50 tenants)",
+  "unit": "paying tenant-month",
+  "note": "All amounts NGN, revenue before VAT. Same revenue model as cfo.md; fixed operating costs held at the Bear-state 2.5m/month instead of the Base-state 4m/month.",
+  "price": 50200,
+  "variable": [
+    {"label": "Payment processing on subscription + add-ons (Paystack local)", "cost": 823},
+    {"label": "Variable service: tenant support + incremental infrastructure", "cost": 5000}
+  ],
+  "fixed_monthly": [
+    {"label": "Staff & founder pay (Bear-state)", "cost": 1200000},
+    {"label": "B2B sales & marketing (Bear-state)", "cost": 600000},
+    {"label": "Continuing engineering & security maintenance", "cost": 500000},
+    {"label": "Baseline hosting, administration, software", "cost": 200000}
+  ],
+  "startup": [
+    {"label": "GTM launch marketing & tenant acquisition", "cost": 1200000},
+    {"label": "Company registration, legal & compliance", "cost": 350000},
+    {"label": "Sales tooling & outreach", "cost": 250000},
+    {"label": "Domain, payments, security setup", "cost": 200000}
+  ],
+  "days_per_month": 30,
+  "plan_per_day": 3.33,
+  "ramp_per_day": [0.13, 0.27, 0.47, 0.73, 1.07, 1.5, 1.93, 2.33, 2.67, 2.93, 3.17, 3.33]
+}

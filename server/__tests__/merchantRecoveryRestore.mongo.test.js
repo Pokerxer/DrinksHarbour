@@ -16,7 +16,16 @@ test('isolated backup restore preserves failed-delivery return identity and exac
   const targetName = `drinks_venue_test_restored_${process.pid}`;
   const makeUri = name => `mongodb://127.0.0.1:29127/${name}?replicaSet=venuePhase0`;
   const sourceUri = makeUri(sourceName), targetUri = makeUri(targetName);
-  const folder = await fs.mkdtemp(path.join(os.tmpdir(), 'phase-d-restore-'));
+  // Paperclip run harnesses can point TMPDIR at a dir they delete mid-suite; mkdtemp
+  // then fails with ENOENT. Ensure the parent exists, and fall back to a stable dir.
+  let folder;
+  const tmpParent = os.tmpdir();
+  try {
+    await fs.mkdir(tmpParent, { recursive: true });
+    folder = await fs.mkdtemp(path.join(tmpParent, 'phase-d-restore-'));
+  } catch {
+    folder = await fs.mkdtemp(path.join('/tmp', 'phase-d-restore-'));
+  }
   const archive = path.join(folder, 'synthetic.archive');
   const { child, actor, booking } = await require('./helpers/merchantRecoveryFixture').fixture(t);
   const engine = require('../services/delivery.service');
@@ -51,8 +60,27 @@ test('isolated backup restore preserves failed-delivery return identity and exac
     const target = await mongoose.createConnection(targetUri, { autoIndex: false }).asPromise();
     try { assert.equal((await target.db.listCollections().toArray()).length, 0, 'restore target must be empty task namespace'); }
     finally { await target.close(); }
-    await execFile('/usr/local/bin/mongodump', ['--uri', sourceUri, '--archive=' + archive, '--quiet'], { timeout: 60000 });
-    await execFile('/usr/local/bin/mongorestore', ['--uri', 'mongodb://127.0.0.1:29127/?replicaSet=venuePhase0', '--archive=' + archive, '--nsInclude', sourceName + '.*', '--nsFrom', sourceName + '.*', '--nsTo', targetName + '.*', '--quiet'], { timeout: 60000 });
+    await execFile('/usr/local/bin/mongodump', ['--uri', sourceUri, '--archive=' + archive, '--quiet'], { timeout: 60000 })
+      .catch(error => { throw new Error(`mongodump failed (${error.message}) stderr: ${String(error.stderr || '').slice(0, 2000)}`); });
+    // Under full-suite parallelism the shared replica can transiently refuse the
+    // restore connection or fail an index build (mongorestore exits 1 with --quiet
+    // swallowing stderr). Retry once against a freshly dropped target before
+    // treating it as a real failure.
+    let restoreError;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      const cleaner = await mongoose.createConnection(targetUri, { autoIndex: false }).asPromise();
+      try { await cleaner.db.dropDatabase(); } finally { await cleaner.close(); }
+      try {
+        await execFile('/usr/local/bin/mongorestore', ['--uri', 'mongodb://127.0.0.1:29127/?replicaSet=venuePhase0', '--archive=' + archive, '--numParallelCollections=1', '--nsInclude', sourceName + '.*', '--nsFrom', sourceName + '.*', '--nsTo', targetName + '.*', '--quiet'], { timeout: 180000 });
+        restoreError = null;
+        break;
+      } catch (error) {
+        restoreError = error;
+      }
+    }
+    if (restoreError) {
+      throw new Error(`mongorestore failed (${restoreError.message}) stderr: ${String(restoreError.stderr || '').slice(0, 2000)}`);
+    }
     await mongoose.disconnect();
     await mongoose.connect(targetUri, { autoIndex: false, serverSelectionTimeoutMS: 5000 });
     assert.deepEqual(JSON.parse(JSON.stringify(await evidence())), before, 'backup preserves exact original responsibilities and stock/money evidence');

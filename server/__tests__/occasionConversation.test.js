@@ -1,6 +1,6 @@
 const test=require('node:test'),assert=require('node:assert/strict');
 const {createConversationService}=require('../services/occasionRequests/conversation');
-function setup({failFirstReopen=false,messages=null}={}){const rows=[];let reopened=0;const readMarks=[];const request={_id:'thread',customer:'ada',reference:'DH-EVT-ONE',draft:'SECRET UNAPPROVED AI DRAFT',notes:'Wine for wedding',attachment:{name:'list.txt',data:Buffer.from('secret')}};const repository={request:async(id,customer)=>id==='thread'&&(!customer||customer==='ada')?request:null,messages:messages||(async()=>({messages:rows,olderCursor:null})),markCustomerRead:async(id,at)=>{readMarks.push(at);},add:async value=>{const old=rows.find(row=>row.messageKey===value.messageKey);if(old)return {message:old,created:false};const message={...value,_id:String(rows.length+1),createdAt:new Date('2026-10-21T12:00:00Z')};rows.push(message);return {message,created:true};},reopen:async(id,message)=>{reopened++;if(failFirstReopen){failFirstReopen=false;throw Error('Database unavailable');}request.lastCustomerMessageAt=message.createdAt;},file:async()=>request.attachment,list:async customer=>({requests:customer==='ada'?[{_id:'thread'}]:[]})};return {service:createConversationService({repository}),reopened:()=>reopened,rows,readMarks:()=>readMarks};}
+function setup({failFirstReopen=false,messages=null}={}){const rows=[];let reopened=0;const readMarks=[],staffMarks=[];const request={_id:'thread',customer:'ada',reference:'DH-EVT-ONE',draft:'SECRET UNAPPROVED AI DRAFT',notes:'Wine for wedding',attachment:{name:'list.txt',data:Buffer.from('secret')}};const repository={request:async(id,customer)=>id==='thread'&&(!customer||customer==='ada')?request:null,messages:messages||(async()=>({messages:rows,olderCursor:null})),markCustomerRead:async(id,at)=>{readMarks.push(at);},markStaffRead:async(id,at)=>{staffMarks.push(at);},add:async value=>{const old=rows.find(row=>row.messageKey===value.messageKey);if(old)return {message:old,created:false};const message={...value,_id:String(rows.length+1),createdAt:new Date('2026-10-21T12:00:00Z')};rows.push(message);return {message,created:true};},reopen:async(id,message)=>{reopened++;if(failFirstReopen){failFirstReopen=false;throw Error('Database unavailable');}request.lastCustomerMessageAt=message.createdAt;},file:async()=>request.attachment,list:async customer=>({requests:customer==='ada'?[{_id:'thread'}]:[]})};return {service:createConversationService({repository}),reopened:()=>reopened,rows,readMarks:()=>readMarks,staffMarks:()=>staffMarks};}
 test('customers can reopen saved conversations but never another customer thread or private AI draft',async()=>{const h=setup();const result=await h.service.read('thread',{id:'ada',role:'customer'});assert.equal(result.request.reference,'DH-EVT-ONE');assert.equal(result.request.draft,undefined);assert.equal(result.request.attachment.data,undefined);for(const action of ['read','file'])await assert.rejects(h.service[action]('thread',{id:'other',role:'customer'}),e=>e.statusCode===404);await assert.rejects(h.service.read('thread',{id:'tenant',role:'tenant_admin'}),e=>e.statusCode===403);});
 test('customer follow-ups persist idempotently and reopen the request once',async()=>{const h=setup(),input={content:'Please change the guest count to250.',messageKey:'6bc479ec-69bf-47a7-a776-fd4c521b04ef'},viewer={id:'ada',role:'customer'};const one=await h.service.send('thread',viewer,input),two=await h.service.send('thread',viewer,input);assert.equal(one._id,two._id);assert.equal(h.rows.length,1);assert.equal(h.reopened(),1);assert.equal((await h.service.read('thread',viewer)).messages[0].content,'Please change the guest count to250.');await assert.rejects(h.service.send('thread',{id:'other',role:'customer'},input),e=>e.statusCode===404);await assert.rejects(h.service.send('thread',viewer,{...input,content:'Different'}),e=>e.statusCode===409);});
 test('the production conversation repository includes the customer in its ownership query',async t=>{
@@ -54,15 +54,18 @@ test('malformed after and before cursors short-circuit to the same conversation 
  assert.equal(queries,1);
 });
 
-test('owning customer reads persist their read mark; admin and super_admin perusals never write one',async()=>{
+test('each side persists only its own read mark: customer reads mark the customer, staff reads mark staff',async()=>{
  const h=setup();
  const viewer={id:'ada',role:'customer'};
  await h.service.read('thread',viewer,{after:null});
- assert.equal(h.readMarks().length,1,'customer read persists the mark');
+ assert.equal(h.readMarks().length,1,'customer read persists the customer mark');
  assert(h.readMarks()[0] instanceof Date);
+ assert.equal(h.staffMarks().length,0,'customer reads never write the staff mark');
  await h.service.read('thread',{id:'boss',role:'admin'});
  await h.service.read('thread',{id:'root',role:'super_admin'});
- assert.equal(h.readMarks().length,1,'staff-side or admin reads never write read state');
+ assert.equal(h.staffMarks().length,2,'staff reads persist the staff watermark (DRI-41)');
+ assert(h.staffMarks()[1].getTime()>=h.staffMarks()[0].getTime(),'a later staff read carries a fresh timestamp');
+ assert.equal(h.readMarks().length,1,'staff reads never write the customer mark');
  const first=h.readMarks()[0].getTime();
  await h.service.read('thread',viewer);
  assert(h.readMarks()[1].getTime()>=first,'a later read carries a fresh timestamp');
@@ -120,4 +123,21 @@ test('production conversation repository pages after/before ascending, keeps the
  const older=await repository.messages(String(PagingRequest._id),String(page35[5]._id));
  assert.deepStrictEqual(older.messages.map(row=>row.content),page35.slice(0,5).map(row=>row.content));
  assert.equal(older.olderCursor,null);
+ // DRI-41 staff watermark: forward-only like the customer mark.
+ await repository.markStaffRead(modern._id,at(25));
+ const staffReadRow=await Request.findById(modern._id).lean();
+ assert.equal(staffReadRow.lastStaffReadAt.toISOString(),at(25).toISOString(),'staff read mark persists');
+ await repository.markStaffRead(modern._id,at(1));
+ const stillStaffRead=await Request.findById(modern._id).lean();
+ assert.equal(stillStaffRead.lastStaffReadAt.toISOString(),at(25).toISOString(),'the staff watermark never moves backwards');
+ // The admin/staff queue list reuses the read-receipt aggregates (additive fields only).
+ const adminRepository=require('../services/occasionRequests/repository');
+ const queue=await adminRepository.list({});
+ const queueRow=queue.requests.find(entry=>String(entry._id)===String(modern._id));
+ assert.equal(queueRow.hasStaffReply,true,'the queue names threads the team replied to');
+ assert.equal(queueRow.firstStaffReplyAt.toISOString(),at(5).toISOString(),'first staff reply rides on queue rows');
+ assert.equal(queueRow.customerUnreadCount,0,'the drained thread reports zero unread on the queue');
+ const legacyQueue=queue.requests.find(entry=>String(entry._id)===String(legacy._id));
+ assert.equal(legacyQueue.customerUnreadCount,0,'legacy queue rows stay silent');
+ assert.equal(legacyQueue.firstStaffReplyAt.toISOString(),at(5).toISOString());
 });

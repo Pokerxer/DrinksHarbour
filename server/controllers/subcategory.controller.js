@@ -93,7 +93,11 @@ const listSubCategories = (picker) => asyncHandler(async (req, res) => {
     .lean();
 
   // Category records remain live; these display counts may lag by up to 60s.
-  const counts = await navigationCounts('subCategory').catch(() => ({}));
+  // Surface-aware (DRI-5, 2026-11-10): main-marketplace reads (and the public
+  // sitemap this feeds) count beverage-kind products only; tenant-storefront
+  // requests flagged with `x-is-tenant-site` keep the all-product tally.
+  const marketplaceOnly = req.get('x-is-tenant-site') !== 'true';
+  const counts = await navigationCounts('subCategory', { marketplaceOnly }).catch(() => ({}));
   const subcategoriesWithCount = subcategories.map(subcategory => ({
     ...subcategory,
     productCount: counts[String(subcategory._id)] ?? 0,

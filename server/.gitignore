@@ -1,1 +1,3 @@
 server/.env
+server/test-logs/
+test-logs/

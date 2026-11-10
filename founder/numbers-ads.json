@@ -1,0 +1,20 @@
+{
+  "business": "DrinksHarbour — Stream 3: platform advertising (sponsored listings CPC + banner CPM, self-serve in the ERM dashboard)",
+  "unit": "₦100,000 of marketplace GMV (advertising attach)",
+  "note": "All NGN before VAT. Price = advertising revenue attaching to GMV, assumed 2% of GMV at mature scale (my estimate — below marketplace ad norms of 4–8% to stay conservative; no DrinksHarbour traffic data exists). Infrastructure already exists: self-serve dashboard banners + click-through tracking recorded in docs/memory/popup_banner_clickthrough.md.",
+  "price": 2000,
+  "variable": [
+    {"label": "Payment processing on ad payments (1.5% + ₦100)", "cost": 30},
+    {"label": "Fraud/credit reserve (5% of ad revenue)", "cost": 100},
+    {"label": "Ads ops support (no dedicated staff — share of support)", "cost": 70}
+  ],
+  "fixed_monthly": [
+    {"label": "No incremental fixed cost — served by the existing dashboard", "cost": 0}
+  ],
+  "startup": [
+    {"label": "No one-off spend — banner/listing infrastructure already built", "cost": 0}
+  ],
+  "days_per_month": 30,
+  "plan_per_day": 13.33,
+  "ramp_per_day": [0, 0, 0.056, 0.161, 0.373, 0.75, 1.353, 2.25, 3.483, 5.4, 8.8, 13.33]
+}

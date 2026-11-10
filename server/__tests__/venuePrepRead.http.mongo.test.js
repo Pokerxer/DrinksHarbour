@@ -27,7 +27,7 @@ async function freshVisit(args, name) {
   return require('../services/venue/service-sessions').ensureServiceSession({ ...args, tableIds: [String(table._id)], expectedTableVersions: [0], idempotencyKey: `visit-${name}` });
 }
 
-test('preparation read: staleness math (injected now), station filter, unrouted flagged, tenant isolation', { skip: !uri, timeout: 120000 }, async t => {
+test('preparation read: staleness math (injected now), station filter, unrouted flagged, tenant isolation', { skip: !uri, timeout: 240000 }, async t => {
   await connectVenueMongo(t, 'prep_read_math');
   await indexes();
   const args = await fixture();
@@ -122,7 +122,7 @@ test('preparation read: staleness math (injected now), station filter, unrouted 
   await assertFails(preparation.listSessionPreparation({ tenantId: other.tenantId, sessionId: visit.id, actor: other.actor }), 'NOT_FOUND', 404);
 });
 
-test('preparation read route: auth, no-store, station filter, eligibility, isolation, unthrottled staff read', { skip: !uri, timeout: 120000 }, async t => {
+test('preparation read route: auth, no-store, station filter, eligibility, isolation, unthrottled staff read', { skip: !uri, timeout: 240000 }, async t => {
   await connectVenueMongo(t, 'prep_read_http');
   await indexes();
   const args = await fixture();

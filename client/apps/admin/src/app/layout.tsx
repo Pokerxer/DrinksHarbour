@@ -7,6 +7,7 @@ import { inter, lexendDeca } from '@/app/fonts';
 import cn from '@core/utils/class-names';
 import type { AdminTenantData } from '@/context/TenantContext';
 import AdminShell from '@/components/admin-shell';
+import ConnectionStatusWatcher from '@/components/connection-status-watcher';
 import { resolveTenantSlug } from '@/context/tenant-slug';
 // import NextProgress from '@core/components/next-progress';
 // import ChatbotWidget from '@/components/Chatbot/ChatbotWidget';
@@ -141,6 +142,7 @@ export default async function RootLayout({
           dangerouslySetInnerHTML={{ __html: EXTENSION_NOISE_GUARD_SCRIPT }}
         />
         <AdminShell session={session} initialTenant={initialTenant}>{children}</AdminShell>
+        <ConnectionStatusWatcher />
         <SpeedInsights />
       </body>
     </html>

@@ -22,6 +22,9 @@ export type OccasionThread = {
   lastCheckedAt: string;
   /** Request status from the backend status payload (pending/draft/sending/sent/delivery_failed). */
   status: string;
+  /** Server staff read watermark (DRI-41) when the read brief carried it —
+   * feeds the honest outgoing double-check; absent means "sent" only. */
+  lastStaffReadAt?: string;
   /** Queues the message optimistically (pending bubble + cleared composer) and
    * returns immediately; failures surface inline on the bubble. The same-text
    * UUID key behavior is unchanged. */
@@ -59,6 +62,7 @@ export function useOccasionThread(conversationId: string, reading: boolean): Occ
   const [unreadCount, setUnreadCount] = useState(0);
   const [lastCheckedAt, setLastCheckedAt] = useState('');
   const [status, setStatus] = useState('');
+  const [lastStaffReadAt, setLastStaffReadAt] = useState<string | undefined>(undefined);
   const alive = useRef(true), generation = useRef(0), pending = useRef(false), busy = useRef(false), cursorTrusted = useRef(false);
   const seenId = useRef(''), readingRef = useRef(reading), messageKey = useRef({ text: '', value: '' });
   const serverRef = useRef<ChatMessage[]>([]);
@@ -88,6 +92,7 @@ export function useOccasionThread(conversationId: string, reading: boolean): Occ
     if (!alive.current || gen !== generation.current) return;
     reduce(data.messages);
     if (data.request?.status) setStatus(data.request.status);
+    if (data.request?.lastStaffReadAt) setLastStaffReadAt(data.request.lastStaffReadAt);
     setLoadError('');
     setLoading(false);
   }, [conversationId, reduce]);
@@ -123,6 +128,7 @@ export function useOccasionThread(conversationId: string, reading: boolean): Occ
         }
         reduce(unique([...serverRef.current, ...newer]));
         if (data.request.status) setStatus(data.request.status);
+        if (data.request.lastStaffReadAt) setLastStaffReadAt(data.request.lastStaffReadAt);
         if (newer.length < FULL_PAGE) break;
       }
     } catch (failure) {
@@ -189,11 +195,11 @@ export function useOccasionThread(conversationId: string, reading: boolean): Occ
     messageKey.current = { text: '', value: '' };
     cursorTrusted.current = false;
     serverRef.current = [];
-    setServerMessages([]); setLocalMessages([]); setLoading(true); setLoadError(''); setSending(false); setUnreadCount(0); setLastCheckedAt(''); setStatus('');
+    setServerMessages([]); setLocalMessages([]); setLoading(true); setLoadError(''); setSending(false); setUnreadCount(0); setLastCheckedAt(''); setStatus(''); setLastStaffReadAt(undefined);
     void pollTick();
     const timer = setInterval(() => { if (!document.hidden) void pollTick(); }, 10000);
     return () => { alive.current = false; generation.current++; clearInterval(timer); };
   }, [pollTick]);
 
-  return { messages, loading, loadError, sending, unreadCount, lastCheckedAt, status, send, retryMessage, refresh };
+  return { messages, loading, loadError, sending, unreadCount, lastCheckedAt, status, lastStaffReadAt, send, retryMessage, refresh };
 }

@@ -2,6 +2,7 @@ import type { MetadataRoute } from "next";
 import { getPosts } from "./blog/api";
 import { occasionPages } from '@/lib/commercialPages';
 import { getOccasionSubpages } from '@/lib/occasions';
+import { dedupeVariantSubcategoryId } from '@/lib/subcategorySitemap';
 import { publicSiteOrigin } from '@/lib/publicSiteOrigin';
 
 // Generated on request rather than at build. This route makes six API calls, so
@@ -288,9 +289,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // Subcategory shop pages — combined category+subcategory form (the canonical
   // generateMetadata emits). Only list subcategories that actually have products;
   // empty ones are noindexed, so advertising them would waste crawl budget.
+  // Variant pairs (fruit-liqueur/fruit-liqueurs) collapse to the higher-count
+  // record — see dedupeVariantSubcategoryId for the data-level follow-up.
   const seenSubUrls = new Set<string>();
-  const subcategoryPages: MetadataRoute.Sitemap = subcats
-    .filter((s) => s.productCount > 0)
+  const subcategoryPages: MetadataRoute.Sitemap = dedupeVariantSubcategoryId(
+    subcats.filter((s) => s.productCount > 0),
+  )
     .filter((s) => {
       const url = `${BASE_URL}/shop?category=${s.parentSlug}&subcategory=${s.slug}`;
       if (seenSubUrls.has(url)) return false;

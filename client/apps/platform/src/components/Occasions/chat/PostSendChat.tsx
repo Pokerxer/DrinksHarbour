@@ -75,7 +75,7 @@ export default function PostSendChat({ reference, conversationId }: Props) {
       </div>
     </div>}
     {open && <PostSendChatModal titleId={TITLE_ID} reference={reference} conversationId={conversationId} onClose={close}>
-      <PostSendChatThread messages={thread.messages} loading={thread.loading} error={thread.loadError} lastCheckedAt={thread.lastCheckedAt} status={thread.status} conversationId={conversationId} onReload={thread.refresh} onRetry={thread.retryMessage} />
+      <PostSendChatThread messages={thread.messages} loading={thread.loading} error={thread.loadError} lastCheckedAt={thread.lastCheckedAt} status={thread.status} lastStaffReadAt={thread.lastStaffReadAt} conversationId={conversationId} onReload={thread.refresh} onRetry={thread.retryMessage} />
       <PostSendChatComposer onSend={thread.send} sending={thread.sending} />
     </PostSendChatModal>}
   </>;

@@ -29,6 +29,7 @@ import {
 import toast from 'react-hot-toast';
 import { routes } from '@/config/routes';
 import { stockTransferService } from '@/services/stockTransfer.service';
+import { subproductService } from '@/services/subproduct.service';
 import { warehouseService, type Warehouse } from '@/services/warehouse.service';
 import { CURRENCIES, CURRENCY_SYMBOLS, packsLabel } from './types';
 import { fmtCur } from './purchases-analytics-helpers';
@@ -794,6 +795,39 @@ export default function StockTransferCreate({
     (it) => lineTypeOf(it) === 'product' && !it.subProductId
   );
 
+  // ── Pack Size → size default persistence ───────────────────────────────────
+  // Same rule as the PO forms: an edited pack size becomes the Size document's
+  // new default packaging quantity (unitsPerPack), persisted on commit. The
+  // loaded source-stock rows are updated in place so the picker/catalogue and
+  // any later line for the same (subProduct, size) pick up the new default.
+  const applyPackSizeDefault = useCallback(
+    (index: number, value: number) => {
+      const it = items[index];
+      if (!it || lineTypeOf(it) !== 'product' || !it.sizeId) return;
+      subproductService
+        .updateSize(it.subProductId, it.sizeId, { unitsPerPack: value }, token)
+        .then(() =>
+          toast.success(`Pack size ${value} saved as the default for this size`)
+        )
+        .catch((err: unknown) =>
+          toast.error(
+            err instanceof Error
+              ? `Couldn't save the new size default: ${err.message}`
+              : "Couldn't save the new size default"
+          )
+        );
+      setStockRows((prev) =>
+        prev.map((row) =>
+          `${row.subProductId}::${row.sizeId || ''}` ===
+          `${it.subProductId}::${it.sizeId || ''}`
+            ? { ...row, unitsPerPack: value }
+            : row
+        )
+      );
+    },
+    [items, token]
+  );
+
   function getLineErrors(): Record<number, LineError> {
     const errors: Record<number, LineError> = {};
     for (let i = 0; i < items.length; i++) {
@@ -1340,6 +1374,7 @@ export default function StockTransferCreate({
                     <PackSizeInput
                       value={item.packSize}
                       onApply={(patch) => updateItem(i, patch)}
+                      onCommitDefault={(v) => applyPackSizeDefault(i, v)}
                     />
                     <div>
                       <label className="mb-1 block text-[10px] font-medium text-gray-500">

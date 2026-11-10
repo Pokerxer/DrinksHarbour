@@ -13,6 +13,7 @@ import {
   PiFloppyDisk,
   PiCheckCircle,
   PiArrowLeft,
+  PiSpinner,
   PiX,
   PiCaretDown,
   PiWarning,
@@ -48,6 +49,7 @@ import NumberInput from '@/components/ui/number-input';
 import { moveItem } from './line-dnd';
 import WarehouseSelect, { useActiveWarehouses } from './warehouse-select';
 import PurchasesScanDrawer from './purchases-scan-drawer';
+import ProductSearchSkeleton from './product-search-skeleton';
 import {
   appendPresentationLine,
   catalogDraftFromSelection,
@@ -382,10 +384,14 @@ function VendorSearch({
 function ProductSearch({
   value,
   token,
+  packSizeOverrides,
   onSelect,
 }: {
   value: string;
   token: string;
+  /** sizeId → unitsPerPack committed as the size's new default this session
+   *  (pack size edited on a line); wins over any cached fetch. */
+  packSizeOverrides?: Record<string, number>;
   onSelect: (
     name: string,
     sku: string,
@@ -401,9 +407,17 @@ function ProductSearch({
   const [products, setProducts] = useState<ProductOption[]>([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  /** The query the current `products` list answers. When the typed query has
+   *  drifted from this (debounce pending or fetch in flight), the dropdown
+   *  shows the searching skeleton instead of a stale/empty mislabel. */
+  const [resultsFor, setResultsFor] = useState('');
   const [initialLoaded, setInitialLoaded] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [expandedData, setExpandedData] = useState<Record<string, any>>({});
+  // True once the operator has typed past the catalog snapshot (a fresh server
+  // search is due) or a fetch is in flight.
+  const searching =
+    loading || (query.trim().length >= 2 && resultsFor !== query.trim());
   const ref = useRef<HTMLDivElement>(null);
 
   async function fetchFullSubproduct(id: string) {
@@ -451,6 +465,7 @@ function ProductSearch({
       const list = mapProducts(res?.data?.subProducts ?? []);
       setInitial(list);
       setProducts(list);
+      setResultsFor('');
       setInitialLoaded(true);
     } catch {
       setInitial([]);
@@ -463,6 +478,7 @@ function ProductSearch({
     if (!token) return;
     if (query.trim().length < 2) {
       setProducts(initial);
+      setResultsFor('');
       return;
     }
     const t = setTimeout(async () => {
@@ -474,9 +490,11 @@ function ProductSearch({
         });
         const list = mapProducts(res?.data?.subProducts ?? []);
         setProducts(list);
+        setResultsFor(query.trim());
         setExpandedId(null);
       } catch {
         setProducts([]);
+        setResultsFor(query.trim());
       } finally {
         setLoading(false);
       }
@@ -502,11 +520,13 @@ function ProductSearch({
   function pickSize(p: ProductOption, s: SizeOption) {
     const displaySize = s.displayName ?? s.size;
     const label = `${p.name} – ${displaySize}`;
+    const unitsPerPack =
+      packSizeOverrides?.[s.size] ?? s.unitsPerPack ?? 1;
     onSelect(
       label,
       s.sku ?? p.sku,
       s.costPrice ?? 0,
-      s.unitsPerPack ?? 1,
+      unitsPerPack,
       p._id,
       s.size,
       displaySize
@@ -533,15 +553,18 @@ function ProductSearch({
           className="w-full rounded-lg border border-gray-200 py-1.5 pl-8 pr-3 text-xs text-gray-900 placeholder-gray-400 focus:border-[#b20202] focus:outline-none focus:ring-1 focus:ring-[#b20202]/20"
         />
         {loading && (
-          <span className="absolute right-2.5 top-1/2 -translate-y-1/2 animate-pulse text-[10px] text-gray-400">
-            …
-          </span>
+          <PiSpinner
+            aria-hidden
+            className="absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 animate-spin text-gray-400"
+          />
         )}
       </div>
 
       {open && (
         <div className="absolute left-0 z-30 mt-1 w-80 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl">
-          {products.length === 0 && !loading ? (
+          {searching ? (
+            <ProductSearchSkeleton rows={5} compact />
+          ) : products.length === 0 ? (
             <div className="px-3 py-3 text-xs text-gray-400">
               {query.trim().length >= 2
                 ? `No products match "${query}"`
@@ -613,7 +636,10 @@ function ProductSearch({
                           const enriched: SizeOption = {
                             ...s,
                             unitsPerPack:
-                              match?.unitsPerPack ?? s.unitsPerPack ?? 1,
+                              packSizeOverrides?.[s.size] ??
+                              match?.unitsPerPack ??
+                              s.unitsPerPack ??
+                              1,
                           };
                           return (
                             <button
@@ -896,6 +922,33 @@ export default function PurchasesEdit({ id }: { id: string }) {
       })
     );
   }, []);
+
+  // ── Pack Size → size default persistence ───────────────────────────────────
+  // Same rule as create: an edited pack size becomes the Size document's new
+  // default packaging quantity (unitsPerPack), persisted on commit.
+  const [packSizeOverrides, setPackSizeOverrides] = useState<
+    Record<string, number>
+  >({});
+  const applyPackSizeDefault = useCallback(
+    (index: number, value: number) => {
+      const it = items[index];
+      if (!it || lineTypeOf(it) !== 'product' || !it.sizeId) return;
+      setPackSizeOverrides((prev) => ({ ...prev, [it.sizeId as string]: value }));
+      subproductService
+        .updateSize(it.subProductId, it.sizeId, { unitsPerPack: value }, token)
+        .then(() =>
+          toast.success(`Pack size ${value} saved as the default for this size`)
+        )
+        .catch((err: unknown) =>
+          toast.error(
+            err instanceof Error
+              ? `Couldn't save the new size default: ${err.message}`
+              : "Couldn't save the new size default"
+          )
+        );
+    },
+    [items, token]
+  );
 
   const handleProductSelect = useCallback(
     (
@@ -1396,6 +1449,7 @@ export default function PurchasesEdit({ id }: { id: string }) {
                       <ProductSearch
                         value={item.productName}
                         token={token}
+                        packSizeOverrides={packSizeOverrides}
                         onSelect={(
                           name,
                           sku,
@@ -1456,6 +1510,7 @@ export default function PurchasesEdit({ id }: { id: string }) {
                     <PackSizeInput
                       value={item.packSize}
                       onApply={(patch) => updateItem(i, patch)}
+                      onCommitDefault={(v) => applyPackSizeDefault(i, v)}
                     />
                     <div>
                       <label className="mb-1 block text-[10px] font-medium text-gray-500">
@@ -1667,10 +1722,6 @@ export default function PurchasesEdit({ id }: { id: string }) {
       <PurchasesCatalogModal
         open={catalogOpen}
         token={token}
-        warehouseId={warehouseId || undefined}
-        warehouseName={
-          warehouses.find((w) => w._id === warehouseId)?.name
-        }
         currency={currency}
         qtyMap={catalogQuantities}
         onClose={() => setCatalogOpen(false)}

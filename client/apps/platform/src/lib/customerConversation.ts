@@ -1,11 +1,12 @@
 import { fetchWithAuth } from '@/lib/fetchWithAuth';
 import { API_URL } from './api';
 export type ChatMessage = { _id: string; sender: 'customer' | 'staff'; content: string; createdAt: string };
-export type ChatBrief = { _id: string; reference: string; occasion: string; city: string; date?: string; guests?: number; budget?: number; notes: string; preferences: string[]; items: { name: string; quantity: number }[]; status: string; createdAt: string; attachment?: { name: string; size: number } };
+export type ChatBrief = { _id: string; reference: string; occasion: string; city: string; date?: string; guests?: number; budget?: number; notes: string; preferences: string[]; items: { name: string; quantity: number }[]; status: string; createdAt: string; lastStaffReadAt?: string; attachment?: { name: string; size: number } };
 export type Conversation = { request: ChatBrief; messages: ChatMessage[]; olderCursor: string | null };
 /** One row of `GET /mine`. `customerUnreadCount` (server-computed staff
- * messages newer than `lastCustomerReadAt`) is absent on legacy deployments. */
-export type ChatRow = Pick<ChatBrief, '_id' | 'reference' | 'occasion' | 'status' | 'city' | 'createdAt'> & { customerUnreadCount?: number };
+ * messages newer than `lastCustomerReadAt`), `lastMessageAt` and
+ * `firstStaffReplyAt` are absent on legacy deployments. */
+export type ChatRow = Pick<ChatBrief, '_id' | 'reference' | 'occasion' | 'status' | 'city' | 'createdAt'> & { customerUnreadCount?: number; lastMessageAt?: string; firstStaffReplyAt?: string | null; hasStaffReply?: boolean };
 export type ChatPage = { requests: ChatRow[]; page: number; pages: number; total: number };
 export type ChatCursor = { before?: string; after?: string };
 async function call<T>(path: string, payload?: unknown): Promise<T> {

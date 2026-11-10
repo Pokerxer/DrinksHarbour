@@ -52,6 +52,11 @@ import {
 import { routes } from '@/config/routes';
 import { subproductService } from '@/services/subproduct.service';
 import {
+  credentialBlockerMessage,
+  isNetworkError,
+  NETWORK_ERROR_MESSAGE,
+} from '@/utils/network';
+import {
   loadSubProductSearchContext,
   summarizeSearchContext,
 } from '../sub-product-list/search-context';
@@ -183,7 +188,7 @@ function SubProductForm({
   onStartBlank,
 }: CreateEditSubProductProps & { onStartNew: () => void }) {
   const router = useRouter();
-  const { data: session } = useSession();
+  const { data: session, status: sessionStatus } = useSession();
   const [isLoading, setLoading] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isFetching, setIsFetching] = useState(false);
@@ -192,6 +197,9 @@ function SubProductForm({
   const isDirtyRef = useRef(false);
   const isLoadingRef = useRef(false);
   const sessionRef = useRef<any>(null);
+  // 'loading' until next-auth resolves; a missing token while loading is a
+  // "not ready yet", not a "you are signed out" (see credentialBlockerMessage).
+  const sessionStatusRef = useRef<string>(sessionStatus);
   // Prevents the unmount auto-save from firing when a save just succeeded
   const hasSavedRef = useRef(false);
   const saveInFlightRef = useRef(false);
@@ -253,7 +261,8 @@ function SubProductForm({
   }, [isLoading]);
   useEffect(() => {
     sessionRef.current = session;
-  }, [session]);
+    sessionStatusRef.current = sessionStatus;
+  }, [session, sessionStatus]);
 
   // ── Product navigation list ───────────────────────────────────────────────
   // Prefer the search context saved by the /sub-products list (same filtered
@@ -534,7 +543,11 @@ function SubProductForm({
         })
         .catch((error) => {
           console.error('Failed to load sub product:', error);
-          toast.error('Failed to load sub product');
+          toast.error(
+            isNetworkError(error)
+              ? NETWORK_ERROR_MESSAGE
+              : 'Failed to load sub product'
+          );
         })
         .finally(() => setIsFetching(false));
     }
@@ -548,7 +561,7 @@ function SubProductForm({
 
   const handleGenerate = async () => {
     if (!session?.user?.token) {
-      toast.error('Authentication required. Please sign in again.');
+      toast.error(credentialBlockerMessage(sessionStatus === 'loading'));
       return;
     }
 
@@ -638,9 +651,14 @@ function SubProductForm({
       toast.success('AI content generated!', { id: toastId });
     } catch (error: any) {
       console.error('Generate error:', error);
-      toast.error(error.message || 'Failed to generate content', {
-        id: toastId,
-      });
+      toast.error(
+        isNetworkError(error)
+          ? NETWORK_ERROR_MESSAGE
+          : error.message || 'Failed to generate content',
+        {
+          id: toastId,
+        }
+      );
     } finally {
       setIsGenerating(false);
     }
@@ -720,7 +738,9 @@ function SubProductForm({
       const token = sessionRef.current?.user?.token;
       if (!token) {
         if (!silent)
-          toast.error('Authentication required. Please sign in again.');
+          toast.error(
+            credentialBlockerMessage(sessionStatusRef.current === 'loading')
+          );
         return false;
       }
 
@@ -794,66 +814,65 @@ function SubProductForm({
         setSaveStatus('error');
         console.error('=== SAVE ERROR ===', error);
         if (!silent) {
-          const errorMessage = error.message || 'Failed to save sub product';
-          if (
-            errorMessage.includes('version') ||
-            errorMessage.includes('conflict')
-          ) {
-            toast.error(
-              'This record was modified by another user. Please refresh and try again.'
-            );
-          } else if (
-            error?.details?.reason === 'subproduct_exists' &&
-            error?.details?.existingSubProductId
-          ) {
-            const existingId = error.details.existingSubProductId;
-            toast.success(
-              `${error.details.productName || 'This product'} is already in your catalog — opening it so you can add this size/variant.`,
-              { duration: 5000 }
-            );
-            // Take the user straight to the existing listing to add the variant.
-            clearSubProductDraft();
-            router.replace(routes.eCommerce.editSubProduct(existingId));
-            return false;
-          } else if (
-            errorMessage.includes('duplicate') ||
-            errorMessage.includes('already exists') ||
-            errorMessage.includes('already in your catalog')
-          ) {
-            toast.error(
-              'This product already exists in your catalog. Try editing the existing entry instead.'
-            );
-          } else if (
-            errorMessage.includes('Product ID is required') ||
-            errorMessage.includes('product')
-          ) {
-            toast.error(
-              'Please select a product or create a new one before saving.'
-            );
-          } else if (
-            errorMessage.includes('cost price') ||
-            errorMessage.includes('costPrice')
-          ) {
-            toast.error('Please enter a valid cost price greater than 0.');
-          } else if (
-            errorMessage.includes('Tenant') ||
-            errorMessage.includes('tenant')
-          ) {
-            toast.error('Session error. Please sign out and sign back in.');
-          } else if (
-            errorMessage.includes('Unauthorized') ||
-            errorMessage.includes('401')
-          ) {
-            toast.error('Your session has expired. Please sign in again.');
-          } else if (
-            errorMessage.includes('network') ||
-            errorMessage.includes('fetch')
-          ) {
-            toast.error(
-              'Network error. Please check your internet connection and try again.'
-            );
+          // Transport failure before anything else — the request never reached
+          // the server, so none of the response-shaped messages below apply.
+          if (isNetworkError(error)) {
+            toast.error(NETWORK_ERROR_MESSAGE);
           } else {
-            toast.error(errorMessage);
+            const errorMessage =
+              error.message || 'Failed to save sub product';
+            if (
+              errorMessage.includes('version') ||
+              errorMessage.includes('conflict')
+            ) {
+              toast.error(
+                'This record was modified by another user. Please refresh and try again.'
+              );
+            } else if (
+              error?.details?.reason === 'subproduct_exists' &&
+              error?.details?.existingSubProductId
+            ) {
+              const existingId = error.details.existingSubProductId;
+              toast.success(
+                `${error.details.productName || 'This product'} is already in your catalog — opening it so you can add this size/variant.`,
+                { duration: 5000 }
+              );
+              // Take the user straight to the existing listing to add the variant.
+              clearSubProductDraft();
+              router.replace(routes.eCommerce.editSubProduct(existingId));
+            } else if (
+              errorMessage.includes('duplicate') ||
+              errorMessage.includes('already exists') ||
+              errorMessage.includes('already in your catalog')
+            ) {
+              toast.error(
+                'This product already exists in your catalog. Try editing the existing entry instead.'
+              );
+            } else if (
+              errorMessage.includes('Product ID is required') ||
+              errorMessage.includes('product')
+            ) {
+              toast.error(
+                'Please select a product or create a new one before saving.'
+              );
+            } else if (
+              errorMessage.includes('cost price') ||
+              errorMessage.includes('costPrice')
+            ) {
+              toast.error('Please enter a valid cost price greater than 0.');
+            } else if (
+              errorMessage.includes('Tenant') ||
+              errorMessage.includes('tenant')
+            ) {
+              toast.error('Session error. Please sign out and sign back in.');
+            } else if (
+              errorMessage.includes('Unauthorized') ||
+              errorMessage.includes('401')
+            ) {
+              toast.error('Your session has expired. Please sign in again.');
+            } else {
+              toast.error(errorMessage);
+            }
           }
         }
         return false;
@@ -1031,7 +1050,9 @@ function SubProductForm({
       toast.success('Product archived');
       router.push(routes.eCommerce.subProducts);
     } catch (e: any) {
-      toast.error(e.message || 'Failed to archive');
+      toast.error(
+        isNetworkError(e) ? NETWORK_ERROR_MESSAGE : e.message || 'Failed to archive'
+      );
     } finally {
       setActionLoading(null);
       setConfirmModal(null);
@@ -1048,7 +1069,9 @@ function SubProductForm({
       setConfirmModal(null);
       methods.setValue('subProductData.status', 'active');
     } catch (e: any) {
-      toast.error(e.message || 'Failed to restore');
+      toast.error(
+        isNetworkError(e) ? NETWORK_ERROR_MESSAGE : e.message || 'Failed to restore'
+      );
     } finally {
       setActionLoading(null);
       setConfirmModal(null);
@@ -1078,7 +1101,9 @@ function SubProductForm({
       toast.success('Product deleted');
       router.push(routes.eCommerce.subProducts);
     } catch (e: any) {
-      toast.error(e.message || 'Failed to delete');
+      toast.error(
+        isNetworkError(e) ? NETWORK_ERROR_MESSAGE : e.message || 'Failed to delete'
+      );
     } finally {
       setActionLoading(null);
       setConfirmModal(null);

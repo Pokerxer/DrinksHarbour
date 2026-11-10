@@ -81,6 +81,13 @@ export default async function RegisterPage() {
                 <Icon.PiChatCircle size={17} /> Talk to Our Team
               </Link>
             </div>
+            <p className="text-red-100/70 text-xs mt-5">
+              Prefer the numbers straight up?{' '}
+              <a href="/pricing.md" className="underline hover:text-white transition-colors">
+                Machine-readable plan pricing
+              </a>{' '}
+              — plans, limits and commission in one file.
+            </p>
           </div>
         </div>
       </div>

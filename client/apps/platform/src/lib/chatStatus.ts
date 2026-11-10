@@ -42,6 +42,17 @@ export function chatStatusCopy(status: string, replied: boolean, surface: ChatSt
   }
 }
 
+/** Honest read state for a message the CUSTOMER sent. `lastStaffReadAt` is the
+ * server-side staff watermark (DRI-41, written only by an authorised staff
+ * client that has the conversation open on a visible tab). A bubble earns the
+ * double check only when the server proves staff read at-or-past the message
+ * timestamp; everything else stays the single honest "sent" check. Malformed
+ * or missing read data can never claim read. */
+export function chatReadState(createdAt: string, lastStaffReadAt: string | null | undefined): 'read' | 'sent' {
+  const sent = Date.parse(createdAt), read = lastStaffReadAt ? Date.parse(lastStaffReadAt) : NaN;
+  return Number.isFinite(sent) && Number.isFinite(read) && read >= sent ? 'read' : 'sent';
+}
+
 /** Established platform sign-in redirect convention (/login?redirect=…).
  * After signing in the customer lands back on the canonical conversation. */
 export function chatSignInHref(conversationId: string): string {

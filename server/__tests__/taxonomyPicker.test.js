@@ -19,7 +19,11 @@ function emptyQuery() {
   return query;
 }
 
-async function request(handler, req) {
+async function request(handler, incomingReq) {
+  // Surface-aware counts (2026-11-10) read the `x-is-tenant-site` header via
+  // Express's req.get; these unit fakes carry no headers, so default get to
+  // undefined instead of coupling every fake to the controller surface logic.
+  const req = { get: () => undefined, ...incomingReq };
   let body;
   let status = 200;
   const res = {

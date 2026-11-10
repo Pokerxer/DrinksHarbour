@@ -3,7 +3,7 @@ const mongoose=require('mongoose');
 const {Schema}=mongoose;
 // Platform-owned service requests, never tenant CRM records or orders.
 const schema=new Schema({
- customer:{type:Schema.Types.ObjectId,ref:'User',required:true,index:true},lastMessageAt:Date,lastCustomerMessageAt:Date,lastCustomerReadAt:Date,replyStartedAt:Date,
+ customer:{type:Schema.Types.ObjectId,ref:'User',required:true,index:true},lastMessageAt:Date,lastCustomerMessageAt:Date,lastCustomerReadAt:Date,lastStaffReadAt:Date,replyStartedAt:Date,
  reference:{type:String,required:true,unique:true},submissionKey:{type:String,required:true,unique:true,select:false},fingerprint:{type:String,required:true,select:false},
  occasion:{type:String,enum:['weddings','corporate','house-parties','gifting','bulk'],required:true},
  name:{type:String,required:true,maxlength:80},channel:{type:String,enum:['email','whatsapp'],required:true},email:{type:String,maxlength:254},whatsapp:{type:String,maxlength:15},consentAt:{type:Date,required:true},

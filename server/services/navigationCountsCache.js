@@ -7,11 +7,15 @@ const valid = counts => counts && typeof counts === 'object' && !Array.isArray(c
 // Approximate public navigation counts only. Never cache operational documents.
 function createNavigationCountsCache({ run = runRedis, isEnabled = enabled } = {}) {
   const pending = new Map();
-  async function read(field, load) {
+  // `flavor` splits one field into independently cached reads — e.g.
+  // '-marketplace' (beverage-kind-only counts for the DRI-5 platform surface)
+  // vs the legacy unflavored tally for tenant storefronts.
+  async function read(field, load, flavor = '') {
     if (!FIELDS.has(field)) throw new Error('Unsupported navigation count field');
     if (!isEnabled() || process.env.REDIS_NAVIGATION_COUNTS_CACHE === 'false') return load(field);
-    if (pending.has(field)) return pending.get(field);
-    const cacheKey = key('navigation-counts-v1', 'central-catalog', field);
+    const pendingKey = `${field}${flavor ?? ''}`;
+    if (pending.has(pendingKey)) return pending.get(pendingKey);
+    const cacheKey = key('navigation-counts-v1', 'central-catalog', pendingKey);
     const work = (async () => {
       try {
         const raw = await run(client => client.get(cacheKey));
@@ -26,9 +30,9 @@ function createNavigationCountsCache({ run = runRedis, isEnabled = enabled } = {
       }
       return counts;
     })();
-    pending.set(field, work);
+    pending.set(pendingKey, work);
     try { return await work; }
-    finally { pending.delete(field); }
+    finally { pending.delete(pendingKey); }
   }
   return { read };
 }

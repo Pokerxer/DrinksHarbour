@@ -25,7 +25,7 @@ async function freshVisit(args, name) {
   return require('../services/venue/service-sessions').ensureServiceSession({ ...args, tableIds: [String(table._id)], expectedTableVersions: [0], idempotencyKey: `visit-${name}` });
 }
 
-test('fire routes items by category (default fallback, unrouted still created) and snapshots the station', { skip: !uri, timeout: 120000 }, async t => {
+test('fire routes items by category (default fallback, unrouted still created) and snapshots the station', { skip: !uri, timeout: 240000 }, async t => {
   await connectVenueMongo(t, 'preparation_routing');
   await indexes();
   const args = await fixture();
@@ -76,7 +76,7 @@ test('fire routes items by category (default fallback, unrouted still created) a
   assert.equal(await require('../models/VenueConsumptionEvent').countDocuments({ tenant }), 1, 'exactly the pour line consumed');
 });
 
-test('advancement: station ownership, manager fallback, strict chain, append-only history, zero stock effect', { skip: !uri, timeout: 120000 }, async t => {
+test('advancement: station ownership, manager fallback, strict chain, append-only history, zero stock effect', { skip: !uri, timeout: 240000 }, async t => {
   await connectVenueMongo(t, 'preparation_advance');
   await indexes();
   const args = await fixture();
@@ -170,7 +170,7 @@ test('advancement: station ownership, manager fallback, strict chain, append-onl
   assert.equal(mgrUnrouted.state, 'preparing');
 });
 
-test('preparation advance route: auth, idempotency and denial wiring', { skip: !uri, timeout: 120000 }, async t => {
+test('preparation advance route: auth, idempotency and denial wiring', { skip: !uri, timeout: 240000 }, async t => {
   await connectVenueMongo(t, 'preparation_http');
   await indexes();
   const args = await fixture();

@@ -32,6 +32,15 @@ customer-chat, 2/2 occasions, 4/4 occasionsDraft). CEO verification run
 2026-11-06T14:23Z; board 8-point audit delivered in full. Resume:
 docs/superpowers/specs/RESUME-occasion-chat-improve-DRI-25.md.
 
+2026-11-09 update: next round opened as **DRI-41**
+(5ace937b-5fbb-447c-a7e1-800b1e11cc06, CEO, in_progress at handoff):
+WhatsApp-style redesign of the /my-account/chat surfaces + upgrade of the
+existing admin staff module (client/apps/admin/src/app/shared/occasion-requests
+under app/(hydrogen)/occasion-requests) into a WhatsApp-Web-like staff inbox.
+Honest-ticks rule (staff read ticks need lastStaffReadAt — CEO decision),
+burgundy over WhatsApp grammar, governance contracts preserved. Resume:
+docs/superpowers/specs/RESUME-occasion-chat-whatsapp-DRI-41.md.
+
 User requested /occasions design and functionality improvements. New platform
 components/Occasions folder provides burgundy/Fraunces hero, decorative inline
 SVG, four guide/plan cards, bulk entry, selected catalogue links, enquiry brief
@@ -55,3 +64,24 @@ Wedding continuation extends shared brief with optional fixed occasion/context,
 title and clear callback. Defaults unchanged. Mobile root is 14px, so text-base
 was insufficient for 16px input text; explicit text-[16px] now fixes it.
 See docs/memory/wedding-experience.md for this continuation's evidence.
+
+## 2026-11-09 — DRI-41 WhatsApp-style chat redesign + staff chat inbox
+
+Customer `/my-account/chat` list+thread+PostSend family now share
+`components/chat-ui/` primitives (burgundy WhatsApp grammar, static wallpaper,
+time+ticks inside bubbles, sticky caller header). Honest ticks: double check
+only when the server watermark `lastStaffReadAt` (new DRI-26-mirror field,
+written by the open-pane staff poll) covers the message; otherwise a single
+"Sent." check. ConversationList rows = avatar + occasion + reference + activity
+time + server unread badge. Admin `/occasion-requests` is now a two-pane
+WhatsApp-Web-like staff inbox: row queue (status chips, unread badge from
+`customerUnreadCount`, activity/response-target columns) + in-place
+RequestDetail (`?id=` + replaceState, deep links intact). Staff panel polls
+the DRI-26 incremental contract via `staff-history.ts`; the initial read is
+the staff read mark. Admin list gains additive read-receipt aggregates; no new
+endpoints; governance (draft→approve, AI drafts private, external channels,
+no order writes) untouched. Suites: platform customer-chat 10/chat 16/occasions
+drafts, admin 11 module tests; types + lint clean; visual evidence at
+320/390/1280 (0 overflow) with both tick states; server
+`__tests__/occasionConversation*.test.js` green. Global battery + evidence:
+docs/superpowers/specs/RESUME-occasion-chat-whatsapp-DRI-41.md.

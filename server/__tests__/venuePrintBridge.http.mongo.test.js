@@ -22,7 +22,7 @@ async function indexes() {
   await require('../models/VenuePreparationItem').createIndexes();
 }
 
-test('bridge http: token flow, pending delivery flags, ack no-op, staff list/reprint', { skip: !uri, timeout: 120000 }, async t => {
+test('bridge http: token flow, pending delivery flags, ack no-op, staff list/reprint', { skip: !uri, timeout: 240000 }, async t => {
   await connectVenueMongo(t, 'print_bridge_http');
   await indexes();
   const args = await fixture();

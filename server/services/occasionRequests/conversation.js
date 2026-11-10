@@ -3,15 +3,19 @@ const {invalid}=require('../../utils/occasionRequestInput');
 const missing=()=>Object.assign(new Error('Conversation not found.'),{statusCode:404});
 function createConversationService({repository,notifyStaff=async()=>{}}){
  async function owned(id,viewer){if(!['customer','admin','super_admin'].includes(viewer.role))throw Object.assign(new Error('Conversation access denied.'),{statusCode:403});const request=await repository.request(id,viewer.role==='customer'?viewer.id:undefined);if(!request)throw missing();return request;}
- function brief(row){return {_id:row._id,reference:row.reference,occasion:row.occasion,city:row.city,date:row.date,guests:row.guests,budget:row.budget,notes:row.notes,preferences:row.preferences,items:row.items,status:row.status,dueAt:row.dueAt,createdAt:row.createdAt,...(row.attachment?{attachment:{name:row.attachment.name,size:row.attachment.size}}:{})};}
+ function brief(row){return {_id:row._id,reference:row.reference,occasion:row.occasion,city:row.city,date:row.date,guests:row.guests,budget:row.budget,notes:row.notes,preferences:row.preferences,items:row.items,status:row.status,dueAt:row.dueAt,createdAt:row.createdAt,...(row.lastStaffReadAt?{lastStaffReadAt:row.lastStaffReadAt}:{}),...(row.attachment?{attachment:{name:row.attachment.name,size:row.attachment.size}}:{})};}
  return {
   list:(customer,options)=>repository.list(customer,options),
   async read(id,viewer,cursors={}){
    const request=await owned(id,viewer);
-   // Authoritative read state: only the request's own customer writes; a poll must not fail because of it.
-   const readAt=viewer.role==='customer'?new Date():null;
+   // Authoritative read state: the request's own customer and authorised staff
+   // (open conversation pane) write their OWN side's watermark — never each
+   // other's; a failing write must never fail the cheap poll.
+   const staffRead=viewer.role==='admin'||viewer.role==='super_admin';
+   const readAt=new Date();
    const history=await repository.messages(id,cursors.before,cursors.after);
-   if(readAt)try{await repository.markCustomerRead(request._id,readAt);}catch{}
+   if(staffRead)try{await repository.markStaffRead(request._id,readAt);}catch{}
+   else try{await repository.markCustomerRead(request._id,readAt);}catch{}
    return {request:brief(request),...history};
   },
   async send(id,viewer,input){

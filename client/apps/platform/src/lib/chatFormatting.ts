@@ -6,6 +6,7 @@ const WAT = 'Africa/Lagos';
 
 const dayKeyFormatter = new Intl.DateTimeFormat('en-CA', { timeZone: WAT, year: 'numeric', month: '2-digit', day: '2-digit' });
 const legacyDateFormatter = new Intl.DateTimeFormat('en-NG', { timeZone: WAT, weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+const shortDateFormatter = new Intl.DateTimeFormat('en-NG', { timeZone: WAT, day: 'numeric', month: 'short' });
 const timeFormatter = new Intl.DateTimeFormat('en-NG', { timeZone: WAT, hour: '2-digit', minute: '2-digit' });
 
 /** Grouping label for a message timestamp: Today / Yesterday / plain date,
@@ -26,6 +27,15 @@ export function chatTimeLabel(timestamp: string): string {
   const message = new Date(timestamp);
   if (Number.isNaN(message.getTime())) return 'Invalid time';
   return timeFormatter.format(message);
+}
+
+/** Compact list-row timestamp: "12:05" when the activity is inside today's
+ * WAT day, otherwise the plain WAT date. Used by conversation rows; malformed
+ * timestamps render as the raw input string rather than throwing. */
+export function chatListTimeLabel(timestamp: string): string {
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return timestamp;
+  return dayKeyFormatter.format(date) === dayKeyFormatter.format(new Date()) ? timeFormatter.format(date) : shortDateFormatter.format(date);
 }
 
 /** Auth failures must not dead-end on error copy: surfaces a sign-in route

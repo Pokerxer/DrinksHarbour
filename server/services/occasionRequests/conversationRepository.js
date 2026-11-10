@@ -2,6 +2,7 @@
 const Request=require('../../models/OccasionRequest'),Message=require('../../models/OccasionMessage');
 // Earliest published staff message per request: the read-only "our team replied" timestamp.
 function firstStaffReplies(ids){if(!ids.length)return Promise.resolve(new Map());return Message.aggregate([{$match:{request:{$in:ids},sender:'staff'}},{$group:{_id:'$request',firstStaffReplyAt:{$min:'$createdAt'}}}]).then(rows=>new Map(rows.map(row=>[String(row._id),row.firstStaffReplyAt])));}
+// Read receipts: per-side watermark. Staff rows carry the same semantics as the customer mark (firstStaffReplies above).
 // Per-request unread count for the listing customer: staff messages strictly newer than that customer's read mark. Rows without a mark stay silent (0).
 function customerUnreadCounts(ids){if(!ids.length)return Promise.resolve(new Map());return Message.aggregate([
  {$match:{request:{$in:ids},sender:'staff'}},
@@ -19,6 +20,10 @@ module.exports={
   const rows=await Message.find({request,...(before?{_id:{$lt:before}}:{})}).sort({_id:-1}).limit(31).select('sender content createdAt').lean();const more=rows.length>30;if(more)rows.pop();return {messages:rows.reverse(),olderCursor:more?String(rows[0]._id):null};},
  // Owner-customer read watermark: only advances, never moves backwards.
  markCustomerRead:(id,at)=>Request.updateOne({_id:id,$or:[{lastCustomerReadAt:{$exists:false}},{lastCustomerReadAt:{$lt:at}}]},{$set:{lastCustomerReadAt:at}}),
+ // Staff-side watermark (DRI-41): written when an authorised staff client polls the open conversation; forward-only like the customer mark.
+ markStaffRead:(id,at)=>Request.updateOne({_id:id,$or:[{lastStaffReadAt:{$exists:false}},{lastStaffReadAt:{$lt:at}}]},{$set:{lastStaffReadAt:at}}),
+ // Shared read-receipt aggregates: the admin queue reuses them so both sides read one contract.
+ firstStaffReplies,customerUnreadCounts,
  async add(value){try{return {message:(await Message.create(value)).toObject(),created:true};}catch(error){if(error.code!==11000)throw error;return {message:await Message.findOne({request:value.request,messageKey:value.messageKey}).lean(),created:false};}},
  reopen:(id,message)=>Request.updateOne({_id:id,$or:[{lastCustomerMessageAt:{$lt:new Date(message.createdAt)}},{lastCustomerMessageAt:{$exists:false}}]},{$set:{status:'pending',lastMessageAt:new Date(message.createdAt),lastCustomerMessageAt:new Date(message.createdAt),dueAt:new Date(new Date(message.createdAt).getTime()+30*60*1000)}}),
  file:id=>Request.findOne({_id:id}).select('+attachment.data').lean().then(row=>row?.attachment),

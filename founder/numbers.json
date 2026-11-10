@@ -1,0 +1,25 @@
+{
+  "business": "DrinksHarbour — Tenant ERM SaaS + Marketplace contribution (Business Plan v6, Abuja-first)",
+  "unit": "paying tenant-month",
+  "note": "All amounts NGN, revenue before VAT. Assumption sources in founder/cfo-sources.md. The build of the platform itself is SUNK — paid in effort, not future cash.",
+  "price": 50200,
+  "variable": [
+    {"label": "Payment processing on subscription + add-ons (Paystack local)", "cost": 823},
+    {"label": "Variable service: tenant support + incremental infrastructure", "cost": 5000}
+  ],
+  "fixed_monthly": [
+    {"label": "Staff & founder pay (at Base-state headcount)", "cost": 2000000},
+    {"label": "B2B sales & marketing", "cost": 800000},
+    {"label": "Continuing engineering & security maintenance", "cost": 700000},
+    {"label": "Baseline hosting, administration, software", "cost": 500000}
+  ],
+  "startup": [
+    {"label": "GTM launch marketing & tenant acquisition", "cost": 1200000},
+    {"label": "Company registration, legal & compliance", "cost": 350000},
+    {"label": "Sales tooling & outreach", "cost": 250000},
+    {"label": "Domain, payments, security setup", "cost": 200000}
+  ],
+  "days_per_month": 30,
+  "plan_per_day": 3.33,
+  "ramp_per_day": [0.13, 0.27, 0.47, 0.73, 1.07, 1.5, 1.93, 2.33, 2.67, 2.93, 3.17, 3.33]
+}

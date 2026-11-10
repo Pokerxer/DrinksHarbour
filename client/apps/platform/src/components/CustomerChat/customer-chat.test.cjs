@@ -174,6 +174,41 @@ test('auth failures on the profile thread offer a sign-in route back to the same
  } finally { await React.act(async () => root.unmount()); dom.window.close(); Object.assign(global, prior); }
 });
 
+test('outgoing ticks stay honest — read requires the server staff watermark (DRI-41)', async () => {
+  const lib = load('lib/chatStatus.ts');
+  const readBrief = { ...initial.request, lastStaffReadAt: '2026-10-21T12:02:30Z' };
+  const dom = new JSDOM('<div id="root"></div>', { url: 'http://localhost/my-account/chat/thread' });
+  const prior = { window: global.window, document: global.document, fetch: global.fetch, IS_REACT_ACT_ENVIRONMENT: global.IS_REACT_ACT_ENVIRONMENT };
+  Object.assign(global, { window: dom.window, document: dom.window.document, IS_REACT_ACT_ENVIRONMENT: true });
+  try {
+    // Lib level: proven watermark upgrades; absent/malformed/malordered never do.
+    assert.equal(lib.chatReadState('2026-10-21T12:01:00Z', readBrief.lastStaffReadAt), 'read', 'a message older than the staff read mark has been read');
+    assert.equal(lib.chatReadState('2026-10-21T12:03:00Z', readBrief.lastStaffReadAt), 'sent', 'a message newer than the read mark stays sent-only');
+    assert.equal(lib.chatReadState('2026-10-21T12:01:00Z', undefined), 'sent', 'no watermark → no read claim');
+    assert.equal(lib.chatReadState('not-a-date', readBrief.lastStaffReadAt), 'sent', 'malformed timestamps stay sent-only');
+    assert.equal(lib.chatReadState('2026-10-21T12:01:00Z', 'garbage'), 'sent', 'malformed read marks stay sent-only');
+    // Render level: the tick announcement rides inside the bubble meta.
+    global.fetch = async () => ({ ok: true, json: async () => ({ success: true, data: { ...initial, request: readBrief } }) });
+    const Page = load('components/CustomerChat/ConversationPage.tsx').default;
+    const { createRoot } = require('react-dom/client'), root = createRoot(document.getElementById('root'));
+    await React.act(async () => root.render(React.createElement(Page, { id: 'thread' })));
+    assert(document.body.textContent.includes('Our team has this conversation open.'), 'staff-proven reads announce the double check accessibly');
+    global.fetch = async () => ({ ok: true, json: async () => ({ success: true, data: { ...initial, request: { ...initial.request, _id: 'thread' } } }) });
+    await React.act(async () => root.render(React.createElement(Page, { id: 'thread' })));
+    // Second render is a NEW page instance; force a fresh mount to reset thread state:
+    await React.act(async () => root.unmount());
+    const root2 = createRoot(document.getElementById('root'));
+    await React.act(async () => root2.render(React.createElement(Page, { id: 'thread' })));
+    await React.act(async () => root2.unmount());
+    const root3 = createRoot(document.getElementById('root'));
+    global.fetch = async () => ({ ok: true, json: async () => ({ success: true, data: initial }) });
+    await React.act(async () => root3.render(React.createElement(Page, { id: 'thread' })));
+    assert(!document.body.textContent.includes('Our team has this conversation open.'), 'without a watermark no read is announced');
+    assert(document.body.textContent.includes('Sent.'), 'server-accepted messages announce the honest sent tick');
+    await React.act(async () => root3.unmount());
+  } finally { dom.window.close(); Object.assign(global, prior); }
+});
+
 test('listed conversations surface the server-computed unread counts as accessible badges',async()=>{
  const unreadRow={...initial.request,customerUnreadCount:2};
  const quiet={...initial.request,_id:'quiet',reference:'DH-EVT-TWO'};

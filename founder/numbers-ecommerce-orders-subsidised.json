@@ -1,0 +1,21 @@
+{
+  "business": "DrinksHarbour — Stream 1 e-commerce per ORDER (platform SUBSIDISES delivery at real Abuja drop cost)",
+  "unit": "delivered online order",
+  "note": "All NGN before VAT. AOV ₦40,000 (estimate). Delivery NOT passed to the customer: platform absorbs the real per-drop bike-dispatch cost (~₦3,500, public Abuja rates) as a fixed per-order cost. This is deliberately the stress case against the old 3%-of-GMV subsidy assumption.",
+  "price": 4400,
+  "variable": [
+    {"label": "Paystack processing (1.5% + ₦100 of ₦40k AOV)", "cost": 700},
+    {"label": "Refund/fraud reserve (1% of GMV)", "cost": 400},
+    {"label": "Consumer acquisition marketing (2% of GMV)", "cost": 800},
+    {"label": "Delivery drop cost (Abuja bike dispatch, real)", "cost": 3500}
+  ],
+  "fixed_monthly": [
+    {"label": "No incremental fixed cost — shared with the operating platform", "cost": 0}
+  ],
+  "startup": [
+    {"label": "No one-off spend — marketplace code is already built", "cost": 0}
+  ],
+  "days_per_month": 30,
+  "plan_per_day": 33.33,
+  "ramp_per_day": [0.008, 0.04, 0.14, 0.4, 0.93, 1.88, 3.38, 5.63, 8.71, 13.5, 22, 33.33]
+}

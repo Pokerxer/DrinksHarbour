@@ -673,4 +673,36 @@ export const subproductService = {
 
     return readJson(response);
   },
+
+  /**
+   * PATCH a stored Size (e.g. the purchase form committing an edited pack
+   * size as the size's new default packaging quantity). Server-side
+   * `subProductService.updateSize` whitelists normal size fields and gates
+   * marketplace overrides.
+   */
+  async updateSize(
+    subProductId: string,
+    sizeId: string,
+    patch: Record<string, unknown>,
+    token: string
+  ) {
+    const response = await fetch(
+      `${API_URL}/api/subproducts/${encodeURIComponent(subProductId)}/sizes/${encodeURIComponent(sizeId)}`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(patch),
+      }
+    );
+
+    if (!response.ok) {
+      const error = await readError(response);
+      throw new Error(error.message || 'Failed to update this size');
+    }
+
+    return readJson(response);
+  },
 };

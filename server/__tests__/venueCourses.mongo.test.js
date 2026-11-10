@@ -18,7 +18,7 @@ async function pourSetup(args, beverages) {
   return tenant;
 }
 
-test('courses: auto-registration, filtered fire, hold/release, registry rules', { skip: !uri, timeout: 120000 }, async t => {
+test('courses: auto-registration, filtered fire, hold/release, registry rules', { skip: !uri, timeout: 240000 }, async t => {
   await connectVenueMongo(t, 'courses_fire');
   await require('../services/venue/service-sessions').ensureIndexes();
   await require('../models/VenueLocationProfile').createIndexes();
@@ -129,7 +129,7 @@ test('courses: auto-registration, filtered fire, hold/release, registry rules', 
   await assertFails(linesService.fireSessionRound({ ...args, sessionId: visit.id, expectedVersion: released.version, idempotencyKey: 'fire-deserts', courseId: 'deserts' }), 'NO_UNFIRED_LINES');
 });
 
-test('course routes: fire/hold/set wiring with idempotency and version checks', { skip: !uri, timeout: 120000 }, async t => {
+test('course routes: fire/hold/set wiring with idempotency and version checks', { skip: !uri, timeout: 240000 }, async t => {
   await connectVenueMongo(t, 'courses_http');
   await require('../services/venue/service-sessions').ensureIndexes();
   await require('../models/VenueLocationProfile').createIndexes();

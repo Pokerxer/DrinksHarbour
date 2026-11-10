@@ -78,6 +78,14 @@ Test: `purchases-create-lines.test.ts` (vitest).
   `purchaseSizelessSelection` / `purchaseSizeSelection` (cost → unitPrice,
   unitsPerPack → packSize); add/set/remove semantics mirror the sales form's
   qty map (a catalogue add behaves exactly like a Scan & Match accept).
+  **NOT scoped by the destination warehouse** (fix 2026-11-09): the sales
+  endpoint's `warehouseId` filter keeps only products *already stocked* in
+  that warehouse, and a purchase order orders stock the destination does not
+  have yet — scoping emptied the modal ("No products in this warehouse") as
+  soon as a destination was picked. Stock badges show tenant-wide
+  availability. The sales create form keeps its own warehouse scoping
+  (fulfillment semantics); the transfer catalogue scopes by the SOURCE
+  warehouse's stock on purpose.
 - `App:*` — `useSalesCatalogue` (`sales/use-sales-catalogue.ts`) gained an
   optional `loader` parameter (defaults to the sales loader) so the purchase
   catalogue reuses the same search/filter/pagination plumbing. Optional
@@ -194,3 +202,34 @@ Frontend:
   (460 tests); `npm run type:check` clean.
 - Not yet exercised: a live POST/PATCH through the dev server with sections
   and notes on a real draft (needs `server` + Mongo running).
+
+## Search loading state (2026-11-09)
+
+The PO create/edit product picker (`ProductSearch`) flashed "No products
+match" while the debounced server search was still pending — the empty state
+labelled the query even though no results for it existed yet. The picker now
+tracks which query the current result list answers (`resultsFor`) and shows a
+searching skeleton (`product-search-skeleton.tsx`, vitest-tested rows +
+spinner caption) whenever the typed query has drifted from it or a fetch is in
+flight; a definitive empty message only appears once results for that exact
+query have landed. The input's inline "…" became a spinning icon
+(`PiSpinner`). Follow-up candidates with the same symptom: the sales
+`product-line-search.tsx` picker and the PO `VendorSearch` placeholder.
+
+## Pack Size edits become the size's default (2026-11-09)
+
+When the operator edits a PO/transfer line's **Pack Size** and leaves the
+field (blur/Enter; also the UOM-conversion pick), that value is committed as
+the Size document's new default packaging quantity (`unitsPerPack`) via the
+existing `PATCH /api/subproducts/:id/sizes/:sizeId` endpoint — the size's
+default is updated immediately, not only on the line's wire payload:
+- `pack-size-input.tsx` gained `onCommitDefault` (once per real edit; typing
+  never fires it — tests in `pack-size-input.test.tsx`).
+- Wired in `purchases-create.tsx`, `purchases-edit.tsx` and
+  `stock-transfer-create.tsx` (transfer form also updates its loaded
+  stock-row snapshot so later picks/catalogue rows show the new default).
+- Pickers stay consistent within the session via the parent's
+  `packSizeOverrides` (sizeId → unitsPerPack) consumed at pick time in the
+  create/edit `ProductSearch` (list badge + picked packSize); failed
+  persistence only toasts an error and skips the override so future picks use
+  server truth. Sizeless lines (no `sizeId`) never persist.

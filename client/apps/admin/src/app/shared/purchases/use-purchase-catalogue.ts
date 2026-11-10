@@ -5,19 +5,23 @@ import { loadPurchaseCataloguePage } from './purchases-catalog-data';
 
 /**
  * Purchase catalogue over the shared catalogue plumbing (search, filters,
- * facets, pagination). No pricelist: the page loader prices nothing — the
- * card shows cost prices straight from the SubProduct rows.
+ * facets, pagination). Prices are cost prices from the catalogue rows.
+ *
+ * Deliberately NOT scoped by warehouse: the sales catalogue's warehouse filter
+ * keeps only products *already stocked* in that warehouse, and a purchase
+ * order is about ordering stock the destination does not have yet — scoping
+ * would empty the modal as soon as a destination warehouse is picked. Stock
+ * badges show tenant-wide availability instead.
  */
 export function usePurchaseCatalogue(
   open: boolean,
   token: string,
-  warehouseId?: string,
   quantities: Record<string, number> = {},
 ) {
   return useSalesCatalogue(
     open,
     token,
-    warehouseId,
+    undefined,
     undefined,
     quantities,
     loadPurchaseCataloguePage,

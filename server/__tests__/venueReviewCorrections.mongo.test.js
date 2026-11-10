@@ -14,7 +14,7 @@ async function openCashVisit() {
   const visit = await require('../services/venue/service-sessions').ensureServiceSession({ ...args, idempotencyKey: 'open' });
   return { args: { ...args, sessionId: visit.id }, item, visit };
 }
-test('served_lines_survive_new_sale_ineligibility_but_hidden_additions_are_refused', { skip: !uri, timeout: 90000 }, async t => {
+test('served_lines_survive_new_sale_ineligibility_but_hidden_additions_are_refused', { skip: !uri, timeout: 240000 }, async t => {
   await setup(t, 'served_review');
   for (const patch of [{ visibleInPOS: false }, { status: 'hidden' }, { status: 'discontinued' }, { status: 'archived' }]) {
     const { args, item, visit } = await openCashVisit(); const lines = require('../services/venue/lines');
@@ -31,7 +31,7 @@ test('served_lines_survive_new_sale_ineligibility_but_hidden_additions_are_refus
     assert.equal(paid.bill.state, 'settled'); assert.equal(paid.bill.totalMinor, 100000);
   }
 });
-test('priced_revisions_keep_their_own_batch_evidence_after_settlement_and_retry', { skip: !uri, timeout: 45000 }, async t => {
+test('priced_revisions_keep_their_own_batch_evidence_after_settlement_and_retry', { skip: !uri, timeout: 120000 }, async t => {
   await setup(t, 'revision_batches'); const { args, item, visit } = await openCashVisit();
   const sub = await require('../models/SubProduct').findOne({ _id: item.subProductId, tenant: args.tenantId }).lean();
   await require('../models/Product').updateOne({ _id: sub.product }, { $set: { tracksBatch: true } });

@@ -1,0 +1,21 @@
+{
+  "business": "DrinksHarbour — Stream 1: multi-tenant marketplace e-commerce (standalone view)",
+  "unit": "₦100,000 of monthly marketplace GMV",
+  "note": "All amounts NGN, before VAT. E-commerce unit = ₦100k of GMV; price = the blended 11% commission the platform keeps; variable = the documented cost stacks per GMV. No separate fixed cost modeled: the marketplace runs on the same platform/ops as the SaaS stream — its ₦4m/month is already covered by tenant-months in founder/cfo.md. Assumption sources in founder/cfo-sources.md and this file's report.",
+  "price": 11000,
+  "variable": [
+    {"label": "Processing/payout budget (2% of GMV, estimated — not a verified Korapay quote)", "cost": 2000},
+    {"label": "Service/delivery subsidy (3% of GMV)", "cost": 3000},
+    {"label": "Refund/fraud reserve (1% of GMV)", "cost": 1000},
+    {"label": "Incremental consumer acquisition (2% of GMV)", "cost": 2000}
+  ],
+  "fixed_monthly": [
+    {"label": "No incremental fixed cost — shared with the operating platform (₦4m/mo covered by the SaaS stream)", "cost": 0}
+  ],
+  "startup": [
+    {"label": "No one-off spend — marketplace code is already built and paid for in effort", "cost": 0}
+  ],
+  "days_per_month": 30,
+  "plan_per_day": 13.33,
+  "ramp_per_day": [0.003, 0.016, 0.056, 0.161, 0.373, 0.75, 1.353, 2.25, 3.483, 5.4, 8.8, 13.33]
+}

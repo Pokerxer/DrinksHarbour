@@ -37,6 +37,7 @@ For delivery coverage, estimates, returns and refunds, consult the relevant page
 ## For beverage businesses
 
 - [Sell on DrinksHarbour](https://www.drinksharbour.com/vendors/register): Business onboarding, public subscription plans and features for managing inventory, sales and a branded storefront; consult this page for current plan details.
+- [Vendor pricing (machine-readable)](https://www.drinksharbour.com/pricing.md): Subscription plans, listing and staff limits, marketplace commission, add-ons and free trial for beverage businesses.
 
 ## Optional
 
