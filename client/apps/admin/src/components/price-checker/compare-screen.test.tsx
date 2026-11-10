@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { KioskProduct } from './types';
 import { CompareScreen } from './compare-screen';
@@ -134,4 +134,66 @@ it('supports tap-to-highlight on a compared bottle', () => {
   fireEvent.click(cardB);
   expect(container.querySelectorAll('.kiosk-compare-card')[0].getAttribute('data-focus')).toBe('false');
   expect(cardB.getAttribute('data-focus')).toBe('true');
+});
+
+describe('differences-only and stock-aware compare', () => {
+  const oosBottle = {
+    name: 'Sold out',
+    price: 300,
+    currency: 'NGN',
+    alcoholic: false,
+    taxLabel: '',
+    availability: 'OUT_OF_STOCK' as const,
+  };
+
+  it('hides shared rows and shows only divergent ones in differences-only mode', () => {
+    render(
+      <CompareScreen
+        items={[
+          { ...bottle('A', 500, 40), size: '70cl', beverageType: 'spirit' },
+          { ...bottle('B', 400, 40), size: '70cl', beverageType: 'spirit' },
+        ]}
+        currency="NGN"
+        onRemove={() => {}}
+        onClose={() => {}}
+      />
+    );
+    fireEvent.click(screen.getByRole('button', { name: /differences only/i }));
+    expect(screen.queryByLabelText('All bottles: Non-alcoholic')).toBeNull();
+    expect(screen.getByText('Best value')).toBeTruthy();
+  });
+
+  it('demotes an out-of-stock bottle: no crown, dimmed, unavailable line', () => {
+    render(
+      <CompareScreen
+        items={[bottle('In stock A', 900), oosBottle as KioskProduct]}
+        currency="NGN"
+        onRemove={() => {}}
+        onClose={() => {}}
+      />
+    );
+    const cards = [...document.querySelectorAll('.kiosk-compare-card')];
+    expect(cards[1].getAttribute('data-rank')).toBe('Infinity');
+    expect(String(document.body.textContent)).toContain('Unavailable');
+    expect(document.querySelector('.kiosk-compare-oos')).toBeTruthy();
+    expect(screen.getAllByText('Best value')).toHaveLength(1);
+  });
+
+  it('renders relative value bars under the prices', () => {
+    render(
+      <CompareScreen
+        items={[
+          { ...bottle('A', 1000), volumeMl: 700, availability: 'IN_STOCK' as const },
+          { ...bottle('B', 500), volumeMl: 700, availability: 'IN_STOCK' as const },
+        ]}
+        currency="NGN"
+        onRemove={() => {}}
+        onClose={() => {}}
+      />
+    );
+    const bars = [...document.querySelectorAll('.kiosk-valuebar span')];
+    expect(bars).toHaveLength(2);
+    expect(bars[0].getAttribute('data-length')).toBe('100');
+    expect(bars[1].getAttribute('data-length')).toBe('50');
+  });
 });

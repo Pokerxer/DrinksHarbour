@@ -2,7 +2,7 @@
 import { useState, type CSSProperties } from 'react';
 import type { KioskProduct } from './types';
 import { formatMoney } from './money';
-import { bestValueRank, pricePerDrink, pricePerMl } from './metrics';
+import { bestValueRank, pricePerDrink, pricePerMl, valueRatios } from './metrics';
 import { decisionHeadline, rowsFor, type CompareRow } from './compare-rows';
 import { compareKey } from './use-compare';
 
@@ -11,6 +11,7 @@ interface CardProps {
   rank: number;
   index: number;
   focused: boolean;
+  barRatio: number | null;
   onToggleFocus: (key: string) => void;
   onRemove: (key: string) => void;
   currency: string;
@@ -21,15 +22,17 @@ function CompareCard({
   rank,
   index,
   focused,
+  barRatio,
   onToggleFocus,
   onRemove,
   currency,
 }: CardProps) {
+  const soldOut = product.availability === 'OUT_OF_STOCK';
   const money = (value: number) => formatMoney(value, currency);
   const key = compareKey(product);
   return (
     <div
-      className="kiosk-compare-card"
+      className={`kiosk-compare-card${soldOut ? ' kiosk-compare-oos' : ''}`}
       role="listitem"
       data-rank={rank}
       data-focus={focused ? 'true' : 'false'}
@@ -59,12 +62,18 @@ function CompareCard({
       )}
       <p className="kiosk-eyebrow">{product.brand || ' '}</p>
       <p className="kiosk-compare-name">{product.name}</p>
-      {rank === 0 && <p className="kiosk-compare-best">Best value</p>}
-      <p className="kiosk-price">{money(product.price)}</p>
+      {!soldOut && rank === 0 && <p className="kiosk-compare-best">Best value</p>}
+      <p className="kiosk-price">
+        {soldOut ? <span className="kiosk-compare-oos-price">{money(product.price)}</span> : money(product.price)}
+      </p>
+      {soldOut && <p className="kiosk-compare-oos-note">Unavailable — pick another</p>}
+      {typeof barRatio === 'number' && !soldOut && (
+        <div className="kiosk-valuebar" aria-hidden="true">
+          <span data-length={Math.round(barRatio * 100)} style={{ width: `${barRatio * 100}%`} as CSSProperties} />
+        </div>
+      )}
       {product.originalPrice !== undefined && (
-        <p className="kiosk-small">
-          Save {money(product.savings ?? 0)}
-        </p>
+        <p className="kiosk-small">Save {money(product.savings ?? 0)}</p>
       )}
     </div>
   );
@@ -82,9 +91,11 @@ export function CompareScreen({
   onClose: () => void;
 }) {
   const ranks = bestValueRank(items);
+  const bars = valueRatios(items);
   const rows = rowsFor(items);
   const headline = decisionHeadline(items, currency);
   const [focusKey, setFocusKey] = useState<string | null>(null);
+  const [differencesOnly, setDifferencesOnly] = useState(false);
   const toggleFocus = (key: string) =>
     setFocusKey((current) => (current === key ? null : key));
   // Currency glyph, whatever the kiosk is configured with (₦, $, …).
@@ -99,7 +110,7 @@ export function CompareScreen({
       values: perMl.map((value) =>
         value === null ? undefined : `${symbol}${value.toFixed(2)}/ml`
       ),
-      shared: new Set(perMl).size === 1 && perMl[0] !== null,
+      shared: new Set(perMl.filter(Boolean)).size === 1 && perMl.filter(Boolean).length > 1,
     });
   const perDrink = items.map((product) =>
     pricePerDrink(product.price, product.volumeMl, product.abv)
@@ -110,26 +121,30 @@ export function CompareScreen({
       values: perDrink.map((value) =>
         value === null ? undefined : `${symbol}${value.toFixed(2)}/drink`
       ),
-      shared: new Set(perDrink).size === 1 && perDrink[0] !== null,
+      shared: new Set(perDrink.filter(Boolean)).size === 1 && perDrink.filter(Boolean).length > 1,
     });
-  const table = [...rows, ...computed];
+  const allRows = [...rows, ...computed];
+  const divergentCount = allRows.filter((row) => !row.shared).length;
+  const table = differencesOnly ? allRows.filter((row) => !row.shared) : allRows;
 
   const renderRow = (row: CompareRow) => {
-    if (row.shared) {
-      const value = row.values[0];
+    if (!row.shared) {
       return (
-        <tr key={row.label} aria-label={`All bottles: ${value}`}>
+        <tr key={row.label}>
           <th scope="row">{row.label}</th>
-          <td colSpan={items.length}>All: {value}</td>
+          {row.values.map((value, index) => (
+            <td key={index} data-divergent={value !== undefined ? 'true' : undefined}>
+              {value || '—'}
+            </td>
+          ))}
         </tr>
       );
     }
+    const value = row.values[0];
     return (
-      <tr key={row.label}>
+      <tr key={row.label} aria-label={`All bottles: ${value}`}>
         <th scope="row">{row.label}</th>
-        {row.values.map((value, index) => (
-          <td key={index}>{value || '—'}</td>
-        ))}
+        <td colSpan={items.length}>All: {value}</td>
       </tr>
     );
   };
@@ -142,6 +157,13 @@ export function CompareScreen({
           <p>Pick the bottle that suits you best.</p>
         </div>
         <button
+          className="kiosk-quiet kiosk-diff-toggle"
+          aria-pressed={differencesOnly}
+          onClick={() => setDifferencesOnly((on) => !on)}
+        >
+          Show differences only
+        </button>
+        <button
           className="kiosk-quiet"
           onClick={() => {
             setFocusKey(null);
@@ -152,12 +174,13 @@ export function CompareScreen({
         </button>
       </div>
       <div className="kiosk-compare-grid" role="list" aria-label="Compared bottles">
-      {items.map((product, index) => (
+        {items.map((product, index) => (
           <CompareCard
             key={compareKey(product)}
             product={product}
             rank={ranks[index]}
             index={index}
+            barRatio={bars[index]}
             focused={focusKey === compareKey(product)}
             onToggleFocus={toggleFocus}
             onRemove={onRemove}
@@ -174,6 +197,12 @@ export function CompareScreen({
         <table className="kiosk-compare-rows" aria-label="Differences">
           <tbody>{table.map(renderRow)}</tbody>
         </table>
+      )}
+      {differencesOnly && table.length === 0 && divergentCount === 0 && (
+        <p className="kiosk-compare-identical" role="status">
+          These bottles are identical on every recorded attribute — the price
+          row below tells the whole story.
+        </p>
       )}
     </section>
   );

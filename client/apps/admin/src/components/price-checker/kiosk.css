@@ -482,3 +482,64 @@
   padding: 8px 16px;
   font-size: 0.75em;
 }
+
+/* ── round 7 — differences-only, value bars, stock-aware ─────────────────── */
+.kiosk-diff-toggle {
+  font-size: 0.72em;
+  align-self: center;
+}
+.kiosk-diff-toggle[aria-pressed='true'] {
+  border: 2px solid var(--kiosk-accent);
+  color: var(--kiosk-accent);
+  background: none;
+}
+.kiosk-compare-rows td[data-divergent='true'] {
+  font-weight: 700;
+  background: color-mix(in srgb, var(--kiosk-accent) 7%, transparent);
+}
+.kiosk-valuebar {
+  height: 9px;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  overflow: hidden;
+  margin-top: 10px;
+}
+.kiosk-valuebar span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--kiosk-muted);
+  transition: width var(--motion-fast, 160ms) var(--motion-ease, ease);
+}
+.kiosk-valuebar span[data-length='0'] {
+  background: var(--kiosk-accent);
+}
+.kiosk-compare-oos {
+  opacity: 0.62;
+  filter: saturate(0.4);
+}
+.kiosk-compare-oos img {
+  filter: grayscale(1);
+}
+.kiosk-compare-oos .kiosk-price {
+  color: var(--kiosk-muted);
+}
+.kiosk-compare-oos .kiosk-price span {
+  text-decoration: line-through;
+  color: var(--kiosk-muted);
+  font-size: 0.72em;
+}
+.kiosk-compare-oos-note {
+  color: #922d21;
+  font-weight: 700;
+  font-size: 0.72em;
+  margin: 4px 0 0;
+}
+.kiosk-compare-identical {
+  margin: 12px 0 0;
+  color: var(--kiosk-muted);
+  text-align: center;
+}
+@media (prefers-color-scheme: dark) {
+  .kiosk-compare-oos-note { color: #ff9f98; }
+}
