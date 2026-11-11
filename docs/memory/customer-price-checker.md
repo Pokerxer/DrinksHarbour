@@ -136,3 +136,29 @@ failed against missing generation, then all4 passed after implementation.
 Final auto-fill verification:68 price-checker frontend tests passed in17 files;
 admin TypeScript passed, log work/kiosk-autofill/typecheck.log empty. Scoped diff
 checks passed. No backend changes, configuration writes, commit or deployment.
+
+## Shopper flow and deliberate phone capture — 2026-11-11
+
+- Live lookup and the offline book resolve the exact Size barcode using the
+  shared POS retail basis and the kiosk's branch-bound, one-unit pricelist.
+  Ignore zero-markup cost formulas so the purchase cost cannot become the
+  public price through that rule. Missing or invalid selling prices are
+  unavailable. The book selects the same pricing inputs, uses the same
+  public serializer, rejects duplicate barcodes, and tags suggestible stock
+  using the configured branch. Invalidate old book/tray snapshots with v2 keys.
+- The customer checker shows alcoholic product prices directly. The kiosk QR
+  opens only through Use your phone. The keyboard wedge stays active. Paired
+  phone scans may show the result on the kiosk, without adding it to the
+  comparison automatically.
+- The phone camera preview stays live across captures. Each Capture samples
+  the current video frame and runs the barcode decoder on that snapshot.
+  Stop camera releases the stream and discards an in-flight frame decode.
+  The phone stores successful scans in browser local storage per pairing
+  link. Duplicate barcodes refresh their entry and move it to the top of history. Removal
+  and Clear history are explicit. Each row opens the exact size, price and
+  available catalogue details. Wine grape comes from recorded grape values or
+  a subcategory explicitly tagged as a varietal.
+- Up to three branch-stocked alternatives are ranked by category, subcategory,
+  grape and brand, then by price distance. The same comparison view opens only
+  after the shopper selects at least two bottles and chooses Compare.
+- Handoff: `docs/superpowers/specs/RESUME-price-checker-shopper-flow.md`.
