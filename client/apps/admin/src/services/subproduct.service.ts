@@ -394,6 +394,29 @@ export const subproductService = {
     return readJson<T>(response);
   },
 
+  /**
+   * Live Purchased/Sold stats for one sub-product, computed server-side from
+   * Orders and PurchaseOrders (the sources the history panels read). The
+   * expanded list row calls this on expand — the list payload's counters are
+   * stale by construction.
+   */
+  async getSubProductStats<T = unknown>(
+    id: string,
+    token: string
+  ): Promise<T> {
+    const response = await fetch(`${API_URL}/api/subproducts/${id}/stats`, {
+      cache: 'no-store',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    if (!response.ok) {
+      const error = await readError(response);
+      throw new Error(error.message || 'Failed to fetch product stats');
+    }
+    return readJson<T>(response);
+  },
+
   async updateSubProduct(
     id: string,
     data: Partial<SubProductData>,

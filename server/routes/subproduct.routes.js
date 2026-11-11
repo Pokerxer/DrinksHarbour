@@ -58,6 +58,10 @@ router.post(
  */
 router.get('/:id', tenantAdminOrSuperAdmin, subProductController.getSubProduct);
 
+// Stats BEFORE the bare '/:id' siblings is unnecessary (two-segment paths
+// never match '/:id'), but it lives beside it for discoverability.
+router.get('/:id/stats', tenantAdminOrSuperAdmin, subProductController.getSubProductStats);
+
 /**
  * @route   GET /api/subproducts/:id/stock-by-warehouse
  * @desc    Get a subproduct's stock broken down by warehouse

@@ -96,6 +96,31 @@ const getSubProduct = asyncHandler(async (req, res) => {
 });
 
 /**
+ * @desc    Live Purchased/Sold stats for one SubProduct (computed from Orders
+ *          and PurchaseOrders — the sources the history panels read)
+ * @route   GET /api/subproducts/:id/stats
+ * @access  Private (Tenant admin / super admin)
+ *
+ * The Sub-Products list loads the whole catalog in one payload, so the
+ * expanded row fetches these on expand instead of the server stamping 5000
+ * rows' stats on every list load.
+ */
+const getSubProductStats = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const anyTenant = ['super_admin', 'admin'].includes(req.user?.role);
+  const tenantId = getTenantId(req, { required: !anyTenant });
+
+  const stats = await subProductService.getSubProductStatsFor(id, tenantId, {
+    anyTenant,
+  });
+
+  res.status(200).json({
+    success: true,
+    data: stats,
+  });
+});
+
+/**
  * @desc    Update SubProduct
  * @route   PATCH /api/subproducts/:id
  * @access  Private (Tenant admin)
@@ -822,6 +847,7 @@ module.exports = {
   getStockByWarehouse,
   createSubProduct,
   getSubProduct,
+  getSubProductStats,
   updateSubProduct,
   deleteSubProduct,
   adminSetStatus,

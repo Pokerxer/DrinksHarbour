@@ -18,6 +18,7 @@ const {
 const { generateSKU } = require('../utils/skuGenerator');
 const { escapeRegex } = require('../utils/escapeRegex');
 const { subProductPageCache } = require('./subProductPageCache');
+const { getSubProductStats } = require('./subproductStats');
 const { SUBPRODUCT_LIST_FIELDS, SIZE_LIST_FIELDS } = require('./subproduct-list-fields');
 const { assessSubProductDeletion } = require('./warehouseStock.helpers');
 const { assertSizesDeletable, sizeDeletionStatus, removedSizes } = require('./size-deletion');
@@ -1356,10 +1357,67 @@ const getSubProduct = async (subProductId, tenantId, options = {}) => {
     subProduct.availableStock = whRows.reduce((sum, r) => sum + (r.currentQuantity || 0), 0);
   }
 
+  // Stamp LIVE history stats over the document's analytics counters.
+  //
+  // `totalSold` is only ever incremented by the POS controller and
+  // `purchaseCount` has no increment path at all (see services/
+  // orderDemand.helper.js and services/subproductStats.js), so the stored
+  // values read 0 for any product whose sales happened off-POS — the
+  // 2026-11-11 "Purchased 0 / Sold 0" report while the drill-down panels
+  // showed 1,200 purchased units and 6 orders. The toolbar must agree with
+  // the panels it opens, so both counters are computed from the same
+  // collections the panels read (Orders / PurchaseOrders). One aggregation
+  // each for a single id — bounded, no catalog-wide fan-out.
+  const stats = await getSubProductStats([subProductId], {
+    Order: require('../models/Order'),
+    PurchaseOrder: require('../models/PurchaseOrder'),
+    tenantId: anyTenant ? null : tenantId,
+  });
+  const live = stats.get(String(subProductId)) || { units: 0, revenue: 0, purchased: 0 };
+  subProduct.totalSold = live.units;
+  subProduct.totalRevenue = live.revenue;
+  subProduct.purchaseCount = live.purchased;
+
   return {
     ...subProduct,
     pricing,
     sizes: sizesWithPricing
+  };
+};
+
+/**
+ * Live Purchased/Sold stats for one SubProduct — the light endpoint the
+ * Sub-Products LIST's expanded row calls on expand (the list loads up to 5000
+ * rows at once, so stats are never stamped per-row on the catalog payload).
+ *
+ * Ownership first (404 for another tenant's listing), then the same
+ * source-of-truth aggregations the detail page stamps and the drill-down
+ * panels read.
+ */
+const getSubProductStatsFor = async (subProductId, tenantId, options = {}) => {
+  if (!/^[0-9a-fA-F]{24}$/.test(subProductId)) {
+    throw new ValidationError('Invalid SubProduct ID');
+  }
+  const { anyTenant = false } = options;
+  const ownership = anyTenant ? {} : { tenant: tenantId };
+
+  const exists = await SubProduct.findOne({ _id: subProductId, ...ownership })
+    .select('_id')
+    .lean();
+  if (!exists) {
+    throw new NotFoundError('Product not found in your catalog');
+  }
+
+  const stats = await getSubProductStats([subProductId], {
+    Order: require('../models/Order'),
+    PurchaseOrder: require('../models/PurchaseOrder'),
+    tenantId: anyTenant ? null : tenantId,
+  });
+  const live = stats.get(String(subProductId)) || { units: 0, revenue: 0, purchased: 0 };
+  return {
+    totalSold: live.units,
+    totalRevenue: live.revenue,
+    purchaseCount: live.purchased,
   };
 };
 
@@ -5170,6 +5228,7 @@ module.exports = {
   // catalogue-linking authority rules without touching SKU/stock side effects.
   createSubProductCore,
   getSubProduct,
+  getSubProductStatsFor,
   updateSubProduct,
   deleteSubProduct,
   adminSetSubProductStatus,

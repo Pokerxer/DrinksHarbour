@@ -1204,7 +1204,10 @@ export default function SubProductsTable({
             }}
             components={{
               expandedComponent: (row) => (
-                <ExpandedSubProductRow subProduct={row.original as SubProductListItem} />
+                <ExpandedSubProductRow
+                  subProduct={row.original as SubProductListItem}
+                  token={session?.user?.token}
+                />
               ),
             }}
           />

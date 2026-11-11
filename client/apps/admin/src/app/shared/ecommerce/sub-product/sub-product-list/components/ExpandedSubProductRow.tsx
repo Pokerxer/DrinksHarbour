@@ -2,7 +2,15 @@
 
 // Expanded row body for the sub-products list view: size variants,
 // catalog product info, and sales/revenue summary.
+//
+// The Sold/Purchased numbers are FETCHED when the row opens, not read from
+// the list payload: the list loads the whole catalog (up to 5000 rows) and
+// its document counters are stale by construction — SubProduct.totalSold is
+// POS-only and purchaseCount has no increment path (see server/services/
+// subproductStats.js). The fetch targets the same source-of-truth endpoint
+// the detail toolbar stamps, so the row agrees with the history panels.
 
+import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Text, Badge, Flex } from 'rizzui';
 import { PiPackageBold } from 'react-icons/pi';
@@ -11,13 +19,45 @@ import {
   type SubProductListItem,
   type SizeVariant,
 } from '../filtering';
+import { subproductService } from '@/services/subproduct.service';
 
 export default function ExpandedSubProductRow({
   subProduct,
+  token,
 }: {
   subProduct: SubProductListItem;
+  token?: string;
 }) {
   const symbol = currencySymbol(subProduct.currency) || subProduct.currency;
+
+  // Live stats; while loading (or on failure) fall back to the payload's
+  // counters so the row always renders something.
+  const [stats, setStats] = useState<{
+    totalSold: number;
+    totalRevenue: number;
+    purchaseCount: number;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!token || !subProduct._id) return;
+    let cancelled = false;
+    subproductService
+      .getSubProductStats(subProduct._id, token)
+      .then((res: any) => {
+        if (cancelled) return;
+        const data = res?.data?.stats ?? res?.data ?? res;
+        if (data) setStats(data);
+      })
+      .catch(() => {
+        /* the payload counters stay visible; the drill-down panels re-fetch */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token, subProduct._id]);
+
+  const totalSold = stats?.totalSold ?? subProduct.totalSold ?? 0;
+  const totalRevenue = stats?.totalRevenue ?? subProduct.totalRevenue ?? 0;
 
   return (
     <motion.div
@@ -74,13 +114,13 @@ export default function ExpandedSubProductRow({
           <div className="space-y-2 rounded-xl border border-gray-200 bg-white p-4">
             <div>
               <Text className="text-xs text-gray-400">Total Sold</Text>
-              <Text className="text-xl font-bold">{subProduct.totalSold || 0}</Text>
+              <Text className="text-xl font-bold">{totalSold}</Text>
             </div>
             <div>
               <Text className="text-xs text-gray-400">Total Revenue</Text>
               <Text className="font-bold text-green-600">
                 {symbol}
-                {(subProduct.totalRevenue || 0).toLocaleString()}
+                {totalRevenue.toLocaleString()}
               </Text>
             </div>
             <div>
