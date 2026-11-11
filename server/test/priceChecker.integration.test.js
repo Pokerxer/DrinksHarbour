@@ -61,6 +61,19 @@ test('exact variant and branch return the live one-unit pricelist price',async()
  const result=await lookup(context,'00123');assert.equal(result.product.price,1800);assert.equal(result.product.size,'70cl');assert.equal(result.record.availableQuantity,8);
  const choices=await options(ids.tenant);assert.equal(choices.pricelists.length,1);assert.equal(choices.locations.length,1);
 });
+test('the branch price book agrees with the online lookup and excludes cross-tenant stock', async () => {
+ const open = await fetch(base+'/session', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({slug:kiosk.slug})});
+ const { token } = await open.json();
+ const res = await fetch(base+'/book', {headers:{'X-Price-Checker-Session':token}});
+ assert.equal(res.status, 200);
+ const { data } = await res.json();
+ assert.equal(data.config.slug, kiosk.slug);
+ assert.equal(data.items.length, 1);
+ const { barcode, suggestible, ...cached } = data.items[0];
+ assert.equal(barcode, '00123');
+ assert.equal(suggestible, true);
+ assert.deepEqual(cached, (await lookup(context, barcode)).product);
+});
 test('cross-tenant kiosk assignments and management reads are refused',async()=>{
  await assert.rejects(saveKiosk(ids.other,{name:'Wrong',internalId:'WRONG',slug:'wrong',shopId:'retail',location:String(ids.location)}));
  const token=jwt.sign({userId:String(ids.user)},process.env.JWT_SECRET);

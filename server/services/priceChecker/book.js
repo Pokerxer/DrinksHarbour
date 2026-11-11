@@ -3,10 +3,8 @@ const SubProduct = require('../../models/SubProduct');
 const Product = require('../../models/Product');
 const WarehouseStock = require('../../models/WarehouseStock');
 const { resolvePrice, stockState } = require('./pricing');
-const {
-  normalizeBarcode,
-  safeImage,
-} = require('./validation');
+const { normalizeBarcode, defaults } = require('./validation');
+const { publicConfig, publicProduct, CATALOGUE_FIELDS, CATALOGUE_REFS } = require('./serialization');
 const { lookup } = require('./lookup');
 const { logScan, scanRequestId } = require('./scans');
 const { ValidationError } = require('../../utils/errors');
@@ -22,14 +20,29 @@ const BOOK_CAP = 4000;
  */
 async function buildBook(context) {
   const { kiosk, pricelist, tenant } = context;
-  const sizes = await Size.find({ tenant: kiosk.tenant, status: { $in: SELLABLE } })
+  const sizes = await Size.find({
+    tenant: kiosk.tenant,
+    status: { $in: SELLABLE },
+    barcode: { $type: 'string', $ne: '' },
+  })
     .select(
-      '_id subproduct size displayName barcode sellingPrice wholesalePrice currency status'
+      '_id subproduct size displayName volumeMl barcode sellingPrice costPrice wholesalePrice currency status'
     )
     .limit(BOOK_CAP)
     .lean();
-  const withBarcode = sizes.filter((row) => row.barcode);
-  if (!withBarcode.length) return emptyBook(kiosk);
+  const barcodes = sizes.filter((row) => row.barcode).map((row) => row.barcode);
+  if (!barcodes.length) return serializeBook(context, [], []);
+  // Lookup rejects a barcode shared with any other size, even an inactive one.
+  const barcodeRows = await Size.find({ tenant: kiosk.tenant, barcode: { $in: barcodes } })
+    .select('barcode')
+    .lean();
+  const seen = new Set();
+  const ambiguous = new Set();
+  for (const row of barcodeRows) {
+    if (seen.has(row.barcode)) ambiguous.add(row.barcode);
+    seen.add(row.barcode);
+  }
+  const withBarcode = sizes.filter((row) => row.barcode && !ambiguous.has(row.barcode));
 
   const subs = await SubProduct.find({
     _id: { $in: withBarcode.map((row) => row.subproduct) },
@@ -38,7 +51,7 @@ async function buildBook(context) {
     visibleInPOS: { $ne: false },
     status: { $in: SELLABLE_SUBPRODUCT_STATUS },
   })
-    .select('_id product baseSellingPrice basePriceBeforePricelist currency')
+    .select('_id product baseSellingPrice basePriceBeforePricelist costPrice currency')
     .lean();
   const subsById = new Map(subs.map((row) => [String(row._id), row]));
 
@@ -47,8 +60,8 @@ async function buildBook(context) {
     status: 'approved',
     isPublished: true,
   })
-    .select('_id name brand images isAlcoholic abv volumeMl originCountry type')
-    .populate('brand', 'name')
+    .select(CATALOGUE_FIELDS)
+    .populate(CATALOGUE_REFS)
     .lean();
   const productsById = new Map(products.map((row) => [String(row._id), row]));
 
@@ -57,17 +70,18 @@ async function buildBook(context) {
     warehouse: kiosk.location,
     size: { $in: withBarcode.map((row) => row._id) },
   })
-    .select('size currentQuantity reservedQuantity minStockLevel')
+    .select('size subProduct currentQuantity reservedQuantity minStockLevel')
     .lean();
-  const stockBySize = new Map(stocks.map((row) => [String(row.size), row]));
-  const settings = { outOfStock: kiosk.settings?.outOfStock || 'DISPLAY' };
+  const stockBySize = new Map(stocks.map((row) => [`${row.size}:${row.subProduct}`, row]));
+  const settings = { ...defaults, ...kiosk.settings };
+  const unavailableBarcodes = [...ambiguous];
 
   const items = [];
   for (const size of withBarcode) {
     const subProduct = subsById.get(String(size.subproduct));
     const product = subProduct && productsById.get(String(subProduct.product));
     if (!subProduct || !product) continue;
-    const stock = stockState(stockBySize.get(String(size._id)));
+    const stock = stockState(stockBySize.get(`${size._id}:${subProduct._id}`));
     if (settings.outOfStock === 'HIDE' && stock.quantity <= 0) continue;
     let pricing;
     try {
@@ -78,49 +92,28 @@ async function buildBook(context) {
         currency: kiosk.currency,
         tenant,
       });
-    } catch {
-      continue; // PRICE_UNAVAILABLE — same skip rule as the scan path.
+    } catch (error) {
+      if (error.statusCode !== 400) throw error;
+      unavailableBarcodes.push(size.barcode);
+      continue;
     }
-    const images = product.images || [];
-    const image = safeImage(
-      (images.find?.((row) => row.isPrimary) || images[0])?.url
-    );
     items.push({
-      barcode: String(size.barcode),
-      name: product.name,
-      ...(product.brand?.name ? { brand: product.brand.name } : {}),
-      ...(image ? { image } : {}),
-      ...(size.displayName || size.size
-        ? { size: size.displayName || String(size.size) }
-        : {}),
-      price: pricing.price,
-      currency: pricing.currency,
-      alcoholic: product.isAlcoholic === true,
-      taxLabel: pricing.taxLabel || '',
-      ...(pricing.originalPrice !== null && pricing.originalPrice > pricing.price
-        ? { originalPrice: pricing.originalPrice }
-        : {}),
-      ...(typeof product.abv === 'number' ? { abv: product.abv } : {}),
-      ...(typeof product.volumeMl === 'number' ? { volumeMl: product.volumeMl } : {}),
-      ...(product.originCountry ? { origin: product.originCountry } : {}),
-      ...(product.type ? { beverageType: product.type } : {}),
-      availability: stock.availability,
+      ...publicProduct({ product, size, pricing, stock, settings }),
+      barcode: size.barcode,
+      ...(stock.quantity > 0 ? { suggestible: true } : {}),
     });
   }
-  return {
-    slug: kiosk.slug,
-    currency: kiosk.currency,
-    generatedAt: new Date().toISOString(),
-    items,
-  };
+  return serializeBook(context, items, unavailableBarcodes);
 }
 
-function emptyBook(kiosk) {
+function serializeBook(context, items, unavailableBarcodes) {
   return {
-    slug: kiosk.slug,
-    currency: kiosk.currency,
+    slug: context.kiosk.slug,
+    currency: context.kiosk.currency,
+    config: publicConfig(context),
     generatedAt: new Date().toISOString(),
-    items: [],
+    items,
+    unavailableBarcodes,
   };
 }
 

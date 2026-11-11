@@ -22,6 +22,7 @@ const sizeRow = {
   _id: ids.size,
   subproduct: ids.sub,
   size: 700,
+  volumeMl: 700,
   displayName: '70cl',
   barcode: '4901877007131',
   sellingPrice: 8000,
@@ -52,7 +53,7 @@ test('buildBook returns one compact entry per sellable size', async (t) => {
   t.mock.method(Size, 'find', () => q([sizeRow]));
   t.mock.method(SubProduct, 'find', () => q([subRow]));
   t.mock.method(Product, 'find', () => q([productRow]));
-  t.mock.method(Stock, 'find', () => q([{ size: ids.size, currentQuantity: 9, reservedQuantity: 1 }]));
+  t.mock.method(Stock, 'find', () => q([{ size: ids.size, subProduct: ids.sub, currentQuantity: 9, reservedQuantity: 1 }]));
   const book = await buildBook({
     kiosk: { slug: 'counter', currency: 'NGN', tenant: ids.brand, location: 'e'.repeat(24), settings: { outOfStock: 'DISPLAY' } },
     tenant: { posSettings: { taxRate: 7.5 } },
@@ -65,8 +66,8 @@ test('buildBook returns one compact entry per sellable size', async (t) => {
   const item = book.items[0];
   assert.deepEqual(Object.keys(item).sort(), [
     'abv', 'alcoholic', 'availability', 'barcode', 'beverageType', 'brand',
-    'currency', 'image', 'name', 'origin', 'price', 'size', 'taxLabel',
-    'volumeMl',
+    'currency', 'image', 'name', 'origin', 'price', 'size', 'suggestible', 'taxLabel',
+    'variantKey', 'volume', 'volumeMl',
   ]);
   assert.equal(item.barcode, '4901877007131');
   assert.equal(item.name, 'Glen Grant 12');
@@ -86,7 +87,7 @@ test('buildBook keeps pricelist-aware pricing and honours the HIDE stock rule', 
   t.mock.method(Size, 'find', () => q([sizeRow]));
   t.mock.method(SubProduct, 'find', () => q([subRow]));
   t.mock.method(Product, 'find', () => q([productRow]));
-  t.mock.method(Stock, 'find', () => q([{ size: ids.size, currentQuantity: 0, reservedQuantity: 0 }]));
+  t.mock.method(Stock, 'find', () => q([{ size: ids.size, subProduct: ids.sub, currentQuantity: 0, reservedQuantity: 0 }]));
   const hidden = await buildBook({ ...base, kiosk: { ...kiosk, settings: { outOfStock: 'HIDE' } } });
   assert.deepEqual(hidden.items, []);
 });
@@ -98,7 +99,7 @@ test('buildBook skips sizes whose prices are unavailable', async (t) => {
   ]));
   t.mock.method(SubProduct, 'find', () => q([subRow]));
   t.mock.method(Product, 'find', () => q([productRow]));
-  t.mock.method(Stock, 'find', () => q([{ size: ids.size, currentQuantity: 3 }]));
+  t.mock.method(Stock, 'find', () => q([{ size: ids.size, subProduct: ids.sub, currentQuantity: 3 }]));
   const book = await buildBook({
     kiosk: { slug: 'counter', currency: 'NGN', tenant: ids.brand, location: 'e'.repeat(24), settings: {} },
     tenant: {},
@@ -106,4 +107,29 @@ test('buildBook skips sizes whose prices are unavailable', async (t) => {
   });
   assert.equal(book.items.length, 1);
   assert.equal(book.items[0].barcode, '4901877007131');
+});
+
+test('the offline book includes cost inputs for configured formulas and uses the public display flags', async (t) => {
+  t.mock.method(Size, 'find', () => ({
+    ...q([]),
+    select(fields) { this.fields = fields.split(' '); return this; },
+    async lean() {
+      return [Object.fromEntries(Object.entries({ ...sizeRow, costPrice: 6400 })
+        .filter(([key]) => this.fields.includes(key)))];
+    },
+  }));
+  t.mock.method(SubProduct, 'find', () => q([subRow]));
+  t.mock.method(Product, 'find', () => q([productRow]));
+  t.mock.method(Stock, 'find', () => q([{ size: ids.size, subProduct: ids.sub, currentQuantity: 9 }]));
+  const book = await buildBook({
+    kiosk: { slug: 'counter', currency: 'NGN', tenant: ids.brand, location: ids.product,
+      settings: { displayImages: false, displayBrand: false, displayStockStatus: false } },
+    tenant: {},
+    pricelist: { rules: [{ priceType: 'formula', markupBase: 'cost', markupPercentage: 50 }] },
+  });
+  assert.equal(book.items[0].price, 9600);
+  assert.equal(book.items[0].costPrice, undefined);
+  assert.equal(book.items[0].brand, undefined);
+  assert.equal(book.items[0].image, undefined);
+  assert.equal(book.items[0].availability, undefined);
 });

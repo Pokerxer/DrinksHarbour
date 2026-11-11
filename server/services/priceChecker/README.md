@@ -18,3 +18,10 @@ session.js derives a separate purpose key. Display tax settings never change the
 retail selling amount or add tax a second time.
 
 Operations and verification: ../../../docs/superpowers/specs/RESUME-customer-price-checker.md
+
+The customer checker ignores zero-markup cost formulas. A configured positive
+markup or explicit retail/fixed price remains a valid source. The offline book
+uses the live serializer and pricing inputs. A barcode shared with another
+size is unavailable in both paths. Branch stock controls which rows may be
+suggested, and a catalogue revision prevents older display/pricelist settings
+from feeding suggestions after an edited kiosk opens online.

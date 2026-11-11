@@ -1,6 +1,6 @@
 const Kiosk = require('../models/PriceCheckerKiosk');
 const { getTenantId } = require('../utils/tenantContext');
-const { ValidationError, NotFoundError } = require('../utils/errors');
+const { ValidationError, NotFoundError, ForbiddenError } = require('../utils/errors');
 const { normalizeBarcode, id, scanOrigin, pairingSession } = require('../services/priceChecker/validation');
 const { getKiosk, saveKiosk, options } = require('../services/priceChecker/configuration');
 const { loadContext } = require('../services/priceChecker/context');
@@ -41,39 +41,27 @@ exports.scan = async (req, res) => {
   const origin = scanOrigin(req.body.origin);
   const pairSession = pairingSession(req.body.pairSession);
   const context = req.priceChecker;
+  if (origin === 'phone' && context.kiosk.settings?.enablePhoneScan === false) {
+    throw new ForbiddenError('Phone scanning is disabled for this kiosk.');
+  }
   const result = await lookup(context, barcode);
+  const status = {
+    UNKNOWN: 'NOT_FOUND',
+    FOUND: 'FOUND',
+    PRICE_UNAVAILABLE: 'PRICE_UNAVAILABLE',
+  }[result.outcome] || 'UNAVAILABLE';
+  const data = {
+    found: result.outcome === 'FOUND',
+    status,
+    ...(result.product ? { product: result.product } : {}),
+  };
   await logScan(context, barcode, requestId, result, origin);
   const io = req.app.get('io');
-  if (pairSession && io) {
-    // Mirror of the HTTP response payload — public fields only. The QR pairing
-    // session id is the capability; rooms deliver nothing the phone cannot
-    // already read from /scan.
-    io.to(`pkiosk:${pairSession}`).emit('kiosk:scan', {
-      found: result.outcome === 'FOUND',
-      status:
-        result.outcome === 'UNKNOWN'
-          ? 'NOT_FOUND'
-          : result.outcome === 'FOUND'
-            ? 'FOUND'
-            : 'UNAVAILABLE',
-      ...(result.product ? { product: result.product } : {}),
-    });
+  if (origin === 'phone' && pairSession && io) {
+    // Only the public scan fields are shared with the paired screen.
+    io.to(`pkiosk:${pairSession}`).emit('kiosk:scan', data);
   }
-  res.json({
-    success: true,
-    data: {
-      config: publicConfig(context),
-      found: result.outcome === 'FOUND',
-      ...(result.product ? { product: result.product } : {}),
-      // No internal outcome metadata or catalogue ids in public responses.
-      status:
-        result.outcome === 'UNKNOWN'
-          ? 'NOT_FOUND'
-          : result.outcome === 'FOUND'
-            ? 'FOUND'
-            : 'UNAVAILABLE',
-    },
-  });
+  res.json({ success: true, data: { ...data, config: publicConfig(context) } });
 };
 exports.list = async (req, res) => {
   const rows = await Kiosk.find({ tenant: getTenantId(req) })

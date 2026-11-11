@@ -7,7 +7,12 @@ function resolvePrice({ size, subProduct, pricelist, currency, tenant }) {
     throw new ValidationError('Price currency does not match this kiosk.');
   }
   const basis = retailPriceBasis(subProduct, size);
-  const rules = findMatchingPriceRules(pricelist?.rules, subProduct._id, 1);
+  const rules = findMatchingPriceRules(pricelist?.rules, subProduct._id, 1)
+    .filter((rule) =>
+      rule.priceType !== 'formula' ||
+      rule.markupBase === 'wholesale' ||
+      Number(rule.markupPercentage) > 0
+    );
   const setters = rules.filter((rule) => ['fixed', 'formula'].includes(rule.priceType));
   const original = applyPriceRules(
     basis.sellingPrice,

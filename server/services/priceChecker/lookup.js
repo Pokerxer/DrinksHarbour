@@ -4,14 +4,14 @@ const Product = require('../../models/Product');
 const WarehouseStock = require('../../models/WarehouseStock');
 const { normalizeBarcode, defaults } = require('./validation');
 const { resolvePrice, stockState } = require('./pricing');
-const { publicProduct } = require('./serialization');
+const { publicProduct, CATALOGUE_FIELDS, CATALOGUE_REFS } = require('./serialization');
 async function lookup(context, input) {
   const barcode = normalizeBarcode(input);
   const { kiosk, pricelist, tenant } = context;
   const settings = { ...defaults, ...kiosk.settings };
   const sizes = await Size.find({ tenant: kiosk.tenant, barcode })
     .select(
-      '_id subproduct size displayName barcode sellingPrice costPrice wholesalePrice currency status'
+      '_id subproduct size displayName volumeMl barcode sellingPrice costPrice wholesalePrice currency status'
     )
     .limit(2)
     .lean();
@@ -35,8 +35,8 @@ async function lookup(context, input) {
     status: 'approved',
     isPublished: true,
   })
-    .select('_id name brand images isAlcoholic abv volumeMl originCountry type')
-    .populate('brand', 'name')
+    .select(`${CATALOGUE_FIELDS} description shortDescription`)
+    .populate(CATALOGUE_REFS)
     .lean();
   if (!product) return { outcome: 'UNAVAILABLE' };
   const inventory = await WarehouseStock.findOne({

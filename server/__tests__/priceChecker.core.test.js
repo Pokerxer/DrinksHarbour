@@ -70,3 +70,11 @@ test('tax display preference never adds tax again to the POS retail amount', () 
   const result=resolvePrice({...base,tenant:{posSettings:{taxRate:7.5,productPriceDisplay:'tax_included'}}});
   assert.equal(result.price,1000); assert.equal(result.taxLabel,'Includes tax');
 });
+
+test('a zero-markup cost formula cannot replace retail with raw purchase cost', () => {
+  const pricelist = { rules: [{ priceType: 'formula', markupBase: 'cost', markupPercentage: 0 }] };
+  assert.equal(resolvePrice({ ...base, pricelist }).price, 1000);
+  assert.throws(() => resolvePrice({
+    ...base, pricelist, size: { costPrice: 600 }, subProduct: { _id: 's' },
+  }), /Price unavailable/);
+});
