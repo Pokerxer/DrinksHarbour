@@ -25,6 +25,7 @@ export interface KioskSettings {
 }
 export interface KioskConfig {
   slug: string;
+  revision?: number;
   currency: string;
   settings: KioskSettings;
   store?: { name: string; location: string };
@@ -51,12 +52,17 @@ export interface KioskProduct {
   origin?: string;
   volumeMl?: number;
   beverageType?: string;
+  category?: string;
+  subCategory?: string;
+  grapeVarieties?: string[];
+  description?: string;
+  variantKey?: string;
 }
 export interface ScanResult {
   config: KioskConfig;
   found: boolean;
   product?: KioskProduct;
-  status: 'FOUND' | 'NOT_FOUND' | 'UNAVAILABLE';
+  status: 'FOUND' | 'NOT_FOUND' | 'UNAVAILABLE' | 'PRICE_UNAVAILABLE';
 }
 export type Screen =
   | 'initializing'

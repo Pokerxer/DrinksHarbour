@@ -1,28 +1,33 @@
 'use client';
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useState, type CSSProperties } from 'react';
 import { useKiosk } from './use-kiosk';
 import { useCompare, compareKey } from './use-compare';
 import { usePhonePairing } from './use-phone-pairing';
 import { useOfflineBook } from './use-offline';
 import { compareSummary, type CompareSummary } from './session-summary';
 import { useStaleSession, COMPARE_MS, IDLE_MS } from './use-idle-timer';
-import { buildShareLinks, shareMessage } from './share';
-import { formatMoney } from './money';
+import { KioskWelcome } from './kiosk-welcome';
+import { KioskManualEntry } from './kiosk-manual-entry';
 import { PhonePair } from './phone-pair';
+import { BottleSuggestions } from './bottle-suggestions';
 import { ProductResult } from './product-result';
 import { CompareTray } from './compare-tray';
 import { CompareScreen } from './compare-screen';
 import type { KioskProduct } from './types';
 import { ScannerMark } from './scanner-mark';
-import { validBarcode } from './scanner';
 import './kiosk.css';
 import './kiosk-display.css';
 import './kiosk-motion.css';
+import './bottle-suggestions.css';
 
 export default function PriceCheckerKiosk({ slug }: { slug: string }) {
   const offlineBook = useOfflineBook(slug);
   const kiosk = useKiosk(slug, offlineBook.support ?? undefined);
   const compare = useCompare(slug);
+  const ready = Boolean(kiosk.config) && !kiosk.offline && kiosk.screen !== 'closed';
+  useEffect(() => {
+    if (ready) void offlineBook.refresh();
+  }, [ready, kiosk.config?.revision, offlineBook.refresh]);
   return (
     <KioskScreen
       slug={slug}
@@ -42,18 +47,10 @@ interface KioskScreenProps {
 
 function KioskScreen({ kiosk, compare, offline, slug }: KioskScreenProps) {
   const [summary, setSummary] = useState<CompareSummary | null>(null);
-  const [manual, setManual] = useState(false);
-  const [pairSession] = useState(() => crypto.randomUUID());
+  const [pairSession, setPairSession] = useState(() => crypto.randomUUID());
+  const [pairRevealed, setPairRevealed] = useState(false);
   const pairApiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
-  const [code, setCode] = useState('');
   const [message, setMessage] = useState('');
-  const [barcodeError, setBarcodeError] = useState('');
-  const manualTrigger = useRef<HTMLButtonElement>(null);
-  const closeManual = () => {
-    setManual(false);
-    setBarcodeError('');
-    manualTrigger.current?.focus();
-  };
   const { config, screen } = kiosk;
   const settings = config?.settings;
   const compareOn = Boolean(settings?.enableCompare && config);
@@ -76,11 +73,13 @@ function KioskScreen({ kiosk, compare, offline, slug }: KioskScreenProps) {
   // offline scan queue (server telemetry, not customer data).
   const holdContent =
     Boolean(config) &&
-    (screen !== 'idle' || compare.items.length > 0 || summary !== null);
+    (screen !== 'idle' || compare.items.length > 0 || summary !== null || pairRevealed);
   useStaleSession(
-    holdContent ? `${screen}:${compare.items.length}:${summary ? 1 : 0}` : '',
+    holdContent ? `${screen}:${compare.items.length}:${summary ? 1 : 0}:${pairRevealed}` : '',
     () => {
       compare.clear();
+      setPairRevealed(false);
+      setPairSession(crypto.randomUUID());
       setSummary(null);
       kiosk.reset();
     },
@@ -88,8 +87,7 @@ function KioskScreen({ kiosk, compare, offline, slug }: KioskScreenProps) {
   );
   // Phone pairing: the QR session id doubles as the socket room name.
   const pairEnabled = Boolean(
-    config?.settings.enablePhoneScan &&
-      !['compare', 'initializing', 'offline', 'closed'].includes(screen)
+    config?.settings.enablePhoneScan && !kiosk.offline && ['idle', 'result'].includes(screen)
   );
   const pairUrl =
     pairEnabled && typeof window !== 'undefined'
@@ -98,10 +96,12 @@ function KioskScreen({ kiosk, compare, offline, slug }: KioskScreenProps) {
         )}/m/${pairSession}`
       : '';
   const onPhoneScan = useCallback(
-    (scanned: KioskProduct) => compare.add(scanned),
-    [compare]
+    (scanned: KioskProduct) => {
+      if (screen === 'idle' || screen === 'result') kiosk.showProduct(scanned);
+    },
+    [kiosk.showProduct, screen]
   );
-  usePhonePairing(pairUrl ? pairApiUrl : '', pairSession, onPhoneScan);
+  usePhonePairing(pairRevealed && pairEnabled ? pairApiUrl : '', pairSession, onPhoneScan);
   async function fullscreen() {
     try {
       if (!document.fullscreenElement)
@@ -118,14 +118,13 @@ function KioskScreen({ kiosk, compare, offline, slug }: KioskScreenProps) {
         ? 'Connection unavailable'
         : screen === 'missing'
           ? 'Product not recognised'
-          : 'Please ask a member of staff';
+          : 'Price unavailable';
   const detail =
     screen === 'missing'
       ? settings?.notFoundMessage
       : screen === 'offline'
         ? 'Please try again or ask a staff member for assistance.'
         : 'We cannot display a price for this item here. Please ask a member of staff for assistance.';
-  const money = (value: number) => formatMoney(value, config?.currency ?? 'NGN');
   return (
     <div
       className="price-kiosk"
@@ -197,117 +196,30 @@ function KioskScreen({ kiosk, compare, offline, slug }: KioskScreenProps) {
             onClose={closeCompare}
           />
         ) : screen === 'result' && kiosk.product && config ? (
-          <>
-          <ProductResult
-            product={kiosk.product}
-            config={config}
-            compareSlot={
-              settings?.enableCompare
-                ? {
-                    added: productAlreadyHeld,
-                    full: !compare.canAdd,
-                    onAdd: () => compare.add(kiosk.product as KioskProduct),
-                    replaces:
-                      !compare.canAdd && compare.oldest ? compare.oldest : undefined,
-                    onReplace: () =>
-                      compare.replaceOldestWith(kiosk.product as KioskProduct),
-                  }
-                : undefined
-            }
-          />
-          {pairUrl && (
-            <div className="kiosk-result-pair">
-              <PhonePair url={pairUrl} />
-            </div>
-          )}
-          </>
+          <div className="kiosk-result-page">
+            <ProductResult
+              key={compareKey(kiosk.product)}
+              product={kiosk.product}
+              config={config}
+              compareSlot={
+                settings?.enableCompare
+                  ? {
+                      added: productAlreadyHeld,
+                      full: !compare.canAdd,
+                      onAdd: () => compare.add(kiosk.product as KioskProduct),
+                      replaces: !compare.canAdd ? compare.oldest : undefined,
+                      onReplace: () => compare.replaceOldestWith(kiosk.product as KioskProduct),
+                    }
+                  : undefined
+              }
+            />
+            <BottleSuggestions book={offline} config={config} product={kiosk.product}
+              selected={compare.items} canAdd={compare.canAdd}
+              onAdd={compare.add} onView={kiosk.showProduct} />
+          </div>
         ) : ['idle', 'initializing', 'loading'].includes(screen) ? (
-          <section className="kiosk-status">
-            <span className="kiosk-eyebrow">Your in-store price guide</span>
-            <ScannerMark loading={screen !== 'idle'} />
-            <h1>
-              {screen === 'loading' ? (
-                'Checking product…'
-              ) : screen === 'initializing' ? (
-                'Getting ready…'
-              ) : (
-                <>
-                  Check a
-                  <br />
-                  <span>Product Price</span>
-                </>
-              )}
-            </h1>
-            <p>
-              {screen === 'idle'
-                ? 'Scan a product barcode to see its current price'
-                : 'Just a moment'}
-            </p>
-            {settings?.welcomeMessage && (
-              <p className="kiosk-small">{settings.welcomeMessage}</p>
-            )}
-            {config?.store && (
-              <div className="kiosk-store-pill">
-                {config.store.name} — {config.store.location}
-              </div>
-            )}
-            {summary && (
-              <div className="kiosk-session" role="status">
-                <p>
-                  Compared {summary.count} bottles · best value{' '}
-                  <strong>{summary.bestName}</strong>
-                  {summary.saved > 0 &&
-                    ` · from ${money(summary.from)} to ${money(summary.to)}`}
-                </p>
-                <div className="kiosk-session-share">
-                  <button className="kiosk-quiet" onClick={kiosk.openCompare}>
-                    Compare again
-                  </button>
-                  <button
-                    className="kiosk-quiet"
-                    aria-label="WhatsApp"
-                    onClick={() => {
-                      const links = buildShareLinks(
-                        shareMessage(summary, config?.store?.name ?? null)
-                      );
-                      if (links.whatsapp) window.open(links.whatsapp, '_blank');
-                    }}
-                  >
-                    WhatsApp
-                  </button>
-                  <button
-                    className="kiosk-quiet"
-                    aria-label="SMS"
-                    onClick={() => {
-                      const link = buildShareLinks(
-                        shareMessage(summary, config?.store?.name ?? null)
-                      ).sms;
-                      if (link) window.location.href = link;
-                    }}
-                  >
-                    SMS
-                  </button>
-                  <button
-                    className="kiosk-quiet"
-                    aria-label="Copy"
-                    onClick={async () => {
-                      try {
-                        await navigator.clipboard.writeText(
-                          shareMessage(summary, config?.store?.name ?? null)
-                        );
-                        setMessage('Copied ✓');
-                      } catch {
-                        /* clipboard blocked — WhatsApp/SMS remain */
-                      }
-                    }}
-                  >
-                    Copy
-                  </button>
-                </div>
-              </div>
-            )}
-            {pairUrl && <PhonePair url={pairUrl} />}
-          </section>
+          <KioskWelcome screen={screen} config={config} summary={summary}
+            onCompare={kiosk.openCompare} onCopy={() => setMessage('Copied ✓')} />
         ) : (
           <section className="kiosk-status">
             <ScannerMark />
@@ -332,6 +244,7 @@ function KioskScreen({ kiosk, compare, offline, slug }: KioskScreenProps) {
           </section>
         )}
       </div>
+      {pairUrl && <PhonePair key={pairSession} url={pairUrl} onReveal={() => setPairRevealed(true)} />}
       {showTray && config && (
         <CompareTray
           items={compare.items}
@@ -365,83 +278,13 @@ function KioskScreen({ kiosk, compare, offline, slug }: KioskScreenProps) {
               : 'Hold the barcode under the scanner'}
           </span>
         </div>
-        {settings?.manualEntry &&
-          !['closed', 'initializing'].includes(screen) && (
-            <button
-              ref={manualTrigger}
-              className="kiosk-quiet"
-              aria-expanded={manual}
-              aria-controls={manual ? 'manual-entry-form' : undefined}
-              onClick={() => {
-                setManual(!manual);
-                setBarcodeError('');
-                setMessage('');
-              }}
-            >
-              Enter barcode
-            </button>
-          )}
-      </footer>
-      {manual &&
-        settings?.manualEntry &&
-        !['closed', 'initializing'].includes(screen) && (
-          <form
-            id="manual-entry-form"
-            className="kiosk-manual"
-            onKeyDown={(event) => {
-              if (event.key === 'Escape') {
-                event.preventDefault();
-                closeManual();
-              }
-            }}
-            onSubmit={(event) => {
-              event.preventDefault();
-              const value = validBarcode(code);
-              if (!value) {
-                setBarcodeError(
-                  'Enter a barcode of 5 to 128 printable characters.'
-                );
-                return;
-              }
-              closeManual();
-              setCode('');
-              setMessage('');
-              void kiosk.scan(value);
-            }}
-          >
-            <label htmlFor="manual-barcode">Product barcode</label>
-            <input
-              id="manual-barcode"
-              value={code}
-              onChange={(event) => {
-                setCode(event.target.value);
-                setBarcodeError('');
-              }}
-              aria-invalid={barcodeError ? true : undefined}
-              aria-describedby={
-                barcodeError ? 'manual-barcode-error' : undefined
-              }
-              maxLength={128}
-              autoComplete="off"
-              autoFocus
-            />
-            <button className="kiosk-primary" type="submit">
-              Check price
-            </button>
-            <button className="kiosk-quiet" type="button" onClick={closeManual}>
-              Close
-            </button>
-            {barcodeError && (
-              <p
-                id="manual-barcode-error"
-                className="kiosk-manual-error"
-                role="alert"
-              >
-                {barcodeError}
-              </p>
-            )}
-          </form>
+        {settings?.manualEntry && !['closed', 'initializing'].includes(screen) && (
+          <KioskManualEntry onScan={(barcode) => {
+            setMessage('');
+            void kiosk.scan(barcode);
+          }} />
         )}
+      </footer>
       {message && (
         <p className="kiosk-notice" role="status">
           {message}

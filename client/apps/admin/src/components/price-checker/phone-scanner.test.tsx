@@ -1,158 +1,111 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { PhoneScanner } from './phone-scanner';
 
-const reader = vi.hoisted(() => {
-  let decode: ((code: string) => void) | null = null;
-  return {
-    start: vi.fn(async (_camera: unknown, _opts: unknown, onDecode: (code: string) => void) => {
-      decode = onDecode;
-    }),
-    stop: vi.fn(async () => {}),
-    clear: vi.fn(),
-    applyVideoConstraints: undefined as undefined | ((constraints: unknown) => Promise<void>),
-    getRunningTrackCapabilities: undefined as undefined | (() => { zoom?: { min: number; max: number } }),
-    /** Push a scanned code through the registered decoder during tests. */
-    feed: (code: string) => decode?.(code),
-  };
-});
-// Per-test torch capability switch — the hook reads applyVideoConstraints
-// from the shared hoisted reader mock via torchSupport.apply.
-const torchSupport = {
-  get apply() {
-    return reader.applyVideoConstraints;
-  },
-  set apply(value: ((constraints: unknown) => Promise<void>) | undefined) {
-    reader.applyVideoConstraints = value;
-  },
-};
+const decode = vi.hoisted(() => vi.fn<(file: File, showImage: boolean) => Promise<string>>());
 vi.mock('html5-qrcode', () => ({
-  Html5Qrcode: function MockReader() {
-    return {
-      start: reader.start,
-      stop: reader.stop,
-      clear: reader.clear,
-      applyVideoConstraints: reader.applyVideoConstraints,
-      getRunningTrackCapabilities: reader.getRunningTrackCapabilities,
-    };
+  Html5Qrcode: class {
+    scanFile = decode;
+    clear() {}
   },
-  Html5QrcodeSupportedFormats: {
-    EAN_13: 1,
-    EAN_8: 2,
-    UPC_A: 3,
-    UPC_E: 4,
-    CODE_128: 5,
-    CODE_39: 6,
-    ITF_14: 7,
-  },
+  Html5QrcodeSupportedFormats: { EAN_13: 1, EAN_8: 2, UPC_A: 3, UPC_E: 4, CODE_128: 5, CODE_39: 6 },
 }));
+
+const stop = vi.fn();
+const applyConstraints = vi.fn(async () => {});
+const getUserMedia = vi.fn(async () => ({
+  getTracks: () => [{ stop }],
+  getVideoTracks: () => [{
+    stop, applyConstraints, getCapabilities: () => ({ torch: true, zoom: { min: 1, max: 3 } }),
+  }],
+}));
+const drawImage = vi.fn();
+
+beforeEach(() => {
+  Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia } });
+  vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
+  vi.spyOn(HTMLVideoElement.prototype, 'videoWidth', 'get').mockReturnValue(640);
+  vi.spyOn(HTMLVideoElement.prototype, 'videoHeight', 'get').mockReturnValue(480);
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({ drawImage } as never);
+  vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation((callback) => callback(new Blob(['frame'])));
+});
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   vi.clearAllMocks();
+  decode.mockReset();
 });
 
-it('starts the camera once, forwards unique codes and ignores rapid repeats', async () => {
+it('decodes a frame only on tap and keeps the same preview open across bottles', async () => {
+  decode.mockResolvedValueOnce('490187700713').mockResolvedValueOnce('490187700714');
   const onScan = vi.fn();
-  render(<PhoneScanner slug="counter" session="pair-0000000001" onScan={onScan} />);
+  render(<PhoneScanner onScan={onScan} />);
+  expect(getUserMedia).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: 'Start camera' }));
-  await waitFor(() => expect(reader.start).toHaveBeenCalledTimes(1));
-  fireEvent.click(screen.getByRole('button', { name: 'Start camera' }));
-  expect(reader.start).toHaveBeenCalledTimes(1);
-  reader.feed('490187700713');
-  reader.feed('490187700713');
-  expect(onScan).toHaveBeenCalledTimes(1);
-  reader.feed('490187700714');
-  reader.feed('12');
-  expect(onScan).toHaveBeenCalledTimes(2);
-  expect(onScan).toHaveBeenNthCalledWith(1, '490187700713');
-  expect(onScan).toHaveBeenNthCalledWith(2, '490187700714');
+  const capture = await screen.findByRole('button', { name: 'Capture' });
+  expect(decode).not.toHaveBeenCalled();
+
+  fireEvent.click(capture);
+  expect(drawImage).toHaveBeenCalledOnce();
+  await waitFor(() => expect(onScan).toHaveBeenCalledExactlyOnceWith('490187700713'));
+  fireEvent.click(capture);
+  await waitFor(() => expect(onScan).toHaveBeenNthCalledWith(2, '490187700714'));
+  expect(drawImage).toHaveBeenCalledTimes(2);
+  expect(getUserMedia).toHaveBeenCalledOnce();
+  expect(stop).not.toHaveBeenCalled();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Stop camera' }));
+  expect(stop).toHaveBeenCalledOnce();
+  expect(screen.queryByRole('button', { name: 'Capture' })).toBeNull();
 });
 
-it('toggles the torch only when the reader supports it', async () => {
-  const apply = vi.fn(async () => {});
-  // extend MockReader with torch support before rendering:
-  torchSupport.apply = apply;
-  render(<PhoneScanner slug="counter" session="pair-0000000001" onScan={vi.fn()} />);
+it('shows a failed read and allows another capture without reopening the camera', async () => {
+  decode.mockRejectedValueOnce(new Error('Barcode missing')).mockResolvedValueOnce('490187700714');
+  const onScan = vi.fn();
+  render(<PhoneScanner onScan={onScan} />);
   fireEvent.click(screen.getByRole('button', { name: 'Start camera' }));
-  const torch = await screen.findByRole('button', { name: 'Toggle torch' });
-  fireEvent.click(torch);
-  await waitFor(() =>
-    expect(apply).toHaveBeenCalledWith({ advanced: [{ torch: true }] })
-  );
+  const capture = await screen.findByRole('button', { name: 'Capture' });
+  fireEvent.click(capture);
+  expect((await screen.findByRole('alert')).textContent).toMatch(/try again/i);
+  expect(onScan).not.toHaveBeenCalled();
+  fireEvent.click(capture);
+  await waitFor(() => expect(onScan).toHaveBeenCalledExactlyOnceWith('490187700714'));
+  expect(stop).not.toHaveBeenCalled();
 });
 
-it('offers no torch button when the reader lacks the capability', async () => {
-  torchSupport.apply = vi.fn(async () => {
-    throw new Error('torch unsupported');
+it('does not submit an in-flight decode after the shopper stops the camera', async () => {
+  let resolveRead: (code: string) => void = () => {};
+  decode.mockReturnValueOnce(new Promise((resolve) => { resolveRead = resolve; }));
+  const onScan = vi.fn();
+  render(<PhoneScanner onScan={onScan} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Start camera' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Capture' }));
+  await waitFor(() => expect(decode).toHaveBeenCalledOnce());
+  fireEvent.click(screen.getByRole('button', { name: 'Stop camera' }));
+  await act(async () => resolveRead('490187700713'));
+  expect(onScan).not.toHaveBeenCalled();
+});
+
+it('uses available torch and zoom capabilities', async () => {
+  render(<PhoneScanner onScan={vi.fn()} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Start camera' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Toggle torch' }));
+  fireEvent.change(screen.getByRole('slider', { name: 'Zoom' }), { target: { value: '2.5' } });
+  await waitFor(() => {
+    expect(applyConstraints).toHaveBeenCalledWith({ advanced: [{ torch: true }] });
+    expect(applyConstraints).toHaveBeenCalledWith({ advanced: [{ zoom: 2.5 }] });
   });
-  render(<PhoneScanner slug="counter" session="pair-0000000001" onScan={vi.fn()} />);
-  fireEvent.click(screen.getByRole('button', { name: 'Start camera' }));
-  await waitFor(() =>
-    expect(screen.queryByRole('button', { name: 'Toggle torch' })).toBeNull()
-  );
 });
 
-it('tunes the decoder for bottle symbologies and a wide horizontal band', async () => {
-  render(<PhoneScanner slug="counter" session="pair-0000000001" onScan={vi.fn()} />);
-  fireEvent.click(screen.getByRole('button', { name: 'Start camera' }));
-  await waitFor(() => expect(reader.start).toHaveBeenCalledTimes(1));
-  const [, options] = reader.start.mock.calls[0] as unknown as [
-    unknown,
-    { fps: number; qrbox: { height: number }; experimentalFeatures: Record<string, boolean> },
-  ];
-  expect(options.fps).toBe(15);
-  expect(options.qrbox).toMatchObject({ height: 140 });
-  expect(options.experimentalFeatures).toEqual({ useBarCodeDetectorIfSupported: true });
-});
-
-it('offers a zoom slider only when the running track supports it', async () => {
-  torchSupport.apply = vi.fn(async () => {});
-  reader.getRunningTrackCapabilities = vi.fn(() => ({ zoom: { min: 1, max: 3 } }));
-  render(<PhoneScanner slug="counter" session="pair-0000000001" onScan={vi.fn()} />);
-  fireEvent.click(screen.getByRole('button', { name: 'Start camera' }));
-  const zoom = await screen.findByRole('slider', { name: 'Zoom' });
-  fireEvent.change(zoom, { target: { value: '2.5' } });
-  await waitFor(() =>
-    expect(reader.applyVideoConstraints).toHaveBeenCalledWith({
-      advanced: [{ zoom: 2.5 }],
-    })
-  );
-});
-
-it('accepts a manually typed barcode as a fallback', async () => {
+it('accepts a manually typed barcode without camera permission', () => {
   const onScan = vi.fn();
-  render(<PhoneScanner slug="counter" session="pair-0000000001" onScan={onScan} />);
+  render(<PhoneScanner onScan={onScan} />);
   fireEvent.click(screen.getByRole('button', { name: 'Type barcode' }));
   const input = screen.getByLabelText('Barcode');
   fireEvent.change(input, { target: { value: '490187700713' } });
   fireEvent.click(screen.getByRole('button', { name: 'Check price' }));
-  expect(onScan).toHaveBeenCalledWith('490187700713');
-  fireEvent.change(input, { target: { value: '12' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Check price' }));
-  expect(onScan).toHaveBeenCalledTimes(1);
-});
-
-it('offers night mode after 15s of capture silence and boosts exposure', async () => {
-  torchSupport.apply = vi.fn(async () => {});
-  vi.useFakeTimers();
-  try {
-    render(<PhoneScanner slug="counter" session="pair-0000000001" onScan={vi.fn()} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Start camera' }));
-    await vi.advanceTimersByTimeAsync(15_000);
-    const chip = screen.getByRole('button', { name: /night mode/i });
-    fireEvent.click(chip);
-    // torch from the capture toggle path + exposure boost attempt
-    await vi.advanceTimersByTimeAsync(50);
-    expect(torchSupport.apply).toHaveBeenCalledWith({
-      advanced: [{ torch: true }],
-    });
-    expect(torchSupport.apply).toHaveBeenCalledWith({
-      advanced: [{ exposureCompensation: 2 }],
-    });
-    expect(screen.getByText(/night mode/i)).toBeTruthy();
-  } finally {
-    vi.useRealTimers();
-  }
+  expect(onScan).toHaveBeenCalledExactlyOnceWith('490187700713');
+  expect(getUserMedia).not.toHaveBeenCalled();
 });

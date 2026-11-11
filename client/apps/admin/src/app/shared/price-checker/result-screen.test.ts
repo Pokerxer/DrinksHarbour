@@ -58,10 +58,10 @@ test('result renders exact size, dominant price, savings and availability with n
   expect(html).not.toContain('Add to cart');
   expect(html).not.toContain('Checkout');
 });
-test('alcohol price is gated per result until adult confirmation', () => {
+test('alcohol price displays directly in the price checker', () => {
   const html = renderToStaticMarkup(
     createElement(ProductResult, { config, product: { ...product, alcoholic: true } })
   );
-  expect(html).toContain('Are you 18 or older?');
-  expect(html).not.toContain('1,800');
+  expect(html).not.toContain('Are you 18 or older?');
+  expect(html).toContain('1,800');
 });

@@ -1,41 +1,36 @@
-import type { KioskProduct } from '@/components/price-checker/types';
+import type { KioskConfig, ScanResult } from '@/components/price-checker/types';
 
-// Same-origin helper client for the phone companion page. All traffic goes
-// through the existing Next route proxy (`/api/price-checker/...`), which owns
-// the slug-scoped session cookie — the phone never sees the token.
-
-export interface PhoneScanResult {
-  found: boolean;
-  status: 'FOUND' | 'NOT_FOUND' | 'UNAVAILABLE';
-  product?: KioskProduct;
+class PhoneRequestError extends Error {
+  constructor(readonly status: number) {
+    super('Price check is unavailable right now.');
+  }
 }
 
-async function call<T>(slug: string, action: 'session' | 'scan', body?: object): Promise<T> {
+async function call<T>(slug: string, action: 'session' | 'scan', body: object): Promise<T> {
   const response = await fetch(`/api/price-checker/${encodeURIComponent(slug)}/${action}`, {
-    method: body ? 'POST' : 'POST',
+    method: 'POST',
     credentials: 'same-origin',
     cache: 'no-store',
     headers: { 'Content-Type': 'application/json' },
-    ...(body ? { body: JSON.stringify(body) } : {}),
+    signal: AbortSignal.timeout(15000),
+    body: JSON.stringify(body),
   });
   const payload = (await response.json().catch(() => ({}))) as { data?: T };
-  if (!response.ok || !payload?.data)
-    throw new Error('Price check is unavailable right now.');
+  if (!response.ok || !payload?.data) throw new PhoneRequestError(response.status);
   return payload.data;
 }
 
-/** Establishes the audience-bound price-checker session cookie for the phone
- *  and returns the kiosk's public config (drives language + display flags). */
 export function openSession(slug: string) {
-  return call<void>(slug, 'session', { slug });
+  return call<KioskConfig>(slug, 'session', { slug });
 }
 
-/** Checks one barcode, logging it as a phone scan and pairing it to a kiosk. */
-export function postPhoneScan(slug: string, barcode: string, sessionId: string) {
-  return call<PhoneScanResult>(slug, 'scan', {
-    barcode,
-    requestId: crypto.randomUUID(),
-    origin: 'phone',
-    pairSession: sessionId,
-  });
+export async function postPhoneScan(slug: string, barcode: string, sessionId: string) {
+  const body = { barcode, requestId: crypto.randomUUID(), origin: 'phone', pairSession: sessionId };
+  try {
+    return await call<ScanResult>(slug, 'scan', body);
+  } catch (error) {
+    if (!(error instanceof PhoneRequestError) || error.status !== 401) throw error;
+    await openSession(slug);
+    return call<ScanResult>(slug, 'scan', body);
+  }
 }

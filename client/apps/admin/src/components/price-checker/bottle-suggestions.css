@@ -1,0 +1,61 @@
+.checker-suggestions {
+  width: 100%;
+  max-width: 78rem;
+  margin-inline: auto;
+}
+.checker-suggestions h2 {
+  margin: 0 0 .8rem;
+  font-size: clamp(1rem, 1.5vw, 1.3rem);
+  font-weight: 700;
+}
+.checker-suggestions ul {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  gap: .75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.checker-suggestions li {
+  display: grid;
+  gap: .25rem;
+  padding: .5rem;
+  border: 1px solid var(--kiosk-line, #e5e0db);
+  border-radius: 1rem;
+  background: var(--kiosk-panel, #fff);
+}
+.checker-suggestion-view {
+  display: flex;
+  align-items: center;
+  gap: .7rem;
+  padding: .4rem;
+  text-align: start;
+  background: none;
+  color: inherit;
+}
+.checker-suggestion-view img {
+  width: 2.75rem;
+  height: 3.75rem;
+  object-fit: contain;
+  border-radius: .35rem;
+  background: #fff;
+}
+.checker-suggestion-view span {
+  display: grid;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.checker-suggestion-view small {
+  color: var(--kiosk-muted, #68615e);
+}
+.checker-suggestion-add {
+  justify-self: start;
+  margin-left: .4rem;
+  padding: .35rem .6rem;
+  border: 1px solid var(--kiosk-line, #e5e0db);
+  border-radius: .5rem;
+  color: inherit;
+}
+.checker-suggestion-add:disabled {
+  opacity: .65;
+}

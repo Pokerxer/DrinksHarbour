@@ -5,7 +5,7 @@ import type { KioskProduct } from './types';
 
 /**
  * Joins the kiosk's phone-pairing room so a customer's phone camera can feed
- * bottles into the on-screen comparison tray. Purely consumer-grade: the
+ * bottles to the kiosk's price result. Purely consumer-grade: the
  * pairing session id carried in the QR URL is the only credential, the room
  * receives only public product payloads, and a failed connect simply means
  * the customer's phone keeps working on its own.
@@ -19,6 +19,7 @@ export function usePhonePairing(
   const scan = useRef(onScan);
   scan.current = onScan;
   useEffect(() => {
+    if (!apiUrl) return;
     let disposed = false;
     let socket: Socket | undefined;
     const controller = new AbortController();

@@ -53,9 +53,9 @@ describe('offline pricebook cache', () => {
   });
   it('rejects malformed payloads on parse and on load', () => {
     expect(saveBook('counter', { generatedAt: 'x', config, items: 'nope' })).toBe(false);
-    store['price-checker-book-counter'] = '{{{';
+    store['price-checker-book-v2-counter'] = '{{{';
     expect(loadBook('counter')).toBeNull();
-    store['price-checker-book-counter'] = JSON.stringify({ no: 'shape' });
+    store['price-checker-book-v2-counter'] = JSON.stringify({ no: 'shape' });
     expect(loadBook('counter')).toBeNull();
   });
 });

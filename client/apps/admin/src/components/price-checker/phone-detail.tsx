@@ -15,19 +15,25 @@ export function PhoneDetail({
   product,
   currency,
   onClose,
+  compareAction,
 }: {
   product: KioskProduct;
   currency: string;
   onClose: () => void;
+  compareAction?: React.ReactNode;
 }) {
   const closeRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
+    const previous = document.activeElement;
     closeRef.current?.focus();
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose();
     };
     document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      if (previous instanceof HTMLElement) previous.focus();
+    };
   }, [onClose]);
   const money = (value: number) => formatMoney(value, currency);
   return (
@@ -73,7 +79,8 @@ export function PhoneDetail({
             </>
           )}
         </p>
-        <p className="phone-toned">{product.taxLabel}</p>
+        {product.taxLabel && <p className="phone-toned">{product.taxLabel}</p>}
+        {product.description && <p className="phone-detail-description">{product.description}</p>}
         <dl className="phone-detail-rows">
           {product.size && (
             <>
@@ -99,6 +106,11 @@ export function PhoneDetail({
               <dd>{product.origin}</dd>
             </>
           )}
+          {product.category && <><dt>Category</dt><dd>{product.category}</dd></>}
+          {product.subCategory && <><dt>Subcategory</dt><dd>{product.subCategory}</dd></>}
+          {product.grapeVarieties?.length ? (
+            <><dt>Grape variety</dt><dd>{product.grapeVarieties.join(', ')}</dd></>
+          ) : null}
           {product.beverageType && (
             <>
               <dt>Type</dt>
@@ -124,6 +136,7 @@ export function PhoneDetail({
             </>
           )}
         </dl>
+        {compareAction && <div className="phone-detail-actions">{compareAction}</div>}
       </section>
     </div>
   );

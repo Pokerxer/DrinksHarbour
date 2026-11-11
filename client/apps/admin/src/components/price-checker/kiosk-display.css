@@ -239,3 +239,32 @@
   color: var(--kiosk-ink);
   font-size: 0.85em;
 }
+
+.kiosk-result-page .kiosk-result .kiosk-price {
+  font-size: clamp(2.4rem, 4.6vw, 5.75rem);
+}
+.kiosk-result-page {
+  display: grid;
+  justify-items: center;
+  width: 100%;
+  min-width: 0;
+  gap: clamp(1.5rem, 3vh, 3rem);
+}
+.kiosk-phone-pair {
+  display: grid;
+  justify-items: center;
+  gap: .65rem;
+}
+
+.kiosk-compare-head h1 {
+  font-size: clamp(1.3rem, 2.8vw, 2.4rem);
+  font-weight: 750;
+}
+.kiosk-compare-rows thead th:not(:first-child) {
+  text-align: start;
+  width: auto;
+  overflow-wrap: anywhere;
+}
+.kiosk-content + .kiosk-phone-pair {
+  margin-block: .25rem 1rem;
+}

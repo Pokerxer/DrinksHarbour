@@ -19,6 +19,7 @@ vi.mock('./use-kiosk', () => ({
         theme: 'light',
         fullscreen: false,
         enableCompare: true,
+        enablePhoneScan: true,
       } as KioskConfig['settings'],
     } as KioskConfig,
     screen: state.screen,
@@ -83,31 +84,21 @@ it('closes manual entry with Escape and restores focus', () => {
   expect(document.activeElement).toBe(trigger);
 });
 
-it('requires age confirmation again after an alcoholic product is rescanned', () => {  state.screen = 'result';
-  state.product = {
-    name: 'Wine',
-    price: 1000,
-    currency: 'NGN',
-    alcoholic: true,
-    taxLabel: '',
-  };
-  const view = render(<PriceCheckerKiosk slug="counter" />);
-  fireEvent.click(screen.getByRole('button', { name: 'I am 18 or older' }));
-  expect(screen.getByRole('region', { name: 'Product price' })).toBeTruthy();
-  state.screen = 'loading';
-  state.product = null;
-  view.rerender(<PriceCheckerKiosk slug="counter" />);
+it('shows the price of an alcoholic bottle immediately', () => {
   state.screen = 'result';
-  state.product = {
-    name: 'Wine',
-    price: 1000,
-    currency: 'NGN',
-    alcoholic: true,
-    taxLabel: '',
-  };
-  view.rerender(<PriceCheckerKiosk slug="counter" />);
-  expect(screen.getByRole('button', { name: 'I am 18 or older' })).toBeTruthy();
-  expect(screen.queryByRole('region', { name: 'Product price' })).toBeNull();
+  state.product = { name: 'Wine', price: 1000, currency: 'NGN', alcoholic: true, taxLabel: '' };
+  render(<PriceCheckerKiosk slug="counter" />);
+  expect(screen.getByRole('region', { name: 'Product price' })).toBeTruthy();
+  expect(screen.queryByText(/Are you 18/)).toBeNull();
+});
+
+it('reveals the pairing QR only when asked', () => {
+  render(<PriceCheckerKiosk slug="counter" />);
+  expect(document.querySelector('canvas')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Use your phone' }));
+  expect(document.querySelector('canvas')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Hide QR code' }));
+  expect(document.querySelector('canvas')).toBeNull();
 });
 
 it('offers to add a scanned bottle to the comparison tray', () => {
@@ -121,8 +112,6 @@ it('offers to add a scanned bottle to the comparison tray', () => {
     barcode: '490187700713',
   };
   render(<PriceCheckerKiosk slug="counter" />);
-  // Age gate consumes the first interaction…
-  fireEvent.click(screen.getByRole('button', { name: 'I am 18 or older' }));
   const add = screen.getByRole('button', { name: 'Add to compare' });
   fireEvent.click(add);
   // …and the button acknowledges the add once the bottle sits in the tray.
@@ -144,7 +133,6 @@ it('keeps the tray across a reset and opens the comparison screen', () => {
     barcode: '5031017000123',
   };
   const view = render(<PriceCheckerKiosk slug="counter" />);
-  fireEvent.click(screen.getByRole('button', { name: 'I am 18 or older' }));
   fireEvent.click(screen.getByRole('button', { name: 'Add to compare' }));
   const second = {
     name: 'Talisker 10',
@@ -168,7 +156,7 @@ it('keeps the tray across a reset and opens the comparison screen', () => {
   state.screen = 'compare';
   view.rerender(<PriceCheckerKiosk slug="counter" />);
   expect(screen.getByRole('region', { name: 'Bottle comparison' })).toBeTruthy();
-  expect(screen.getByText('Best value')).toBeTruthy();
+  expect(screen.getByRole('table', { name: 'Bottle details' })).toBeTruthy();
 });
 
 it('announces the tray as full once four bottles are held', () => {
@@ -190,7 +178,7 @@ it('announces the tray as full once four bottles are held', () => {
     barcode: `49018700000${barcode}`,
   }));
   sessionStorage.setItem(
-    'price-checker-compare-counter',
+    'price-checker-compare-v2-counter',
     JSON.stringify(held)
   );
   const view = render(<PriceCheckerKiosk slug="counter" />);

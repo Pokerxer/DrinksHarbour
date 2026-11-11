@@ -12,20 +12,14 @@ const bottle = (
 
 afterEach(() => cleanup());
 
-it('marks only the cheapest bottle as the best value', () => {
+it('compares actual selling prices without declaring a winner', () => {
   render(
-    <CompareScreen
-      items={[bottle('Premium lag', 500, 5), bottle('Fair stout', 400, 7.5)]}
-      currency="NGN"
-      onRemove={() => {}}
-      onClose={() => {}}
-    />
+    <CompareScreen items={[bottle('Premium lager', 500), bottle('Stout', 400)]}
+      currency="NGN" onRemove={() => {}} onClose={() => {}} />
   );
-  const best = screen.getAllByText('Best value');
-  const card = best[0].closest('[role="listitem"]')?.textContent || '';
-  expect(best).toHaveLength(1);
-  expect(card).toContain('Fair stout');
-  expect(card).toContain('₦400');
+  expect(screen.getAllByText('₦400')).toHaveLength(2);
+  expect(screen.getByRole('rowheader', { name: 'Price' })).toBeTruthy();
+  expect(screen.queryByText('Best value')).toBeNull();
 });
 
 it('collapses rows where every bottle matches and still shows divergent rows', () => {
@@ -60,7 +54,7 @@ it('lets the customer remove a bottle and close the view', () => {
   expect(onClose).toHaveBeenCalledTimes(1);
 });
 
-it('adds price-per-ml and cost-per-drink rows when volumes and ABV allow', () => {
+it('compares category, subcategory, grape variety, brand and exact size', () => {
   render(
     <CompareScreen
       items={[
@@ -72,7 +66,11 @@ it('adds price-per-ml and cost-per-drink rows when volumes and ABV allow', () =>
           taxLabel: '',
           abv: 40,
           volumeMl: 700,
-          beverageType: 'spirit',
+          category: 'Red wine',
+          subCategory: 'Varietal wine',
+          grapeVarieties: ['Merlot'],
+          brand: 'Grape estate',
+          size: '75cl',
         },
         {
           name: 'B',
@@ -82,7 +80,11 @@ it('adds price-per-ml and cost-per-drink rows when volumes and ABV allow', () =>
           taxLabel: '',
           abv: 40,
           volumeMl: 1000,
-          beverageType: 'spirit',
+          category: 'Red wine',
+          subCategory: 'Blend',
+          grapeVarieties: ['Syrah'],
+          brand: 'Hillside',
+          size: '1L',
         },
       ]}
       currency="NGN"
@@ -93,8 +95,9 @@ it('adds price-per-ml and cost-per-drink rows when volumes and ABV allow', () =>
   const labels = [
     ...document.querySelectorAll('.kiosk-compare-rows th'),
   ].map((cell) => cell.textContent);
-  expect(labels).toContain('Price per ml');
-  expect(labels).toContain('Cost per drink');
+  expect(labels).toEqual(expect.arrayContaining(['Category', 'Subcategory', 'Grape variety', 'Brand', 'Size', 'Price']));
+  expect(labels).not.toContain('Price per ml');
+  expect(labels).not.toContain('Cost per drink');
 });
 
 it('renders the decision headline above the table', () => {
@@ -160,10 +163,10 @@ describe('differences-only and stock-aware compare', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: /differences only/i }));
     expect(screen.queryByLabelText('All bottles: Non-alcoholic')).toBeNull();
-    expect(screen.getByText('Best value')).toBeTruthy();
+    expect(screen.getByRole('rowheader', { name: 'Price' })).toBeTruthy();
   });
 
-  it('demotes an out-of-stock bottle: no crown, dimmed, unavailable line', () => {
+  it('keeps stock information visible for selected bottles', () => {
     render(
       <CompareScreen
         items={[bottle('In stock A', 900), oosBottle as KioskProduct]}
@@ -172,28 +175,8 @@ describe('differences-only and stock-aware compare', () => {
         onClose={() => {}}
       />
     );
-    const cards = [...document.querySelectorAll('.kiosk-compare-card')];
-    expect(cards[1].getAttribute('data-rank')).toBe('Infinity');
-    expect(String(document.body.textContent)).toContain('Unavailable');
+    expect(screen.getAllByText('Out of stock')).toHaveLength(2);
     expect(document.querySelector('.kiosk-compare-oos')).toBeTruthy();
-    expect(screen.getAllByText('Best value')).toHaveLength(1);
   });
 
-  it('renders relative value bars under the prices', () => {
-    render(
-      <CompareScreen
-        items={[
-          { ...bottle('A', 1000), volumeMl: 700, availability: 'IN_STOCK' as const },
-          { ...bottle('B', 500), volumeMl: 700, availability: 'IN_STOCK' as const },
-        ]}
-        currency="NGN"
-        onRemove={() => {}}
-        onClose={() => {}}
-      />
-    );
-    const bars = [...document.querySelectorAll('.kiosk-valuebar span')];
-    expect(bars).toHaveLength(2);
-    expect(bars[0].getAttribute('data-length')).toBe('100');
-    expect(bars[1].getAttribute('data-length')).toBe('50');
-  });
 });

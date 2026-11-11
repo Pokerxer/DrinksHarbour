@@ -6,7 +6,7 @@ export const MAX_COMPARE_ITEMS = 4;
 
 /** Identity within the tray: barcode when known, name+size otherwise. */
 export function compareKey(product: KioskProduct): string {
-  return product.barcode || `${product.name}|${product.size || ''}`;
+  return product.variantKey || product.barcode || `${product.name}|${product.size || ''}`;
 }
 
 export function addCompareItem(
@@ -44,7 +44,7 @@ export function replaceByKey(
   return items.map((item) => (compareKey(item) === key ? product : item));
 }
 
-const storageKey = (slug: string) => `price-checker-compare-${slug}`;
+const storageKey = (slug: string) => `price-checker-compare-v2-${slug}`;
 
 function readStored(slug: string): KioskProduct[] {
   try {

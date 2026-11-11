@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import type { KioskConfig, KioskProduct } from './types';
 import { ScannerMark } from './scanner-mark';
-import { useCountUp } from './use-count-up';
+import { formatMoney } from './money';
 
 export function ProductResult({
   product,
@@ -20,32 +20,8 @@ export function ProductResult({
     onReplace?: () => void;
   };
 }) {
-  const [confirmed, setConfirmed] = useState(false);
   const [imageFailed, setImageFailed] = useState(false);
-  const reduced =
-    typeof window !== 'undefined' &&
-    typeof window.matchMedia === 'function' &&
-    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const countedPrice = useCountUp(product.price, reduced);
-  const money = (value: number) =>
-    new Intl.NumberFormat('en-NG', {
-      style: 'currency',
-      currency: product.currency,
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 2,
-    }).format(value);
-  if (product.alcoholic && !confirmed)
-    return (
-      <section className="kiosk-status" aria-labelledby="age-title">
-        <span className="kiosk-eyebrow">Age-restricted product</span>
-        <h1 id="age-title">Are you 18 or older?</h1>
-        <p>Confirm your age to view this alcoholic beverage.</p>
-        <button className="kiosk-primary" onClick={() => setConfirmed(true)}>
-          I am 18 or older
-        </button>
-        <p className="kiosk-small">You can also scan a different product.</p>
-      </section>
-    );
+  const money = (value: number) => formatMoney(value, product.currency);
   return (
     <section
       className={`kiosk-result ${!config.settings.displayImages ? 'without-image' : ''}`}
@@ -71,7 +47,7 @@ export function ProductResult({
         {product.size && <p className="kiosk-size">{product.size}</p>}
         <div className="kiosk-price-block">
           {product.originalPrice !== undefined && <del>{money(product.originalPrice)}</del>}
-          <p className="kiosk-price">{money(countedPrice)}</p>
+          <p className="kiosk-price">{money(product.price)}</p>
           {product.taxLabel && <p className="kiosk-small">{product.taxLabel}</p>}
           {product.savings !== undefined && (
             <p className="kiosk-saving">
@@ -118,7 +94,7 @@ export function ProductResult({
                 ? compareSlot.onReplace
                 : compareSlot.onAdd
             }
-            disabled={compareSlot.full && !compareSlot.replaces && !compareSlot.added}
+            disabled={compareSlot.added || (compareSlot.full && !compareSlot.replaces)}
           >
             {compareSlot.added
               ? 'Added ✓'

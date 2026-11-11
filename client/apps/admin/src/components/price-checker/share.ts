@@ -10,15 +10,16 @@ export interface ShareLinks {
  *  catalog data; nothing personal leaves the phone. */
 export function shareMessage(
   summary: CompareSummary,
-  storeName: string | null
+  storeName: string | null,
+  currency = 'NGN'
 ): string {
   const band =
     summary.saved > 0
-      ? ` from ${formatMoney(summary.from, 'NGN')} to ${formatMoney(summary.to, 'NGN')}`
+      ? ` from ${formatMoney(summary.from, currency)} to ${formatMoney(summary.to, currency)}`
       : '';
   return [
     'DrinksHarbour',
-    `Compared ${summary.count} bottles · best value ${summary.bestName}${band}`,
+    `Compared ${summary.count} bottles · lowest price ${summary.bestName}${band}`,
     storeName ? `@ ${storeName}` : '',
   ]
     .filter(Boolean)

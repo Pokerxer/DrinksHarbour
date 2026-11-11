@@ -11,6 +11,7 @@ export interface OfflineSupport {
   config?: KioskConfig;
   /** Local barcode → product resolution against the cached book. */
   lookup: (barcode: string) => KioskProduct | null;
+  unavailable?: (barcode: string) => boolean;
   /** Called for every scan served offline, for the local queue. */
   onOfflineScan?: (record: { barcode: string; requestId: string; scannedAt: string }) => void;
 }
@@ -25,6 +26,7 @@ export function useKiosk(slug: string, offline?: OfflineSupport) {
   const pending = useRef<AbortController | null>(null);
   const last = useRef({ code: '', at: 0 });
   const sessionReady = useRef(false);
+  const liveRevision = useRef<number | undefined>(undefined);
   const offlineRef = useRef(offline);
   offlineRef.current = offline;
   const fail = useCallback((error: unknown) => {
@@ -50,6 +52,7 @@ export function useKiosk(slug: string, offline?: OfflineSupport) {
       const next = await openKiosk(slug, controller.signal);
       if (latest.current.isCurrent(generation)) {
         sessionReady.current = true;
+        liveRevision.current = next.revision;
         setConfig(next);
         setOfflineState(false);
         setScreen('idle');
@@ -57,11 +60,14 @@ export function useKiosk(slug: string, offline?: OfflineSupport) {
     } catch (error) {
       if (!latest.current.isCurrent(generation)) return;
       const unreachable =
-        error instanceof KioskError && [502, 503, 504].includes(error.status);
-      if (unreachable && offlineRef.current?.config) {
+        error instanceof TypeError ||
+        (error instanceof KioskError && [502, 503, 504].includes(error.status));
+      const cachedConfig = offlineRef.current?.config;
+      if (unreachable && cachedConfig &&
+          (liveRevision.current === undefined || cachedConfig.revision === liveRevision.current)) {
         // Cold boot with no connectivity: render from the cached book.
         sessionReady.current = true;
-        setConfig(offlineRef.current.config);
+        setConfig(cachedConfig);
         setOfflineState(true);
         setScreen('idle');
         return;
@@ -99,16 +105,18 @@ export function useKiosk(slug: string, offline?: OfflineSupport) {
       const controller = new AbortController();
       pending.current = controller;
       const generation = latest.current.begin();
+      const requestId = crypto.randomUUID();
       let settled = false;
       try {
         const result = await checkPrice(
           slug,
           code,
-          crypto.randomUUID(),
+          requestId,
           controller.signal
         );
         if (!latest.current.isCurrent(generation)) return;
         settled = true;
+        liveRevision.current = result.config.revision;
         setConfig(result.config);
         setOfflineState(false);
         setProduct(result.product || null);
@@ -124,15 +132,17 @@ export function useKiosk(slug: string, offline?: OfflineSupport) {
         // Network loss: serve the cached pricebook when the offline support
         // is wired up. A cached hit still queues a scan record for sync.
         const unreachable =
-          error instanceof KioskError &&
-          [502, 503, 504].includes(error.status);
-        if (!settled && unreachable && offlineRef.current) {
-          const cached = offlineRef.current.lookup(code);
+          error instanceof TypeError ||
+          (error instanceof KioskError && [502, 503, 504].includes(error.status));
+        const book = offlineRef.current;
+        if (!settled && unreachable && book &&
+            (liveRevision.current === undefined || book.config?.revision === liveRevision.current)) {
+          const cached = book.lookup(code);
           setOfflineState(true);
           if (cached) {
-            offlineRef.current.onOfflineScan?.({
+            book.onOfflineScan?.({
               barcode: code,
-              requestId: crypto.randomUUID(),
+              requestId,
               scannedAt: new Date().toISOString(),
             });
             setProduct(cached);
@@ -140,7 +150,7 @@ export function useKiosk(slug: string, offline?: OfflineSupport) {
             return;
           }
           setProduct(null);
-          setScreen('missing');
+          setScreen(book.unavailable?.(code) ? 'unavailable' : 'missing');
           return;
         }
         if (!settled) fail(error);
@@ -148,6 +158,13 @@ export function useKiosk(slug: string, offline?: OfflineSupport) {
     },
     [slug, fail]
   );
+  const showProduct = useCallback((next: KioskProduct) => {
+    if (!sessionReady.current) return;
+    latest.current.begin();
+    pending.current?.abort();
+    setProduct(next);
+    setScreen('result');
+  }, []);
   const reset = useCallback(() => {
     latest.current.begin();
     pending.current?.abort();
@@ -209,6 +226,7 @@ export function useKiosk(slug: string, offline?: OfflineSupport) {
   return {
     config,
     product,
+    showProduct,
     screen,
     remaining,
     scan,

@@ -6,6 +6,7 @@ import {
   flushQueue,
   loadBook,
   lookupBook,
+  parseBook,
   saveBook,
   type OfflineBook,
 } from './offline';
@@ -19,26 +20,28 @@ const REFRESH_MS = 600_000;
  * browser regains connectivity, and drains the queue through the server's
  * batched /sync endpoint.
  */
-export function useOfflineBook(slug: string) {
+export function useOfflineBook(slug: string, enabled = true) {
   const [book, setBook] = useState<OfflineBook | null>(() => loadBook(slug));
 
   const refresh = useCallback(async () => {
+    if (!slug) return;
     try {
-      const controller = new AbortController();
       const response = await fetch(
         `/api/price-checker/${encodeURIComponent(slug)}/book`,
         {
           credentials: 'same-origin',
           cache: 'no-store',
-          signal: controller.signal,
+          signal: AbortSignal.timeout(15000),
         }
       );
       if (!response.ok) return; // keep the cached book honest about its age
       const payload = (await response.json().catch(() => null)) as {
         data?: unknown;
       } | null;
-      if (payload?.data && saveBook(slug, payload.data as never))
-        setBook(loadBook(slug));
+      const next = parseBook(slug, payload?.data);
+      if (!next) return;
+      saveBook(slug, next);
+      setBook(next);
     } catch {
       /* offline — the stale cache keeps serving */
     }
@@ -50,6 +53,7 @@ export function useOfflineBook(slug: string) {
   );
 
   useEffect(() => {
+    if (!slug || !enabled) return;
     const backOnline = () => {
       void refresh();
       void flush();
@@ -62,18 +66,25 @@ export function useOfflineBook(slug: string) {
       window.removeEventListener('online', backOnline);
       window.clearInterval(timer);
     };
-  }, [refresh, flush]);
+  }, [slug, enabled, refresh, flush]);
 
-  const support: OfflineSupport | null = book
+  const activeBook = book?.config.slug === slug ? book : null;
+  const support: OfflineSupport | null = activeBook
     ? {
-        generatedAt: book.generatedAt,
-        config: book.config,
-        lookup: (barcode: string) =>
-          (lookupBook(book.items, barcode) as KioskProduct | null) ?? null,
+        generatedAt: activeBook.generatedAt,
+        config: activeBook.config,
+        lookup: (barcode: string) => {
+          const item = lookupBook(activeBook.items, barcode);
+          if (!item) return null;
+          const product: KioskProduct = { ...item };
+          if (!activeBook.config.settings.displayBarcode) delete product.barcode;
+          return product;
+        },
+        unavailable: (barcode) => activeBook.unavailableBarcodes?.includes(barcode) ?? false,
         onOfflineScan: (record) => {
           addQueue(slug, record);
         },
       }
     : null;
-  return { book, support, refresh, flush };
+  return { book: activeBook, support, refresh, flush };
 }

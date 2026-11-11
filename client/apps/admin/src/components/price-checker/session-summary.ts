@@ -7,7 +7,7 @@ export interface CompareSummary {
   /** Price band across the compared set. */
   from: number;
   to: number;
-  /** Spread between the priciest and the best-value bottle. */
+  /** Spread between the priciest and the least expensive bottle. */
   saved: number;
 }
 

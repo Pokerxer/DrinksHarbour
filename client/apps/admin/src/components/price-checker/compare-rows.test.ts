@@ -26,7 +26,7 @@ describe('comparison rows and decision headline', () => {
     ]);
     const shared = rows.filter((row) => row.shared).map((row) => row.label);
     expect(shared).toContain('Size');
-    expect(shared).toContain('Type');
+    expect(shared).toContain('Category');
     expect(shared).toContain('ABV');
     expect(shared).not.toContain('Origin');
   });
@@ -39,7 +39,7 @@ describe('comparison rows and decision headline', () => {
       'NGN'
     );
     expect(headline).toBe(
-      'Both bottles share 70cl · Spirit · Non-alcoholic. Main difference: price (₦15,000).'
+      'Both bottles share Spirit · 70cl · Non-alcoholic. Main difference: price (₦15,000).'
     );
   });
   it('falls back to size/brand differences and returns null when everything is shared', () => {

@@ -14,16 +14,18 @@ interface RowDef {
 }
 
 const defs: RowDef[] = [
+  { label: 'Category', value: (product) => product.category || typeLabel(product.beverageType) },
+  { label: 'Subcategory', value: (product) => product.subCategory },
+  { label: 'Grape variety', value: (product) => product.grapeVarieties?.join(', ') },
   { label: 'Brand', value: (product) => product.brand },
   { label: 'Size', value: (product) => product.size || product.volume },
-  { label: 'Type', value: (product) => typeLabel(product.beverageType) },
   {
     label: 'ABV',
     value: (product) => (product.abv !== undefined ? `${product.abv}%` : undefined),
   },
   { label: 'Origin', value: (product) => product.origin },
   {
-    label: 'Category',
+    label: 'Alcohol',
     value: (product) => (product.alcoholic ? 'Alcoholic' : 'Non-alcoholic'),
   },
   {

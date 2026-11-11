@@ -1,17 +1,18 @@
 'use client';
 import type { KioskConfig, KioskProduct } from './types';
 
-const BOOK_KEY = (slug: string) => `price-checker-book-${slug}`;
+const BOOK_KEY = (slug: string) => `price-checker-book-v2-${slug}`;
 const QUEUE_KEY = (slug: string) => `price-checker-queue-${slug}`;
 export const BOOK_JSON_LIMIT = 4_000_000; // ~4MB localStorage budget guard
 export const QUEUE_CAP = 500;
 
-export type OfflineProduct = KioskProduct & { barcode: string };
+export type OfflineProduct = KioskProduct & { barcode: string; suggestible?: boolean };
 
 export interface OfflineBook {
   generatedAt: string;
   config: KioskConfig;
   items: OfflineProduct[];
+  unavailableBarcodes?: string[];
 }
 
 function storage(_legacyKey?: string): Storage | null {
@@ -34,32 +35,41 @@ function parseItems(value: unknown): OfflineProduct[] {
       typeof row === 'object' &&
       typeof (row as OfflineProduct).barcode === 'string' &&
       typeof (row as OfflineProduct).name === 'string' &&
-      typeof (row as OfflineProduct).price === 'number'
+      Number.isFinite((row as OfflineProduct).price) && (row as OfflineProduct).price >= 0
   );
 }
 
-/** Validates + persists a book payload. Returns false when unusable/too big. */
-export function saveBook(
-  slug: string,
-  payload: { generatedAt: string; config: unknown; items: unknown }
-): boolean {
+export function parseBook(slug: string, value: unknown): OfflineBook | null {
+  const payload = value as Partial<OfflineBook> | null;
+  if (
+    typeof payload?.generatedAt !== 'string' ||
+    !Number.isFinite(Date.parse(payload.generatedAt)) ||
+    payload.config?.slug !== slug ||
+    !Array.isArray(payload.items)
+  ) return null;
+  return {
+    generatedAt: payload.generatedAt,
+    config: payload.config,
+    items: parseItems(payload.items),
+    unavailableBarcodes: Array.isArray(payload.unavailableBarcodes)
+      ? payload.unavailableBarcodes.filter((code) => typeof code === 'string')
+      : [],
+  };
+}
+
+/** Persists a public pricebook within the device storage budget. */
+export function saveBook(slug: string, payload: unknown): boolean {
   const session = storage(BOOK_KEY(slug));
-  if (!session) return false;
-  const generatedAt =
-    typeof payload?.generatedAt === 'string' &&
-    Number.isFinite(Date.parse(payload.generatedAt))
-      ? payload.generatedAt
-      : null;
-  const config = payload?.config as KioskConfig | null;
-  const items = parseItems(payload?.items);
-  if (!generatedAt || !config?.slug || !Array.isArray(items)) return false;
+  const book = parseBook(slug, payload);
+  if (!session || !book) return false;
   try {
-    const json = JSON.stringify({ generatedAt, config, items });
+    const json = JSON.stringify(book);
     if (json.length > BOOK_JSON_LIMIT) return false;
+    session.removeItem(`price-checker-book-${slug}`);
     session.setItem(BOOK_KEY(slug), json);
     return true;
   } catch {
-    return false; // quota / private mode
+    return false;
   }
 }
 
@@ -69,18 +79,7 @@ export function loadBook(slug: string): OfflineBook | null {
   try {
     const raw = session.getItem(BOOK_KEY(slug));
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as {
-      generatedAt?: string;
-      config?: KioskConfig;
-      items?: unknown[];
-    };
-    const items = parseItems(parsed.items);
-    if (!parsed.generatedAt || !parsed.config?.slug) return null;
-    return {
-      generatedAt: parsed.generatedAt,
-      config: parsed.config,
-      items,
-    };
+    return parseBook(slug, JSON.parse(raw));
   } catch {
     return null;
   }
