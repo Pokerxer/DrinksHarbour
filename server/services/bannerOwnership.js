@@ -5,7 +5,7 @@ const PLATFORM = ['super_admin', 'admin'];
 const FIELDS = ['title', 'subtitle', 'description', 'image', 'mobileImage', 'type', 'placement', 'displayOrder', 'priority',
   'ctaText', 'ctaLink', 'ctaStyle', 'linkType', 'imageClickable', 'targetProduct', 'targetCategory', 'targetBrand', 'targetCollection',
   'backgroundColor', 'textColor', 'overlayOpacity', 'textAlignment', 'contentPosition', 'imageFit', 'gradientIntensity', 'blurIntensity',
-  'startDate', 'endDate', 'isScheduled', 'isActive', 'status', 'visibleTo', 'deviceTargeting', 'animation', 'popupSettings', 'tags', 'notes'];
+  'startDate', 'endDate', 'isScheduled', 'isActive', 'status', 'visibleTo', 'deviceTargeting', 'animation', 'popup', 'tags', 'notes'];
 function adminScope(req) {
   if (!PLATFORM.includes(req.user?.role) && !req.user?.tenant) throw new ForbiddenError('Your account must belong to a tenant');
   const tenant = getTenantId(req, { required: !PLATFORM.includes(req.user?.role) });

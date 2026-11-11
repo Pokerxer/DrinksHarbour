@@ -11,7 +11,8 @@
     "clean": "rm -rf node_modules .next .cache .turbo",
     "cache:clean": "rm -rf .next .cache .turbo",
     "test:venue": "vitest run --config vitest.venue.config.ts",
-    "test:shop": "vitest run --config vitest.shop.config.ts"
+    "test:shop": "vitest run --config vitest.shop.config.ts",
+    "test:banner": "vitest run --config vitest.banner.config.ts"
   },
   "dependencies": {
     "@vercel/analytics": "^2.0.1",

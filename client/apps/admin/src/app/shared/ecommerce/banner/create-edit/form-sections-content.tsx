@@ -542,3 +542,181 @@ export function StylingSection({ formData, set }: SectionBaseProps) {
     </CollapsibleSection>
   );
 }
+
+// ── Popup behaviour — when this banner's placement is 'popup' ────────────────
+export function PopupBehaviorSection({ formData, set }: SectionBaseProps) {
+  const popup = formData.popup || {};
+  const pset = (field: string, value: any) =>
+    set('popup', { ...formData.popup, [field]: value });
+
+  return (
+    <CollapsibleSection
+      icon={<PiInfo className="h-5 w-5 text-red-600" />}
+      iconBg="bg-red-100"
+      title="Popup Behaviour"
+      subtitle="When it appears, how often, and how it is dismissed"
+      defaultOpen
+    >
+      <div className="space-y-4">
+        <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
+          Best practice: let engaged visitors meet the popup (15s+ dwell or
+          40% scroll, or on exit), cap it at once per day, and never stack
+          popups — the storefront already enforces a 30-minute quiet window
+          after any popup shows.
+        </p>
+
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-gray-700">
+              Trigger
+            </label>
+            <Select
+              size="sm"
+              value={popup.trigger || 'time_delay'}
+              onChange={(v: any) => pset('trigger', v?.value ?? v)}
+              getOptionValue={(o) => o.value}
+              displayValue={(v: any) => v}
+              options={[
+                { value: 'time_delay', label: 'Time delay (recommended)' },
+                { value: 'scroll_depth', label: 'Scroll depth' },
+                { value: 'exit_intent', label: 'Exit intent (desktop)' },
+                { value: 'page_load', label: 'Immediately on page load' },
+                { value: 'inactivity', label: 'Visitor inactivity' },
+              ]}
+            />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-gray-700">
+              How often it may show
+            </label>
+            <Select
+              size="sm"
+              value={popup.frequency || 'once_per_day'}
+              onChange={(v: any) => pset('frequency', v?.value ?? v)}
+              getOptionValue={(o) => o.value}
+              displayValue={(v: any) => v}
+              options={[
+                { value: 'once_per_day', label: 'Once per day (recommended)' },
+                { value: 'once_per_session', label: 'Once per session' },
+                { value: 'once_ever', label: 'Once ever' },
+                { value: 'every_visit', label: 'Every visit (annoying)' },
+              ]}
+            />
+          </div>
+          {(popup.trigger || 'time_delay') === 'time_delay' ||
+          (popup.trigger || '') === 'inactivity' ? (
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                Delay (seconds):{' '}
+                <span className="font-semibold">{popup.delaySeconds ?? 15}</span>
+              </label>
+              <input
+                type="range"
+                min={5}
+                max={60}
+                step={1}
+                value={popup.delaySeconds ?? 15}
+                onChange={(e) => pset('delaySeconds', Number(e.target.value))}
+                className="w-full accent-blue-600"
+              />
+              <p className="mt-1 text-xs text-gray-400">5–60 seconds.</p>
+            </div>
+          ) : null}
+          {(popup.trigger || '') === 'scroll_depth' ? (
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                Scroll depth:{' '}
+                <span className="font-semibold">{popup.scrollDepthPercent ?? 40}%</span>
+              </label>
+              <input
+                type="range"
+                min={10}
+                max={90}
+                step={5}
+                value={popup.scrollDepthPercent ?? 40}
+                onChange={(e) =>
+                  pset('scrollDepthPercent', Number(e.target.value))
+                }
+                className="w-full accent-blue-600"
+              />
+            </div>
+          ) : null}
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-gray-700">
+              Layout
+            </label>
+            <Select
+              size="sm"
+              value={popup.variant || 'modal'}
+              onChange={(v: any) => pset('variant', v?.value ?? v)}
+              getOptionValue={(o) => o.value}
+              displayValue={(v: any) => v}
+              options={[
+                { value: 'modal', label: 'Center modal' },
+                { value: 'slide_in', label: 'Slide-in corner' },
+                { value: 'notification', label: 'Notification' },
+                { value: 'full_screen', label: 'Full screen (mobile risk)' },
+              ]}
+            />
+          </div>
+          {(popup.variant || 'modal') === 'slide_in' ||
+          (popup.variant || '') === 'notification' ? (
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                Corner position
+              </label>
+              <Select
+                size="sm"
+                value={popup.position || 'bottom-right'}
+                onChange={(v: any) => pset('position', v?.value ?? v)}
+              getOptionValue={(o) => o.value}
+              displayValue={(v: any) => v}
+                options={[
+                  { value: 'bottom-right', label: 'Bottom right' },
+                  { value: 'bottom-left', label: 'Bottom left' },
+                  { value: 'top-right', label: 'Top right' },
+                  { value: 'top-left', label: 'Top left' },
+                ]}
+              />
+            </div>
+          ) : null}
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <label className="flex items-center gap-2 text-sm text-gray-700">
+            <Switch
+              size="sm"
+              checked={popup.showCloseButton ?? true}
+              onChange={(v: boolean) => pset('showCloseButton', v)}
+            />
+            Show close button
+          </label>
+          <label className="flex items-center gap-2 text-sm text-gray-700">
+            <Switch
+              size="sm"
+              checked={popup.closeOnBackdrop ?? true}
+              onChange={(v: boolean) => pset('closeOnBackdrop', v)}
+            />
+            Click outside closes
+          </label>
+          <label className="flex items-center gap-2 text-sm text-gray-700">
+            <Switch
+              size="sm"
+              checked={popup.collectEmail ?? false}
+              onChange={(v: boolean) => pset('collectEmail', v)}
+            />
+            Capture email in the popup
+          </label>
+          {(popup.collectEmail ?? false) && (
+            <Input
+              size="sm"
+              placeholder="Coupon code shown after signup (optional)"
+              value={popup.couponCode || ''}
+              onChange={(e: any) => pset('couponCode', e.target.value)}
+            />
+          )}
+        </div>
+      </div>
+    </CollapsibleSection>
+  );
+}

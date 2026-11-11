@@ -114,6 +114,19 @@ export type BannerVisibleTo =
   | 'returning_customers'
   | 'vip';
 
+export interface BannerPopupConfig {
+  trigger?: 'time_delay' | 'exit_intent' | 'scroll_depth' | 'page_load' | 'inactivity';
+  delaySeconds?: number;
+  scrollDepthPercent?: number;
+  frequency?: 'every_visit' | 'once_per_session' | 'once_per_day' | 'once_ever';
+  variant?: 'modal' | 'slide_in' | 'full_screen' | 'notification';
+  position?: 'center' | 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left';
+  showCloseButton?: boolean;
+  closeOnBackdrop?: boolean;
+  collectEmail?: boolean;
+  couponCode?: string;
+}
+
 export interface Banner {
   _id: string;
   title?: string;
@@ -172,6 +185,8 @@ export interface Banner {
   conversionRate: number;
   tags?: string[];
   notes?: string;
+  /** Popup behaviour — server model field, only for the 'popup' placement. */
+  popup?: BannerPopupConfig;
   createdBy?: {
     _id: string;
     firstName: string;
@@ -273,6 +288,8 @@ export interface BannerFormData {
   isGlobal?: boolean;
   tags?: string[];
   notes?: string;
+  /** Popup behaviour — only used when placement is 'popup'. */
+  popup?: BannerPopupConfig;
 }
 
 export const BANNER_TYPE_OPTIONS: { value: BannerType; label: string }[] = [

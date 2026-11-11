@@ -71,6 +71,20 @@ export function bannerFormValues(data: Banner): BannerFormData {
     isGlobal: data.isGlobal ?? false,
     tags: data.tags || [],
     notes: data.notes || '',
+    // Popup behaviour (placement 'popup' only) — defaults mirror the server
+    // model's pacing rules: 15s delay / 40% scroll / once per day.
+    popup: {
+      trigger: data.popup?.trigger || 'time_delay',
+      delaySeconds: data.popup?.delaySeconds ?? 15,
+      scrollDepthPercent: data.popup?.scrollDepthPercent ?? 40,
+      frequency: data.popup?.frequency || 'once_per_day',
+      variant: data.popup?.variant || 'modal',
+      position: data.popup?.position || 'center',
+      showCloseButton: data.popup?.showCloseButton ?? true,
+      closeOnBackdrop: data.popup?.closeOnBackdrop ?? true,
+      collectEmail: data.popup?.collectEmail ?? false,
+      couponCode: data.popup?.couponCode || '',
+    },
   };
 }
 

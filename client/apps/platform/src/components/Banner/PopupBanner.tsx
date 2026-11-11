@@ -20,6 +20,34 @@ function cn(...parts: (string | false | undefined | null)[]): string {
 
 const SEEN_KEY = 'dh_popup_seen'; // localStorage: Record<bannerId, lastSeenTimestamp>
 const SESSION_KEY = 'dh_popup_sess'; // sessionStorage: Set of seen banner IDs
+// Global popup pacing — after ANY popup interaction, this visitor gets quiet
+// for a while, no matter how many campaigns are live. Ads must never stack.
+const LAST_SHOWN_KEY = 'dh_popup_last_shown';
+const POPUP_COOLDOWN_MS = 30 * 60 * 1000; // 30 minutes
+// Round-robin rotation counter: each qualifying visit serves the NEXT live
+// campaign, so a returning visitor meets different adverts instead of the
+// same one every session.
+const ROTATION_KEY = 'dh_popup_rr';
+
+function readCount(key: string): number {
+  try {
+    return Number(localStorage.getItem(key) || 0) || 0;
+  } catch {
+    return 0;
+  }
+}
+function writeCount(key: string, value: number) {
+  try {
+    localStorage.setItem(key, String(value));
+  } catch {}
+}
+function isPopupCooldownActive(): boolean {
+  const last = readCount(LAST_SHOWN_KEY);
+  return last > 0 && Date.now() - last < POPUP_COOLDOWN_MS;
+}
+function markPopupShown() {
+  writeCount(LAST_SHOWN_KEY, Date.now());
+}
 
 function wasSeenThisSession(id: string): boolean {
   try {
@@ -858,19 +886,30 @@ function PopupContent({ banner, onClose }: { banner: BannerData; onClose: () => 
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
+// Popup strategy (default when a banner carries no popup config):
+//   – Trigger: show at the EARLIEST of 15s dwell, 40% scroll depth, or exit
+//     intent — engaged visitors meet it mid-browse, leavers meet it on the
+//     way out. Admin-configured banners keep their exact trigger.
+//   – Frequency: once_per_day per campaign (was once_per_session, which made
+//     the same advert the only one a visitor ever saw).
+//   – Rotation: one popup per visit — round-robin across the live campaigns
+//     so returning visitors meet different adverts.
+//   – Pacing: after any popup shows, this visitor gets 30 minutes of quiet
+//     before another one may appear — campaigns never stack.
+
 export default function PopupBanner({ allowedPaths, preview }: PopupBannerProps) {
-  const [banners, setBanners] = useState<BannerData[]>([]);
   const [visible, setVisible] = useState<BannerData | null>(null);
-  const [queue, setQueue] = useState<BannerData[]>([]);
-  const triggeredRef = useRef<Set<string>>(new Set());
+  const [candidate, setCandidate] = useState<BannerData | null>(null);
+  const [banners, setBanners] = useState<BannerData[]>([]);
+  const firedRef = useRef(false);
 
   // ── Fetch banners ──────────────────────────────────────────────────────────
   useEffect(() => {
     if (preview) {
-      setBanners([preview]);
+      setCandidate(preview);
       return;
     }
-    fetch(`${API_URL}/api/banners/placement/popup?limit=5`)
+    fetch(`${API_URL}/api/banners/placement/popup?limit=10`)
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (data?.success && data.data?.length) setBanners(data.data);
@@ -878,101 +917,112 @@ export default function PopupBanner({ allowedPaths, preview }: PopupBannerProps)
       .catch(() => {});
   }, [preview]);
 
-  // ── Path filter ────────────────────────────────────────────────────────────
+  // ── Choose this visit's candidate ──────────────────────────────────────────
   useEffect(() => {
-    if (!banners.length) return;
+    if (!banners.length || preview) return;
+    if (isPopupCooldownActive()) return; // recent popup — stay quiet
 
     const path = window.location.pathname;
-    const eligible = banners.filter((b) => {
-      if (allowedPaths && !allowedPaths.some((p) => path.startsWith(p))) return false;
-      const freq = b.popup?.frequency ?? 'once_per_session';
-      return shouldShowForFrequency(b._id, freq);
-    });
+    const eligible = banners
+      .filter((b) => {
+        if (allowedPaths && !allowedPaths.some((p) => path.startsWith(p))) return false;
+        return shouldShowForFrequency(b._id, b.popup?.frequency ?? 'once_per_day');
+      });
 
-    if (eligible.length) setQueue(eligible);
-  }, [banners, allowedPaths]);
+    if (!eligible.length) return;
 
-  // ── Register triggers for each banner in queue ─────────────────────────────
+    // Round-robin: rotate the ordered list by the visit counter.
+    const rr = readCount(ROTATION_KEY);
+    const start = rr % eligible.length;
+    const ordered = [...eligible.slice(start), ...eligible.slice(0, start)];
+    setCandidate(ordered[0]);
+  }, [banners, allowedPaths, preview]);
+
+  // ── Register this visit's trigger ──────────────────────────────────────────
   useEffect(() => {
-    if (!queue.length) return;
+    if (!candidate) return;
+    if (firedRef.current) return;
+
+    const cfg = candidate.popup ?? {};
+    const configured = !!cfg.trigger;
+    const trigger = cfg.trigger ?? 'time_delay';
+    const delay = (cfg.delaySeconds ?? 15) * 1000;
 
     const cleanups: (() => void)[] = [];
+    const fireOnce = () => {
+      if (firedRef.current) return;
+      firedRef.current = true;
+      if (isPopupCooldownActive()) return; // raced a cooldown — stay quiet
+      const rr = readCount(ROTATION_KEY);
+      writeCount(ROTATION_KEY, rr + 1); // next visit serves the next campaign
+      markPopupShown(); // start the global quiet window
+      setVisible(candidate);
+      fetch(`${API_URL}/api/banners/${candidate._id}/impression`, {
+        method: 'POST',
+      }).catch(() => {});
+      cleanups.forEach((fn) => fn());
+    };
 
-    queue.forEach((banner) => {
-      if (triggeredRef.current.has(banner._id)) return;
-      const cfg = banner.popup ?? {};
-      const trigger = cfg.trigger ?? 'time_delay';
-      const delay = (cfg.delaySeconds ?? 3) * 1000;
+    // Compound default (no admin config): earliest of delay / scroll / exit.
+    const useCompound = !configured;
 
-      const show = () => {
-        if (triggeredRef.current.has(banner._id)) return;
-        triggeredRef.current.add(banner._id);
-        setVisible(banner);
-        // Track impression
-        fetch(`${API_URL}/api/banners/${banner._id}/impression`, {
-          method: 'POST'
-        }).catch(() => {});
+    if (trigger === 'page_load') {
+      fireOnce();
+      return () => {};
+    }
+
+    if (useCompound || trigger === 'time_delay') {
+      const t = setTimeout(fireOnce, delay);
+      cleanups.push(() => clearTimeout(t));
+    }
+    if (useCompound || trigger === 'scroll_depth') {
+      const depth = (cfg.scrollDepthPercent ?? 40) / 100;
+      const onScroll = () => {
+        const scrolled =
+          (document.documentElement.scrollTop + window.innerHeight) /
+          document.documentElement.scrollHeight;
+        if (scrolled >= depth) fireOnce();
       };
-
-      if (trigger === 'page_load') {
-        show();
-      } else if (trigger === 'time_delay') {
-        const t = setTimeout(show, delay);
-        cleanups.push(() => clearTimeout(t));
-      } else if (trigger === 'inactivity') {
-        let timer = setTimeout(show, delay);
-        const reset = () => {
-          clearTimeout(timer);
-          timer = setTimeout(show, delay);
-        };
+      window.addEventListener('scroll', onScroll, { passive: true });
+      cleanups.push(() => window.removeEventListener('scroll', onScroll));
+    }
+    if (useCompound || trigger === 'exit_intent') {
+      const onMouseOut = (e: MouseEvent) => {
+        if (e.clientY <= 5) fireOnce();
+      };
+      document.addEventListener('mouseleave', onMouseOut);
+      cleanups.push(() => document.removeEventListener('mouseleave', onMouseOut));
+    }
+    if (trigger === 'inactivity') {
+      let timer = setTimeout(fireOnce, delay);
+      const reset = () => {
+        clearTimeout(timer);
+        timer = setTimeout(fireOnce, delay);
+      };
+      ['mousemove', 'keydown', 'scroll', 'click', 'touchstart'].forEach((ev) =>
+        window.addEventListener(ev, reset, { passive: true })
+      );
+      cleanups.push(() => {
+        clearTimeout(timer);
         ['mousemove', 'keydown', 'scroll', 'click', 'touchstart'].forEach((ev) =>
-          window.addEventListener(ev, reset, { passive: true })
+          window.removeEventListener(ev, reset)
         );
-        cleanups.push(() => {
-          clearTimeout(timer);
-          ['mousemove', 'keydown', 'scroll', 'click', 'touchstart'].forEach((ev) =>
-            window.removeEventListener(ev, reset)
-          );
-        });
-      } else if (trigger === 'scroll_depth') {
-        const depth = (cfg.scrollDepthPercent ?? 50) / 100;
-        const onScroll = () => {
-          const scrolled =
-            (document.documentElement.scrollTop + window.innerHeight) / document.documentElement.scrollHeight;
-          if (scrolled >= depth) show();
-        };
-        window.addEventListener('scroll', onScroll, { passive: true });
-        cleanups.push(() => window.removeEventListener('scroll', onScroll));
-      } else if (trigger === 'exit_intent') {
-        const onMouseOut = (e: MouseEvent) => {
-          if (e.clientY <= 5) show();
-        };
-        document.addEventListener('mouseleave', onMouseOut);
-        cleanups.push(() => document.removeEventListener('mouseleave', onMouseOut));
-      }
-    });
+      });
+    }
 
     return () => cleanups.forEach((fn) => fn());
-  }, [queue]);
+  }, [candidate]);
 
   // ── Close handler ─────────────────────────────────────────────────────────
   const handleClose = useCallback(() => {
     if (!visible) return;
-    // Mark seen for frequency tracking
-    const freq = visible.popup?.frequency ?? 'once_per_session';
+    // Frequency tracking: per-campaign + session. The global pacing window
+    // was already started at show time, so no further popup stacks behind
+    // this one — closing one never chains straight into the next.
+    const freq = visible.popup?.frequency ?? 'once_per_day';
     markSeenSession(visible._id);
     if (freq !== 'every_visit') markSeen(visible._id);
-
     setVisible(null);
-
-    // Show next in queue after a short pause
-    setQueue((prev) => {
-      const remaining = prev.filter((b) => b._id !== visible._id && !triggeredRef.current.has(b._id));
-      if (remaining.length) {
-        setTimeout(() => setVisible(remaining[0]), 600);
-      }
-      return remaining;
-    });
   }, [visible]);
 
   // ── Keyboard: Escape ──────────────────────────────────────────────────────

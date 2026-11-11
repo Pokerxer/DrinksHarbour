@@ -6,6 +6,7 @@ import {
   ImagesSection,
   CtaSection,
   StylingSection,
+  PopupBehaviorSection,
 } from './form-sections-content';
 import {
   SchedulingSection,
@@ -44,6 +45,9 @@ export default function BannerEditorSections({
         onEnhanceField={onEnhanceField}
       />
       <ImagesSection formData={formData} set={set} token={token} />
+      {formData.placement === 'popup' && (
+        <PopupBehaviorSection formData={formData} set={set} />
+      )}
       <CtaSection
         formData={formData}
         set={set}
