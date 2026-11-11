@@ -12,6 +12,15 @@ const product = {
   lowStockThreshold: 15,
 } as SubProductListItem;
 for (const Card of [ProductGridCard, ProductGridCardCompact]) {
+  it.each([
+    ['active', 'Active'],
+    ['archived', 'Archived'],
+    ['discontinued', 'Discontinued'],
+  ])(`shows the %s status in ${Card.name}`, (status, label) => {
+    render(<Card product={{ ...product, status }} isSelected={false} onSelect={vi.fn()} />);
+    expect(screen.getByText(label)).toBeTruthy();
+  });
+
   it(`keeps card selection and edit actions separate in ${Card.name}`, () => {
     const select = vi.fn();
     const { container } = render(

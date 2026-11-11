@@ -25,6 +25,47 @@ router.get(
     }),
   ),
 );
+// Caller's tenant marketplace-sales summary (denormalised Tenant aggregate —
+// see services/marketplaceSales.service). Declared before /:id so the literal
+// path is never shadowed. Tenant roles always read their own JWT tenant;
+// platform roles must name a tenant slug explicitly.
+router.get(
+  "/sales-summary",
+  asyncHandler(async (req, res) => {
+    const Tenant = require("../models/Tenant");
+    const { getTenantId } = require("../utils/tenantContext");
+    const { NotFoundError, ValidationError } = require("../utils/errors");
+    const SELECT =
+      "name slug marketplaceSalesTotal marketplaceSalesOrders";
+    let tenant;
+    if (
+      ["super_admin", "admin"].includes(req.user.role) &&
+      typeof req.query.tenant === "string" &&
+      req.query.tenant.trim()
+    ) {
+      tenant = await Tenant.findOne({ slug: req.query.tenant.trim() })
+        .select(SELECT)
+        .lean();
+    } else {
+      const tenantId = getTenantId(req, { required: false });
+      if (!tenantId) {
+        throw new ValidationError(
+          "Provide a ?tenant=slug to view a tenant's marketplace sales",
+        );
+      }
+      tenant = await Tenant.findById(tenantId).select(SELECT).lean();
+    }
+    if (!tenant) throw new NotFoundError("Tenant not found");
+    res.json({
+      success: true,
+      data: {
+        tenant: { name: tenant.name, slug: tenant.slug },
+        marketplaceSalesTotal: tenant.marketplaceSalesTotal || 0,
+        marketplaceSalesOrders: tenant.marketplaceSalesOrders || 0,
+      },
+    });
+  }),
+);
 router.get(
   "/:id",
   asyncHandler(async (req, res) =>

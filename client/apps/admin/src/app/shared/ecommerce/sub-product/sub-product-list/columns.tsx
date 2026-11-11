@@ -1,6 +1,7 @@
 // @ts-nocheck
 'use client';
 
+import CatalogStatusBadge from '@/app/shared/ecommerce/catalog-status-badge';
 import { routes } from '@/config/routes';
 import { SubProductListItem, SizeVariant } from './table';
 import {
@@ -590,48 +591,6 @@ export const subProductListColumns = [
     header: 'Status',
     enableSorting: false,
     cell: ({ row }) => {
-      const status = row.original.status || 'draft';
-      const statusMap: Record<
-        string,
-        { label: string; cls: string; dot: string }
-      > = {
-        active: {
-          label: 'Active',
-          cls: 'bg-green-50 text-green-700 border-green-200',
-          dot: 'bg-green-500',
-        },
-        draft: {
-          label: 'Draft',
-          cls: 'bg-blue-50 text-blue-700 border-blue-200',
-          dot: 'bg-blue-400',
-        },
-        pending: {
-          label: 'Pending',
-          cls: 'bg-amber-50 text-amber-700 border-amber-200',
-          dot: 'bg-amber-400',
-        },
-        hidden: {
-          label: 'Hidden',
-          cls: 'bg-gray-50 text-gray-600 border-gray-200',
-          dot: 'bg-gray-400',
-        },
-        out_of_stock: {
-          label: 'Out of Stock',
-          cls: 'bg-red-50 text-red-700 border-red-200',
-          dot: 'bg-red-500',
-        },
-        discontinued: {
-          label: 'Discontinued',
-          cls: 'bg-slate-50 text-slate-600 border-slate-200',
-          dot: 'bg-slate-500',
-        },
-        archived: {
-          label: 'Archived',
-          cls: 'bg-slate-50 text-slate-500 border-slate-200',
-          dot: 'bg-slate-400',
-        },
-      };
-      const s = statusMap[status] || statusMap.draft;
       const channels = [
         { key: 'POS', on: row.original.visibleInPOS !== false },
         { key: 'Web', on: row.original.visibleInOnlineStore !== false },
@@ -639,15 +598,7 @@ export const subProductListColumns = [
       ];
       return (
         <div className="flex flex-col gap-1">
-          <span
-            className={cn(
-              'inline-flex w-fit items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold',
-              s.cls
-            )}
-          >
-            <span className={cn('h-1.5 w-1.5 rounded-full', s.dot)} />
-            {s.label}
-          </span>
+          <CatalogStatusBadge status={row.original.status} />
           <div className="flex items-center gap-1">
             {channels.map((c) => (
               <span

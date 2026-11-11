@@ -105,6 +105,8 @@ export interface SearchChip {
 export interface Stats {
   total: number;
   active: number;
+  discontinued: number;
+  archived: number;
   lowStock: number;
   outOfStock: number;
   published?: number;
@@ -336,7 +338,8 @@ function matchesQuickFilter(p: SubProductListItem, key: string): boolean {
     case 'no_sales':
       return (p.totalSold || 0) === 0;
     case 'archived':
-      return p.status === 'discontinued' || p.status === 'archived';
+    case 'discontinued':
+      return p.status === key;
     default:
       return true;
   }
@@ -502,8 +505,9 @@ export function filterSubProducts(
 
   let result = items;
 
-  // Status pills (All / Active / Low stock / Out of stock)
-  if (statusFilter === 'active') result = result.filter((p) => p.status === 'active');
+  // Lifecycle status pills use the saved listing status.
+  if (['active', 'archived', 'discontinued'].includes(statusFilter))
+    result = result.filter((p) => p.status === statusFilter);
   else if (statusFilter === 'low_stock') result = result.filter(isLowStock);
   else if (statusFilter === 'out_of_stock')
     result = result.filter((p) => (p.totalStock ?? 0) === 0);
@@ -627,14 +631,18 @@ export function computeStats(
   // from the fetched catalog.
   const published = all.filter((p) => p.isPublished).length;
   const draft = all.length - published;
+  const archived = all.filter((p) => p.status === 'archived').length;
+  const discontinued = all.filter((p) => p.status === 'discontinued').length;
 
   if (serverStats && serverStats.total != null) {
-    return { ...serverStats, total: serverStats.total!, published, draft } as Stats;
+    return { ...serverStats, total: serverStats.total!, published, draft, archived, discontinued } as Stats;
   }
 
   return {
     total: all.length,
     active: all.filter((p) => p.status === 'active').length,
+    archived,
+    discontinued,
     lowStock: all.filter(isLowStock).length,
     outOfStock: all.filter((p) => (p.totalStock ?? 0) === 0).length,
     published,

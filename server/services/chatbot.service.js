@@ -119,7 +119,6 @@ const callClaude = async (prompt, systemPrompt = null, conversationHistory = [],
     const response = await anthropic.messages.create({
       model: CLAUDE_MODEL,
       max_tokens: outputFormat ? 4096 : 2048,
-      temperature: 0.65,
       system: finalSystemPrompt,
       messages,
       ...(outputFormat ? { output_config: { format: outputFormat } } : {}),
@@ -350,7 +349,6 @@ Use null for anything you cannot determine.`;
     const response = await anthropic.messages.create({
       model: CLAUDE_MODEL,
       max_tokens: 800,
-      temperature: 0.3,
       messages: [{
         role: 'user',
         content: [

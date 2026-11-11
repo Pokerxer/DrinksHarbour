@@ -61,5 +61,19 @@ JournalEntrySchema.index(
   { unique: true, partialFilterExpression: { refDoc: { $type: 'objectId' } } }
 );
 
+// Marketplace sales postings move the tenant's denormalised aggregate
+// (services/marketplaceSales.service). Everything else — POS, storefront,
+// venue, refunds, COGS — cannot change that number, so skip the recompute.
+// Best-effort: an analytics failure must never fail the accounting posting
+// that just succeeded.
+JournalEntrySchema.post('save', async function (doc) {
+  if (doc.entryType !== 'sales_revenue' || doc.source !== 'marketplace') return;
+  try {
+    await require('../services/marketplaceSales.service').recomputeMarketplaceSales({ tenantIds: [doc.tenant] });
+  } catch (err) {
+    console.error('[marketplaceSales] recompute failed:', err.message);
+  }
+});
+
 module.exports =
   mongoose.models.JournalEntry || mongoose.model('JournalEntry', JournalEntrySchema);

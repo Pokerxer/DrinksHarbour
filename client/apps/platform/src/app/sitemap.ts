@@ -208,8 +208,8 @@ async function fetchVendors(): Promise<VendorEntry[]> {
 }
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  // Static pages carry no lastModified — we have no real modification date for
-  // them, and a fabricated one is worse than none.
+  // Set lastModified only when the date of a significant content update is known.
+  const deliveryPolicyUpdated = "2026-11-11";
   const staticPages: MetadataRoute.Sitemap = [
     { url: BASE_URL,                                  changeFrequency: "daily",   priority: 1.0 },
     { url: `${BASE_URL}/shop`,                        changeFrequency: "hourly",  priority: 0.9 },
@@ -218,12 +218,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${BASE_URL}/about`,                       changeFrequency: "monthly", priority: 0.6 },
     { url: `${BASE_URL}/contact`,                     changeFrequency: "monthly", priority: 0.5 },
     { url: `${BASE_URL}/blog`,                        changeFrequency: "weekly",  priority: 0.7 },
-    { url: `${BASE_URL}/faqs`,                        changeFrequency: "monthly", priority: 0.5 },
+    { url: `${BASE_URL}/faqs`, changeFrequency: "monthly", priority: 0.5, lastModified: deliveryPolicyUpdated },
     { url: `${BASE_URL}/careers`,                     changeFrequency: "weekly",  priority: 0.4 },
     { url: `${BASE_URL}/returns`,                     changeFrequency: "monthly", priority: 0.4 },
-    { url: `${BASE_URL}/shipping-info`,               changeFrequency: "monthly", priority: 0.4 },
-    { url: `${BASE_URL}/delivery/abuja`,              changeFrequency: "monthly", priority: 0.7 },
-    { url: `${BASE_URL}/delivery/lagos`,              changeFrequency: "monthly", priority: 0.7 },
+    { url: `${BASE_URL}/shipping-info`, changeFrequency: "monthly", priority: 0.4, lastModified: deliveryPolicyUpdated },
+    { url: `${BASE_URL}/delivery/abuja`, changeFrequency: "monthly", priority: 0.7, lastModified: deliveryPolicyUpdated },
+    { url: `${BASE_URL}/delivery/lagos`, changeFrequency: "monthly", priority: 0.7, lastModified: deliveryPolicyUpdated },
     { url: `${BASE_URL}/authenticity-guarantee`,      changeFrequency: "monthly", priority: 0.6 },
     { url: `${BASE_URL}/bulk-drinks`,                changeFrequency: "monthly", priority: 0.7 },
     { url: `${BASE_URL}/occasions`,                  changeFrequency: "monthly", priority: 0.6 },

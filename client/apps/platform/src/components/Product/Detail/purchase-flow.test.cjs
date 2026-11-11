@@ -20,7 +20,9 @@ test('detail cart quantity follows stock, size and seller changes while keeping 
   if(name.startsWith('@/context/Modal'))return {[`use${name.split('/').at(-1)}`]:()=>({})};
   if(name==='@/components/UI/OptimizedImage')return {__esModule:true,default:Empty};
   if(name==='@/components/WhatsApp/whatsappLink')return load(path.resolve(__dirname,'../../WhatsApp/whatsappLink.ts'));
-  if(name.startsWith('@/components/')&&!name.includes('ShoppingLocation'))return {__esModule:true,default:Empty};
+  if(name==='@/components/Merchandising/useOfferImpression')return {useOfferImpression:()=>({current:null})};
+  if(name==='@/components/Merchandising/ProductOffers')return {SizeUpgrade:Empty,PremiumOffer:Empty,GiftOffer:Empty};
+  if(name.startsWith('@/components/')&&!name.includes('ShoppingLocation')&&!name.endsWith('/Merchandising/offers'))return {__esModule:true,default:Empty};
   if(['./RelatedProducts','./ShareButton'].includes(name))return {__esModule:true,default:Empty};
   if(name.startsWith('@/')||name.startsWith('.')){
    const base=name.startsWith('@/')?path.resolve(__dirname,'../../..',name.slice(2)):path.resolve(path.dirname(file),name);
@@ -30,11 +32,22 @@ test('detail cart quantity follows stock, size and seller changes while keeping 
  };m._compile(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true}}).outputText,file);return m.exports;}
  const Detail=load(path.join(__dirname,'index.tsx')).default;
  const size=(id,stock,min=1)=>({_id:id,size:id,displayName:id,stock,minOrderQuantity:min,maxOrderQuantity:20,volumeMl:id==='large'?750:id==='small'?700:undefined,pricing:{websitePrice:1000,currencySymbol:'₦'}});
- let product={_id:'wine',name:'Wine',volumeMl:1000,images:[],shoppingOffer:{subProductId:'a',sizeId:'large'},availableAt:[{_id:'a',tenant:{_id:'tenant-a',name:'Nearby seller'},sizes:[size('small',2),size('large',4)]},{_id:'b',tenant:{_id:'tenant-b',name:'Other seller'},sizes:[size('bottle',1),size('case',2,6)]}]};
- const root=createRoot(document.getElementById('root'));let blocked=false;
- const render=()=>root.render(React.createElement(Detail,{productData:product,purchaseBlocked:blocked}));
+ let product={_id:'wine',name:'Wine',slug:'wine',volumeMl:1000,images:[],shoppingOffer:{subProductId:'a',sizeId:'large'},availableAt:[{_id:'a',tenant:{_id:'tenant-a',name:'Nearby seller'},sizes:[size('small',2),size('large',4)]},{_id:'b',tenant:{_id:'tenant-b',name:'Other seller'},sizes:[size('bottle',1),size('case',2,6)]}]};
+ const root=createRoot(document.getElementById('root'));let blocked=false, preferredOffer;
+ const render=()=>root.render(React.createElement(Detail,{key:preferredOffer?'linked':'default',productData:product,purchaseBlocked:blocked,marketplaceOffers:!!preferredOffer,preferredOffer}));
  const button=label=>[...document.querySelectorAll('button')].find(b=>b.getAttribute('aria-label')===label||b.textContent.includes(label));
  try{
+  preferredOffer={seller:'b',size:'bottle'};
+  await React.act(async()=>render());
+  assert.equal(button('Other seller').getAttribute('aria-pressed'),'true','linked listing is selected over the default seller');
+  assert.equal(button('bottle').getAttribute('aria-pressed'),'true','linked size is selected over the default size');
+  await React.act(async()=>button('Add to cart').click());
+  assert.equal(added[6],'bottle');assert.equal(added[7],'b');
+  preferredOffer={seller:'b',size:'case'};
+  await React.act(async()=>render());
+  assert.match(document.body.textContent,/suggested seller or size is unavailable/);
+  assert.equal(button('Nearby seller').getAttribute('aria-pressed'),'true');
+  preferredOffer=undefined;
   await React.act(async()=>render());
   assert.match(document.body.textContent,/750ml/);assert.doesNotMatch(document.body.textContent,/1000ml/);
   assert.equal(button('large').getAttribute('aria-pressed'),'true','representative size is the default');

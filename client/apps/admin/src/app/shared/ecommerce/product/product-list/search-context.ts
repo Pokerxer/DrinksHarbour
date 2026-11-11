@@ -14,6 +14,7 @@ export type SPFilterKey =
   | 'published'
   | 'low_stock'
   | 'out_of_stock'
+  | 'discontinued'
   | 'archived'
   | 'alcoholic'
   | 'non_alcoholic';

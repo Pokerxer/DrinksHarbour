@@ -65,6 +65,7 @@ export default function ProductClient({
   slug,
   initialProduct = null,
   initialRelated = [],
+  preferredOffer,
   initialBannerData,
   isTenantSite = false,
 }: {
@@ -77,6 +78,7 @@ export default function ProductClient({
    */
   initialProduct?: any;
   initialRelated?: ProductType[];
+  preferredOffer?: { seller: string; size: string };
   /** Tenant-site surface flag forwarded from the server component. */
   isTenantSite?: boolean;
   initialBannerData?: ProductBannerSeed;
@@ -277,7 +279,7 @@ export default function ProductClient({
       {error && <div role="alert" className="container my-3 rounded-xl border border-red-100 bg-red-50 p-4 text-sm text-red-800">
         <p>{error}</p><button onClick={() => void loadProduct()} className="mt-2 font-semibold underline">Retry availability</button>
       </div>}
-      <ProductDetail key={productData._id} productData={productData} relatedProducts={relatedProducts} purchaseBlocked={loading || !!error} />
+      <ProductDetail key={productData._id} productData={productData} relatedProducts={relatedProducts} purchaseBlocked={loading || !!error} marketplaceOffers={!isTenantSite} preferredOffer={preferredOffer} />
       <RecentlyViewed productId={productData._id} currentProduct={currentProductData} />
     </>
   );

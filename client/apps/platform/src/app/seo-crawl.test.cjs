@@ -63,8 +63,15 @@ test('site OnlineStore markup uses organization properties and real logo assets'
     ts.forEachChild(node, visit);
   }
   visit(ast);
-  const schema = vm.runInNewContext('(' + initializer + ')', { BASE_URL: 'https://www.drinksharbour.com' });
+  const { NATIONWIDE_DELIVERY_PROMISE } = load('../lib/deliveryCopy.ts');
+  const schema = vm.runInNewContext('(' + initializer + ')', {
+    BASE_URL: 'https://www.drinksharbour.com',
+    NATIONWIDE_DELIVERY_PROMISE,
+  });
   assert.equal(schema['@type'], 'OnlineStore');
+  assert(schema.description.includes(NATIONWIDE_DELIVERY_PROMISE));
+  assert.match(schema.description, /^Nigeria-based online beverage marketplace/);
+  assert(schema.areaServed.some(area => area['@type'] === 'Country' && area.name === 'Nigeria'));
   // These schema.org properties have LocalBusiness/Place domains, not OnlineBusiness.
   for (const key of ['geo', 'openingHoursSpecification', 'currenciesAccepted', 'paymentAccepted', 'priceRange', 'hasMap']) {
     assert.equal(key in schema, false, key + ' is invalid on OnlineStore');

@@ -30,6 +30,11 @@ See `docs/audits/client-dependencies-2026-10-23.md` at the repository root.
 
 ## Product editor header
 
+The `/products` layout owns the Products navigation header. List, pending,
+create, detail and edit pages use that shared header. Adding
+`EcommercePageHeader` inside those pages creates duplicate module navigation.
+The composed page/layout regression lives in `products/layout.test.tsx`.
+
 Product editor header: `product/create-edit/header/` separates product identity,
 actions, real metrics and a single record navigator. Save/New/AI and record
 navigation use the existing form handlers. Browser drafts are labeled separately

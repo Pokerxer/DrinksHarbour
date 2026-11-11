@@ -292,11 +292,7 @@ export default function SubProductsTable({
     if (!activeCustomRules || activeCustomRules.rules.length === 0) return null;
     const { matchMode, includeArchived } = activeCustomRules;
     return (p: SubProductListItem) => {
-      if (
-        !includeArchived &&
-        (p.status === 'archived' || p.status === 'discontinued')
-      )
-        return false;
+      if (!includeArchived && p.status === 'archived') return false;
       return matchMode === 'any'
         ? activeCustomRules.rules.some((r: CustomRule) => applyRule(p, r))
         : activeCustomRules.rules.every((r: CustomRule) => applyRule(p, r));
@@ -920,7 +916,7 @@ export default function SubProductsTable({
               <option value="published">
                 Published ({catalogStats.published || 0})
               </option>
-              <option value="draft">Draft ({catalogStats.draft || 0})</option>
+              <option value="draft">Unpublished ({catalogStats.draft || 0})</option>
             </select>
 
             <div className="hidden h-5 w-px shrink-0 bg-gray-200 sm:block" />
@@ -972,6 +968,8 @@ export default function SubProductsTable({
           {[
             { id: '', label: 'All', count: stats.total },
             { id: 'active', label: 'Active', count: stats.active },
+            { id: 'discontinued', label: 'Discontinued', count: stats.discontinued },
+            { id: 'archived', label: 'Archived', count: stats.archived },
             { id: 'low_stock', label: 'Low Stock', count: stats.lowStock },
             {
               id: 'out_of_stock',

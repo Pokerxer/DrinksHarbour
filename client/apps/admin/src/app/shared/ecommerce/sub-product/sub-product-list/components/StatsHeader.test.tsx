@@ -73,7 +73,7 @@ it('failed summaries display unavailable counts and provide retry without applyi
   const change = vi.fn();
   render(
     <StatsHeader
-      stats={{ total: 0, active: 0, lowStock: 0, outOfStock: 0 }}
+      stats={{ total: 0, active: 0, discontinued: 0, archived: 0, lowStock: 0, outOfStock: 0 }}
       activeFilter=""
       onFilterChange={change}
       unavailable

@@ -144,6 +144,44 @@ test('new commercial pages are in the sitemap and unknown occasion metadata is n
   } finally { global.fetch = original; }
 });
 
+test('nationwide policy and city routes render current timing and are discoverable', async () => {
+  const original = global.fetch;
+  global.fetch = async () => ({ ok: true, json: async () => ({ data: [] }) });
+  try {
+    const sitemap = await load('app/sitemap.ts').default();
+    const robots = load('app/robots.ts').default();
+    const origin = new URL(robots.sitemap).origin;
+    assert.equal(robots.sitemap, origin + '/sitemap.xml');
+    for (const [route, file, timing] of [
+      ['/shipping-info', 'layout.tsx', /within 48 hours/],
+      ['/delivery/abuja', 'page.tsx', /noon cutoff/],
+      ['/delivery/lagos', 'page.tsx', /within 48 hours/],
+    ]) {
+      const page = load('app' + route + '/' + file);
+      assert.equal(page.metadata.alternates.canonical, origin + route);
+      assert.notEqual(page.metadata.robots?.index, false);
+      assert.equal(sitemap.filter(row => row.url === origin + route).length, 1);
+      assert(robots.rules.every(group => !group.disallow.some(prefix => route.startsWith(prefix))));
+      assert.match(renderToStaticMarkup(React.createElement(page.default)), timing);
+    }
+    const shipping = load('app/shipping-info/page.tsx');
+    const shippingHtml = renderToStaticMarkup(React.createElement(shipping.default));
+    assert.match(shippingHtml, /Same-day delivery in Abuja.*within 48 hours/);
+    assert.doesNotMatch(shippingHtml, /[0-9]+(?:–[0-9]+)? business days/);
+    assert.match(shippingHtml, /href="\/delivery\/abuja"/);
+    assert.match(shippingHtml, /href="\/delivery\/lagos"/);
+    const faq = load('app/faqs/layout.tsx');
+    const markup = renderToStaticMarkup(React.createElement(faq.default));
+    const schema = JSON.parse(markup.match(/<script type="application\/ld\+json">(.*?)<\/script>/)[1]);
+    const delivery = schema.mainEntity.find(entry => entry.name === 'How long does delivery take?');
+    assert.match(delivery.acceptedAnswer.text, /Same-day delivery in Abuja.*1–2 days \(within 48 hours\)/);
+    const faqPage = load('app/faqs/page.tsx');
+    const faqHtml = renderToStaticMarkup(React.createElement(faqPage.default));
+    assert(faqHtml.includes(delivery.acceptedAnswer.text));
+    assert.match(faqHtml, /href="\/shipping-info"/);
+  } finally { global.fetch = original; }
+});
+
 test('enquiry intent tracking has fixed non-PII fields and works when analytics is unavailable', () => {
   const original = global.window;
   const calls = [];

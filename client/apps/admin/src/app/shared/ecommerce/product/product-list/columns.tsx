@@ -1,6 +1,7 @@
 // @ts-nocheck
 'use client';
 
+import CatalogStatusBadge from '@/app/shared/ecommerce/catalog-status-badge';
 import { routes } from '@/config/routes';
 import { createColumnHelper } from '@tanstack/react-table';
 import Link from 'next/link';
@@ -47,42 +48,6 @@ export interface ProductListItem {
 }
 
 const columnHelper = createColumnHelper<ProductListItem>();
-
-function StatusBadge({
-  status,
-  isPublished,
-}: {
-  status: string;
-  isPublished: boolean;
-}) {
-  if (status === 'discontinued')
-    return (
-      <Badge
-        color="secondary"
-        variant="flat"
-        className="font-semibold capitalize"
-      >
-        Discontinued
-      </Badge>
-    );
-  if (!isPublished || status === 'draft')
-    return (
-      <Badge color="secondary" variant="flat" className="font-semibold">
-        Draft
-      </Badge>
-    );
-  if (isPublished)
-    return (
-      <Badge color="success" variant="flat" className="font-semibold">
-        Published
-      </Badge>
-    );
-  return (
-    <Badge color="warning" variant="flat" className="font-semibold capitalize">
-      {status}
-    </Badge>
-  );
-}
 
 function ProductImage({ src, name }: { src?: string; name: string }) {
   if (!src) {
@@ -271,10 +236,12 @@ export const productsListColumns = [
     enableSorting: false,
     cell: ({ row }) => (
       <div className="flex flex-col items-start gap-1">
-        <StatusBadge
-          status={row.original.status}
-          isPublished={row.original.isPublished}
-        />
+        <CatalogStatusBadge status={row.original.status} />
+        {row.original.status === 'approved' && (
+          <span className="text-[10px] text-gray-600">
+            {row.original.isPublished ? 'Published' : 'Unpublished'}
+          </span>
+        )}
         <PublicationScopeTag
           publicationScope={row.original.publicationScope}
           owningTenantName={row.original.owningTenantName}

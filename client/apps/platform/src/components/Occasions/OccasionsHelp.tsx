@@ -1,9 +1,10 @@
+import { ELSEWHERE_DELIVERY_WINDOW } from '@/lib/deliveryCopy';
 import Link from 'next/link';
 import { PiTruckBold, PiSealCheckBold, PiScalesBold, PiArrowUpRightBold } from 'react-icons/pi';
 
 const help = [
   { Icon: PiScalesBold, title: 'Compare the same bottle', text: 'Match the label, size and pack count. Check seller offers and the final order total before paying.', href: '/shop', label: 'Browse the drinks shop' },
-  { Icon: PiTruckBold, title: 'Leave room for delivery', text: 'Abuja has same-day options where available. Interstate orders need more time; check your address and deadline.', href: '/shipping-info', label: 'Check delivery details' },
+  { Icon: PiTruckBold, title: 'Leave room for delivery', text: `Same-day delivery is available for eligible Abuja orders. Delivery elsewhere in Nigeria takes ${ELSEWHERE_DELIVERY_WINDOW}.`, href: '/shipping-info', label: 'Check delivery details' },
   { Icon: PiSealCheckBold, title: 'Know what you are buying', text: 'Review bottle and seller details, ask about missing information, and keep your order reference.', href: '/authenticity-guarantee', label: 'Bottle checks & support' },
 ];
 

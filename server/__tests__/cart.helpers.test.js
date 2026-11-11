@@ -158,3 +158,14 @@ test('buildCartLine falls back to size.displayName when size.size is missing', (
   item.size = { _id: 'sz1', displayName: '70cl Bottle' };
   assert.strictEqual(buildCartLine(item, pricing()).selectedSize, '70cl Bottle');
 });
+
+test('buildCartLine retains the public classification needed for cart kits', () => {
+  const item = populatedItem();
+  item.product.subType = 'London Dry Gin';
+  item.product.category = { name: 'Gin', slug: 'gin', type: 'gin' };
+  item.product.subCategory = { name: 'London Dry Gin', slug: 'london-dry-gin', type: 'london_dry_gin' };
+  const line = buildCartLine(item, pricing());
+  assert.equal(line.subType, 'London Dry Gin');
+  assert.deepStrictEqual(line.category, item.product.category);
+  assert.deepStrictEqual(line.subCategory, item.product.subCategory);
+});

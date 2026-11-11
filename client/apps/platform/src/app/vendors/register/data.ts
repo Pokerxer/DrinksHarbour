@@ -150,7 +150,7 @@ export const BENEFITS: Benefit[] = [
   {
     icon: Icon.PiUsersBold,
     title: 'Built-in Audience',
-    body: 'Reach a growing community of verified buyers across the FCT and beyond. We handle marketing — you focus on stock.',
+    body: 'Reach customers across Nigeria. We welcome beverage businesses nationwide to apply to sell on DrinksHarbour.',
     color: 'bg-blue-50 text-blue-700',
   },
   {

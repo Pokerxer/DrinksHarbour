@@ -1,4 +1,5 @@
 'use client';
+import CatalogStatusBadge from '@/app/shared/ecommerce/catalog-status-badge';
 import Link from 'next/link';
 import cn from '@core/utils/class-names';
 import { routes } from '@/config/routes';
@@ -71,6 +72,7 @@ export default function ProductGridCardCompact({
         <p className="truncate text-xs font-semibold leading-tight text-gray-900">
           {product.product?.name || 'Unknown'}
         </p>
+        <CatalogStatusBadge status={product.status} />
         {product.product?.brand?.name && (
           <p className="truncate text-[10px] leading-none text-gray-400">
             {product.product.brand.name}

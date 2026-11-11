@@ -1,3 +1,4 @@
+import { NATIONWIDE_DELIVERY_PROMISE } from '@/lib/deliveryCopy';
 import Link from 'next/link';
 
 /** Server-rendered context and browsing links; no scroll or JavaScript required. */
@@ -7,14 +8,13 @@ export default function MarketplaceIntro() {
       <div className="container mx-auto space-y-4 px-3">
         <h2 id="delivery-heading" className="text-2xl font-semibold">Shop wines, spirits and more online</h2>
         <p className="max-w-3xl leading-7 text-gray-700">
-          Buy drinks online for your home bar,
-          a gift or your next gathering. Browse by category or brand and compare
-          bottles, sizes and prices before you order.
+          DrinksHarbour is a Nigerian online beverage marketplace. Shop for your home bar,
+          a gift or your next gathering. Compare bottles, sizes and prices from verified sellers
+          and order for delivery anywhere in Nigeria.
         </p>
         <p className="max-w-3xl leading-7 text-gray-700">
-          Orders are dispatched from Abuja, with same-day options in the FCT
-          and interstate delivery. Check delivery areas, order cutoffs and fees
-          before checkout. Alcohol is for adults aged 18 and over.
+          {NATIONWIDE_DELIVERY_PROMISE} Check delivery areas, order cutoffs and
+          fees before checkout. Alcohol is for adults aged 18 and over.
         </p>
         <p className="max-w-3xl leading-7 text-gray-700">
           Compare the selected seller and bottle details before buying. Read our
@@ -25,7 +25,8 @@ export default function MarketplaceIntro() {
           <Link href="/categories">Browse drink categories</Link>
           <Link href="/brands">Explore drinks brands</Link>
           <Link href="/shop">Browse all drinks</Link>
-          <Link href="/shipping-info">Delivery areas and fees</Link>
+          <Link href="/shipping-info">Nationwide delivery times and fees</Link>
+          <Link href="/delivery/abuja">Same-day delivery in Abuja</Link>
           <Link href="/blog">Drinks guides and tasting notes</Link>
           <Link href="/authenticity-guarantee">Authenticity and bottle checks</Link>
           <Link href="/occasions">Plan drinks for an occasion</Link>

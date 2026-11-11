@@ -15,6 +15,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import * as Icon from 'react-icons/pi';
 import { AnimatePresence, motion } from 'framer-motion';
 import { API_URL } from '@/lib/api';
+import { readOfferProduct } from '@/components/Merchandising/catalogue';
 import { useCart } from '@/context/CartContext';
 import {
   GIFT_PACKAGING_SEARCH_QUERY,
@@ -55,14 +56,13 @@ function pickPackagingLine(product: any, getCartItemId: (p: string, s: string, v
   for (const vendorEntry of Array.isArray(product.availableAt) ? product.availableAt : []) {
     const tenantName = vendorEntry?.tenant?.name;
     if (!tenantName || !vendorEntry?._id) continue;
-    const sellable = (vendorEntry.sizes || []).filter(
-      (s: any) => s?._id && typeof s?.pricing?.websitePrice === 'number' && s.pricing.websitePrice > 0,
+    const size = (vendorEntry.sizes || []).find(
+      (s: any) => s?._id && (s.availableStock ?? s.stock ?? 0) >= 1 &&
+        s.availability !== 'out_of_stock' && s.inStock !== false &&
+        (s.minOrderQuantity ?? 1) <= 1 &&
+        typeof s.pricing?.websitePrice === 'number' && s.pricing.websitePrice > 0,
     );
-    if (sellable.length === 0) continue;
-    const size =
-      sellable.find((s: any) => (s.stock ?? 0) > 0) ||
-      sellable.find((s: any) => s.stock == null) ||
-      sellable[0];
+    if (!size || !vendorEntry.tenant?._id) continue;
     const color = '';
     return {
       cartItemId: getCartItemId(productId, size.size, tenantName, color),
@@ -86,35 +86,36 @@ function pickPackagingLine(product: any, getCartItemId: (p: string, s: string, v
  */
 export function useGiftPackaging(): GiftPackagingState & {
   inCart: boolean;
+  quantity: number;
   setRequested: (requested: boolean) => void;
 } {
   const { cartState, addToCart, removeFromCart, getCartItemId } = useCart();
   const [state, setState] = useState<GiftPackagingState>({ status: 'loading', line: null, price: null });
-  const startedRef = useRef(false);
   const productRef = useRef<any>(null);
 
   useEffect(() => {
-    if (startedRef.current) return;
-    startedRef.current = true;
-    let cancelled = false;
-    // `inStock=false` means "no stock filter" server-side, so a configured-but-
-    // zero-stock SKU is still discoverable and we judge sellability ourselves.
+    const controller = new AbortController();
+    // Keep packaging availability tied to a sellable listing.
     // `isGiftPackaging=true` is honored by the server once the field is surfaced
     // in search; the client-side scan below is the tolerant fallback either way.
     const params = new URLSearchParams({
       q: GIFT_PACKAGING_SEARCH_QUERY,
       isGiftPackaging: 'true',
-      inStock: 'false',
+      inStock: 'true',
+      fields: 'card',
+      useEmbeddings: 'false',
       limit: '5',
     });
-    fetch(`${API_URL}/api/products/search?${params}`, { cache: 'no-store' })
+    fetch(`${API_URL}/api/products/search?${params}`, { cache: 'no-store', signal: controller.signal })
       .then(r => (r.ok ? r.json() : null))
-      .then(d => {
-        if (cancelled) return;
+      .then(async d => {
+        if (controller.signal.aborted) return;
         const products: any[] = d?.data?.products ?? [];
         const found = products.find(p => p?.isGiftPackaging === true);
-        const line = found ? pickPackagingLine(found, getCartItemId) : null;
-        productRef.current = line ? found : null;
+        const product = found?.slug ? await readOfferProduct(found.slug, { location: null, signal: controller.signal }) : null;
+        if (controller.signal.aborted) return;
+        const line = product ? pickPackagingLine(product, getCartItemId) : null;
+        productRef.current = line ? product : null;
         setState(
           line
             ? { status: 'available', line, price: line.websitePrice }
@@ -122,26 +123,28 @@ export function useGiftPackaging(): GiftPackagingState & {
         );
       })
       .catch(() => {
-        if (!cancelled) setState({ status: 'unavailable', line: null, price: null });
+        if (!controller.signal.aborted) setState({ status: 'unavailable', line: null, price: null });
       });
-    return () => { cancelled = true; };
+    return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const inCart = !!state.line && cartState.cartArray.some(i => i.cartItemId === state.line!.cartItemId);
+  const packagingItems = cartState.cartArray.filter(item =>
+    item.isGiftPackaging || (state.line && (item.selectedProductId || item._id || item.id) === state.line.productId));
+  const inCart = packagingItems.length > 0;
+  const quantity = packagingItems.reduce((sum, item) => sum + item.quantity, 0);
 
   const setRequested = useCallback((requested: boolean) => {
     const line = state.line;
     const product = productRef.current;
-    if (!line || !product) return;
-    if (requested && !inCart) {
-      addToCart(product, line.size, line.color, line.vendor, line.tenantId, 1, line.sizeId, line.subProductId);
-    } else if (!requested && inCart) {
-      removeFromCart(line.cartItemId);
+    if (requested && !inCart && line && product) {
+      addToCart({ ...product, isGiftPackaging: true }, line.size, line.color, line.vendor, line.tenantId, 1, line.sizeId, line.subProductId);
+    } else if (!requested) {
+      packagingItems.forEach(item => removeFromCart(item.cartItemId));
     }
-  }, [state.line, inCart, addToCart, removeFromCart]);
+  }, [state.line, inCart, packagingItems, addToCart, removeFromCart]);
 
-  return { ...state, inCart, setRequested };
+  return { ...state, inCart, quantity, setRequested };
 }
 
 // ─── Section ─────────────────────────────────────────────────────────────────
@@ -322,7 +325,7 @@ export default function CheckoutGiftSection({
               <div>
                 <label
                   className={`flex items-start gap-2.5 p-3 rounded-xl border text-sm transition-all ${
-                    packagingAvailable
+                    packagingAvailable || details.packagingRequested
                       ? 'cursor-pointer border-gray-200 bg-gray-50 hover:border-red-200 hover:bg-red-50/40'
                       : 'opacity-60 cursor-not-allowed border-gray-100 bg-gray-50'
                   }`}
@@ -331,10 +334,10 @@ export default function CheckoutGiftSection({
                     type="checkbox"
                     className="mt-0.5 accent-red-700"
                     checked={details.packagingRequested}
-                    disabled={!packagingAvailable}
+                    disabled={!packagingAvailable && !details.packagingRequested}
                     onChange={e => {
                       onChange({ packagingRequested: e.target.checked });
-                      if (packagingAvailable) packaging.setRequested(e.target.checked);
+                      if (packagingAvailable || !e.target.checked) packaging.setRequested(e.target.checked);
                     }}
                   />
                   <span className="flex-1">

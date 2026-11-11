@@ -9,7 +9,7 @@ export type CategoryBuyingGuide = {
 // Editorial guidance enriches an existing catalogue category; it never creates one.
 const guides: CategoryBuyingGuide[] = [
   { slug: 'gin', name: 'Gin',
-    description: 'Buy gin online in Nigeria. Compare London dry, flavoured and botanical bottles, sizes and seller prices. Check delivery options for Abuja and Lagos.',
+    description: 'Buy gin online in Nigeria. Compare London dry, flavoured and botanical bottles, sizes and seller prices. Available for delivery across Nigeria.',
     advice: 'Start with how you plan to serve it. London dry gin suits a classic gin and tonic; flavoured gin changes the sweetness and mixer choice. Check each bottle’s botanicals and ABV rather than relying on the label colour.',
     compare: 'Compare the same bottle size and ABV, then allow for tonic, ice and delivery in your total budget.' },
   { slug: 'scotch', name: 'Scotch Whisky',
@@ -25,7 +25,7 @@ const guides: CategoryBuyingGuide[] = [
     advice: 'Match sweetness, body and serving style to the meal and your guests. Read the origin and grape details where provided. For a wedding, agree the menu and budget before choosing quantities.',
     compare: 'Match the producer, label, vintage where shown and bottle size. Check whether a displayed price is for one bottle or a pack.' },
   { slug: 'tequila', name: 'Tequila',
-    description: 'Buy tequila online in Nigeria. Compare blanco, reposado and añejo bottles by size and seller price. Check Abuja and interstate delivery options at checkout.',
+    description: 'Buy tequila online in Nigeria. Compare blanco, reposado and añejo bottles by size and seller price. Available for delivery across Nigeria.',
     advice: 'Blanco, reposado and añejo describe different maturation styles. Look for the bottle’s agave statement and ABV. Decide whether you want a cocktail ingredient or a sipping bottle before comparing prices.',
     compare: 'Match the expression and bottle size, and read the agave description on the product rather than assuming every tequila is 100% agave.' },
   { slug: 'champagne', name: 'Champagne',

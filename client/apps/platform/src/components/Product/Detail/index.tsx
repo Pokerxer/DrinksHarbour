@@ -10,6 +10,10 @@ import type {VendorSize} from './detail-types';
 import {purchaseLimits,clampPurchaseQuantity} from './purchase-quantity';
 import { resolveSellerChoice } from '@/utils/representativeOffer';
 import { resolveCatalogueHref } from '@/lib/catalogueLinks';
+import { useOfferImpression } from '@/components/Merchandising/useOfferImpression';
+import { purchasableOffers } from '@/components/Merchandising/offers';
+import { GiftOffer, PremiumOffer, SizeUpgrade } from '@/components/Merchandising/ProductOffers';
+import { gtagEvent } from '@/lib/gtag';
 import { resolveOfferVolume } from '@/utils/offerVolume';
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
@@ -80,6 +84,8 @@ interface ProductDetailProps {
   productData: any;
   relatedProducts?: ProductType[];
   purchaseBlocked?: boolean;
+  marketplaceOffers?: boolean;
+  preferredOffer?: { seller: string; size: string };
 }
 
 interface ToastState {
@@ -88,7 +94,7 @@ interface ToastState {
   type: 'success' | 'error';
 }
 
-const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProducts = [], purchaseBlocked = false }) => {
+const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProducts = [], purchaseBlocked = false, marketplaceOffers = false, preferredOffer }) => {
   const router = useRouter();
   
   const [thumbsSwiper, setThumbsSwiper] = useState<SwiperType | null>(null);
@@ -114,9 +120,12 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
 
   const vendors = useMemo(() => productData?.availableAt || [], [productData]);
 
+  const linkedOffer = useMemo(() => marketplaceOffers && preferredOffer
+    ? purchasableOffers(productData).find(offer => offer.seller._id === preferredOffer.seller && offer.size._id === preferredOffer.size)
+    : undefined, [productData, preferredOffer, marketplaceOffers]);
   const selectedVendor = useMemo(() => resolveSellerChoice<(typeof vendors)[number]>(
-    vendors, explicitSeller.current ? activeVendor : null, productData.shoppingOffer?.subProductId,
-  ), [vendors, activeVendor, productData.shoppingOffer]);
+    vendors, explicitSeller.current ? activeVendor : null, linkedOffer?.seller._id || productData.shoppingOffer?.subProductId,
+  ), [vendors, activeVendor, linkedOffer, productData.shoppingOffer]);
 
   const vendorSizes: VendorSize[] = useMemo(() => {
     if (!selectedVendor) return [];
@@ -164,10 +173,11 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
     if (!vendorSizes.length) return null;
     return (
       vendorSizes.find((s) => s._id === activeSize) ??
+      (!explicitSeller.current ? vendorSizes.find(s => s._id === linkedOffer?.size._id) : undefined) ??
       vendorSizes.find((s) => s._id === defaultSize) ??
       null
     );
-  }, [activeSize, defaultSize, vendorSizes]);
+  }, [activeSize, defaultSize, linkedOffer, vendorSizes]);
 
   const effectiveSize = selectedSizeData?.size ?? '';
   const images = resolveVariantGallery(
@@ -240,6 +250,8 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
     effectiveTotal,
     thresholdRemaining: packThresholdRemaining,
   } = packPricing;
+  const packImpressionRef = useOfferImpression<HTMLDivElement>('pack_upgrade',
+    marketplaceOffers && hasPackPricing && !purchaseBlocked ? selectedSizeData?._id : undefined);
 
   const discountPercentage = useMemo(() => {
     if (selectedSizeData?.discount?.percentage) {
@@ -285,9 +297,10 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
     const bounds = purchaseLimits(selectedSizeData);
     if (!bounds.canBuy || packPricing.packThreshold > bounds.max) return;
     setLocalQuantity(clampPurchaseQuantity(packPricing.packThreshold, bounds));
-  }, [packPricing.packThreshold, selectedSizeData, purchaseBlocked]);
+    if (marketplaceOffers) gtagEvent('merchandising_select', { source: 'pack_upgrade', offer_id: selectedSizeData?._id });
+  }, [packPricing.packThreshold, selectedSizeData, purchaseBlocked, marketplaceOffers]);
 
-  const handleAddToCart = useCallback(async () => {
+  const handleAddToCart = useCallback(async (gift = false) => {
     if (!productData || !selectedSizeData || !selectedVendor) {
       setToast({ show: true, message: 'Please select a size and vendor', type: 'error' });
       return;
@@ -301,13 +314,18 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
     
     try {
       await addToCart(productData, effectiveSize, [selectedSizeData?.colorName, selectedSizeData?.optionName].filter(Boolean).join(' · '), selectedVendor.tenant.name, selectedVendor.tenant._id, localQuantity, selectedSizeData?._id, selectedVendor._id, selectedSizeData?.displayName || selectedSizeData?.optionName || undefined);
-      setToast({ show: true, message: 'Added to cart successfully!', type: 'success' });
+      if (gift) {
+        gtagEvent('merchandising_select', { source: 'gift' });
+        router.push('/cart?gift=1');
+      } else {
+        setToast({ show: true, message: 'Added to cart successfully!', type: 'success' });
+      }
     } catch (error) {
       setToast({ show: true, message: 'Failed to add to cart', type: 'error' });
     } finally {
       setIsAddingToCart(false);
     }
-  }, [productData, selectedSizeData, selectedVendor, effectiveSize, localQuantity, addToCart, inStock, purchaseBlocked, limits.min, limits.max]);
+  }, [productData, selectedSizeData, selectedVendor, effectiveSize, localQuantity, addToCart, inStock, purchaseBlocked, limits.min, limits.max, router]);
 
   const handleAddToWishlist = useCallback(() => {
     if (!productData) return;
@@ -574,30 +592,41 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
                 {buildProductIntro(productData)}
               </p>
 
+              {marketplaceOffers && preferredOffer && !linkedOffer && !explicitSeller.current && (
+                <p role="status" className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                  The suggested seller or size is unavailable. Review the current options below.
+                </p>
+              )}
               <SellerChoices sellers={vendors} selectedId={selectedVendor?._id}
                 nearestId={productData.shoppingOffer?.subProductId} locationOrder={!!productData.locationOrder}
                 onSelect={id => { explicitSeller.current = true; setActiveVendor(id); setActiveSize(''); }} />
               <SizeChoices sizes={vendorSizes} selected={selectedSizeData?._id || ''} onSelect={setActiveSize} />
 
+              {marketplaceOffers && selectedSizeData && !purchaseBlocked && inStock && (
+                <SizeUpgrade selected={selectedSizeData} sizes={vendorSizes} unitPrice={displayPrice} onSelect={setActiveSize} />
+              )}
+
               {/* Pack Pricing Card */}
               {hasPackPricing && (
-                <PackPricingCard
-                  sizeLabel={selectedSizeData?.displayName || selectedSizeData?.size}
-                  currencySymbol={displayCurrencySymbol}
-                  packUnitPrice={packPricing.packUnitPrice as number}
-                  packThreshold={packPricing.packThreshold as number}
-                  packSavingsPct={packPricing.packSavingsPct}
-                  normalPrice={displayPrice}
-                  quantity={localQuantity}
-                  packRateActive={packRateActive}
-                  packThresholdRemaining={packThresholdRemaining}
-                  onQuickAddPack={handleSetQuantityToPack}
-                />
+                <div ref={packImpressionRef}>
+                  <PackPricingCard
+                    sizeLabel={selectedSizeData?.displayName || selectedSizeData?.size}
+                    currencySymbol={displayCurrencySymbol}
+                    packUnitPrice={packPricing.packUnitPrice as number}
+                    packThreshold={packPricing.packThreshold as number}
+                    packSavingsPct={packPricing.packSavingsPct}
+                    normalPrice={displayPrice}
+                    quantity={localQuantity}
+                    packRateActive={packRateActive}
+                    packThresholdRemaining={packThresholdRemaining}
+                    onQuickAddPack={handleSetQuantityToPack}
+                  />
+                </div>
               )}
 
               <PurchaseControls quantity={localQuantity} limits={limits} blocked={purchaseBlocked}
                 adding={isAddingToCart} size={selectedSizeData?.displayName} seller={selectedVendor?.tenant.name}
-                currency={displayCurrencySymbol} total={effectiveTotal} onChange={handleQuantityChange} onAdd={handleAddToCart}>
+                currency={displayCurrencySymbol} total={effectiveTotal} onChange={handleQuantityChange} onAdd={() => void handleAddToCart()}>
                   <OrderWhatsAppButton
                     productName={productData.name || 'this product'}
                     size={selectedSizeData?.displayName || effectiveSize}
@@ -612,6 +641,14 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
                     disabled={purchaseBlocked || !effectiveSize || !inStock}
                   />
               </PurchaseControls>
+
+              {marketplaceOffers && selectedVendor && !purchaseBlocked && inStock && (
+                <PremiumOffer product={productData} related={relatedProducts} sellerId={selectedVendor.tenant._id}
+                  unitPrice={displayPrice} volume={selectedVolumeMl} />
+              )}
+              {marketplaceOffers && selectedVendor && inStock && /wine|champagne|spirit|whisk|cognac|gin|rum|tequila|vodka/i.test(productData.type ?? '') && (
+                <GiftOffer disabled={purchaseBlocked || isAddingToCart} onGift={() => void handleAddToCart(true)} />
+              )}
 
               {/* Action Buttons */}
               <div className="flex gap-3">

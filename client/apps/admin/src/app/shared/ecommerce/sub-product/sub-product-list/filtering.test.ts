@@ -155,8 +155,11 @@ describe('quick filters', () => {
     expect(filter(withPoint, { quickFilters: ['needs_reorder'] }).length).toBe(1);
   });
 
-  it('archived includes discontinued', () => {
-    expect(filter([...items, item({ status: 'discontinued' })], { quickFilters: ['archived'] }).length).toBe(2);
+  it.each(['archived', 'discontinued'] as const)('filters and counts %s separately', (status) => {
+    const records = [...items, item({ status: 'discontinued' }), item({ status: 'hidden' })];
+    expect(filter(records, { quickFilters: [status] }).map((p) => p.status)).toEqual([status]);
+    expect(filter(records, { statusFilter: status }).map((p) => p.status)).toEqual([status]);
+    expect(computeStats(records)[status]).toBe(1);
   });
 });
 
@@ -392,6 +395,8 @@ describe('computeStats', () => {
     expect(stats).toEqual({
       total: 3,
       active: 3,
+      archived: 0,
+      discontinued: 0,
       lowStock: 0,
       outOfStock: 1,
       published: 2,

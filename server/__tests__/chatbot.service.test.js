@@ -57,8 +57,9 @@ test('getGreetingResponse still works when Claude is down', async (t) => {
 test('handleChatbotQuery uses the first Claude response when available', async (t) => {
   stubEmptyCatalog(t);
   let calls = 0;
-  t.mock.method(anthropic.messages, 'create', async () => {
+  t.mock.method(anthropic.messages, 'create', async (params) => {
     calls += 1;
+    if ('temperature' in params) throw new Error('temperature: Extra inputs are not permitted');
     return textResponse('Here is a great whiskey pick for you!');
   });
 
@@ -66,6 +67,17 @@ test('handleChatbotQuery uses the first Claude response when available', async (
 
   assert.strictEqual(result.response, 'Here is a great whiskey pick for you!');
   assert.strictEqual(calls, 1);
+});
+
+test('chatbot can analyze a beverage photo when Claude rejects temperature', async (t) => {
+  t.mock.method(anthropic.messages, 'create', async (params) => {
+    if ('temperature' in params) throw new Error('temperature: Extra inputs are not permitted');
+    return textResponse('This is Tomatin Legacy.');
+  });
+
+  const result = await chatbotService.analyzeImage(`data:image/jpeg;base64,${'A'.repeat(100)}`);
+
+  assert.strictEqual(result?.text, 'This is Tomatin Legacy.');
 });
 
 test('handleChatbotQuery retries once with a minimal prompt before falling back', async (t) => {

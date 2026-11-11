@@ -1,8 +1,9 @@
+import { NATIONWIDE_DELIVERY_PROMISE } from '@/lib/deliveryCopy';
 import type { Metadata } from 'next';
 import { publicSiteOrigin } from '@/lib/publicSiteOrigin';
 
 export const HOME_TITLE = 'Buy Drinks Online in Nigeria | DrinksHarbour';
-export const HOME_DESCRIPTION = 'Buy drinks online in Nigeria with DrinksHarbour. Shop wines, spirits, beer and non-alcoholic drinks, compare prices and order delivery in Abuja and nationwide.';
+export const HOME_DESCRIPTION = `Shop wine, spirits, beer and non-alcoholic drinks online. ${NATIONWIDE_DELIVERY_PROMISE}`;
 const url = publicSiteOrigin();
 
 export const homeMetadata: Metadata = {

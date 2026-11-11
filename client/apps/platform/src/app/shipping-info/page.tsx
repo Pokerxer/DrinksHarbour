@@ -1,5 +1,6 @@
 'use client';
 
+import { ABUJA_DELIVERY_ELIGIBILITY, ELSEWHERE_DELIVERY_WINDOW, NATIONWIDE_DELIVERY_PROMISE } from '@/lib/deliveryCopy';
 import React, { useState } from 'react';
 import Link from 'next/link';
 import * as Icon from 'react-icons/pi';
@@ -14,32 +15,19 @@ const DELIVERY_OPTIONS = [
     badge: 'FCT Only',
     badgeColor: 'bg-red-100 text-red-700',
     areas: 'Abuja / FCT only',
-    cutoff: 'Order before 12:00 noon',
     fee: '₦2,500 – ₦10,000',
     highlight: true,
-    details: 'Available exclusively within the FCT. A dedicated rider picks, packs, and delivers your order the same day. Real-time SMS updates throughout. Fee depends on quantity — single bottles start from ₦2,500; larger orders or cartons attract a higher handling fee due to the fragile nature of the goods.',
-  },
-  {
-    icon: Icon.PiTruckBold,
-    title: 'Next-Day Delivery',
-    badge: 'Nearby States',
-    badgeColor: 'bg-blue-100 text-blue-700',
-    areas: 'Nasarawa · Niger · Kogi · S. Kaduna',
-    cutoff: 'Order before 5:00 pm',
-    fee: '₦10,000 – ₦20,000',
-    highlight: false,
-    details: 'For states immediately surrounding Abuja — Nasarawa (Lafia), Niger (Minna), Kogi (Lokoja), and southern Kaduna. Dispatched from our Abuja warehouse next business day. Carton orders and multi-bottle shipments attract a higher fee due to fragile packaging requirements.',
+    details: `${ABUJA_DELIVERY_ELIGIBILITY} A dedicated rider delivers your order with SMS updates. Larger orders or cartons may attract a higher handling fee.`,
   },
   {
     icon: Icon.PiPackageBold,
     title: 'Interstate Delivery',
     badge: 'Free from ₦10M',
     badgeColor: 'bg-green-100 text-green-700',
-    areas: 'All 36 states outside the FCT',
-    cutoff: 'Ships within 24 h of payment',
+    areas: `All 36 states · ${ELSEWHERE_DELIVERY_WINDOW}`,
     fee: 'From ₦15,000 · Free on orders ≥ ₦10,000,000',
     highlight: false,
-    details: 'We ship nationwide from our Abuja warehouse via trusted courier partners. Fees are based on your zone (distance from Abuja), the number of bottles, and whether your order includes full cartons — which require reinforced crating and incur a higher handling charge. The exact fee is shown at checkout. Outside Abuja/FCT, free delivery is automatically applied on orders of ₦10,000,000 and above.',
+    details: 'We deliver nationwide through courier partners. Fees depend on your delivery zone, the number of bottles, and whether your order includes full cartons — which require reinforced crating and incur a higher handling charge. The exact fee is shown at checkout. Outside Abuja/FCT, free delivery is automatically applied on orders of ₦10,000,000 and above.',
   },
 ];
 
@@ -48,7 +36,6 @@ const ZONES = [
   {
     zone: 'Zone 1 — FCT (Local)',
     cities: ['Abuja', 'Gwagwalada', 'Kuje', 'Bwari', 'Kubwa'],
-    eta: 'Same-day / Next-day',
     fee: '₦2,500 – ₦10,000',
     color: 'border-red-300 bg-red-50',
     dot: 'bg-red-500',
@@ -56,7 +43,6 @@ const ZONES = [
   {
     zone: 'Zone 2 — Abuja Environs',
     cities: ['Lafia', 'Minna', 'Lokoja', 'Suleja', 'S. Kaduna'],
-    eta: '1 business day',
     fee: '₦10,000 – ₦20,000',
     color: 'border-orange-200 bg-orange-50',
     dot: 'bg-orange-500',
@@ -64,7 +50,6 @@ const ZONES = [
   {
     zone: 'Zone 3 — North Central',
     cities: ['Kaduna', 'Jos', 'Makurdi', 'Ilorin', 'Zaria'],
-    eta: '1–2 business days',
     fee: '₦15,000 – ₦28,000',
     color: 'border-blue-200 bg-blue-50',
     dot: 'bg-blue-500',
@@ -72,7 +57,6 @@ const ZONES = [
   {
     zone: 'Zone 4 — Southwest',
     cities: ['Lagos', 'Ibadan', 'Abeokuta', 'Akure', 'Osogbo'],
-    eta: '2–3 business days',
     fee: '₦20,000 – ₦40,000',
     color: 'border-violet-200 bg-violet-50',
     dot: 'bg-violet-500',
@@ -80,7 +64,6 @@ const ZONES = [
   {
     zone: 'Zone 5 — Southeast & South-South',
     cities: ['Enugu', 'Port Harcourt', 'Benin City', 'Owerri', 'Onitsha', 'Warri', 'Calabar', 'Uyo'],
-    eta: '2–3 business days',
     fee: '₦20,000 – ₦40,000',
     color: 'border-amber-200 bg-amber-50',
     dot: 'bg-amber-500',
@@ -88,7 +71,6 @@ const ZONES = [
   {
     zone: 'Zone 6 — Far North',
     cities: ['Kano', 'Katsina', 'Sokoto', 'Maiduguri', 'Bauchi', 'Gombe', 'Kebbi'],
-    eta: '2–4 business days',
     fee: '₦18,000 – ₦35,000',
     color: 'border-emerald-200 bg-emerald-50',
     dot: 'bg-emerald-500',
@@ -96,7 +78,6 @@ const ZONES = [
   {
     zone: 'Zone 7 — Remote & Riverine',
     cities: ['Other LGAs', 'Riverine communities', 'Remote areas'],
-    eta: '4–7 business days',
     fee: '₦30,000 – ₦60,000',
     color: 'border-gray-200 bg-gray-50',
     dot: 'bg-gray-400',
@@ -158,17 +139,19 @@ export default function ShippingInfoPage() {
             Shipping & Delivery
           </div>
           <h1 className="text-3xl sm:text-4xl font-black tracking-tight mb-3">
-            Dispatched from Abuja, delivered nationwide
+            Drinks delivery across Nigeria
           </h1>
           <p className="text-gray-300 text-sm sm:text-base max-w-xl mx-auto leading-relaxed">
-            Same-day delivery within the FCT. Interstate fees calculated by zone distance from Abuja.
-            Free delivery on orders ₦2,000,000+ in Abuja/FCT and ₦10,000,000+ elsewhere.
+            {NATIONWIDE_DELIVERY_PROMISE}
+          </p>
+          <p className="mt-2 text-gray-300 text-sm max-w-xl mx-auto leading-relaxed">
+            {ABUJA_DELIVERY_ELIGIBILITY} Free delivery on orders ₦2,000,000+ in Abuja/FCT and ₦10,000,000+ elsewhere.
           </p>
 
           {/* Quick stats */}
           <div className="grid grid-cols-3 gap-3 mt-8 max-w-lg mx-auto">
             {[
-              { value: '36+',   label: 'States Covered' },
+              { value: '36 + FCT', label: 'Coverage' },
               { value: '₦0',    label: 'Free over ₦2M' },
               { value: '₦15k+', label: 'Interstate from' },
             ].map(({ value, label }) => (
@@ -190,6 +173,10 @@ export default function ShippingInfoPage() {
 
         {/* ── Delivery Options ────────────────────────────────────────────────── */}
         <Section title="Delivery Options" icon={Icon.PiTruck}>
+          <nav aria-label="City delivery guides" className="mb-4 flex flex-wrap gap-4 text-sm font-semibold text-red-800 underline">
+            <Link href="/delivery/abuja">Abuja and FCT delivery</Link>
+            <Link href="/delivery/lagos">Lagos delivery</Link>
+          </nav>
           <div className="space-y-3">
             {DELIVERY_OPTIONS.map((opt, i) => {
               const Ic = opt.icon;
@@ -234,14 +221,6 @@ export default function ShippingInfoPage() {
                       >
                         <div className="px-5 pb-5 pt-1 border-t border-gray-50 ml-15 space-y-3">
                           <p className="text-sm text-gray-600 leading-relaxed">{opt.details}</p>
-                          <div className="flex flex-wrap gap-3 text-xs">
-                            <span className="flex items-center gap-1.5 text-gray-500 bg-gray-50 px-3 py-1.5 rounded-lg">
-                              <Icon.PiClockBold size={13} className="text-red-600" /> Cutoff: {opt.cutoff}
-                            </span>
-                            <span className="flex items-center gap-1.5 text-gray-500 bg-gray-50 px-3 py-1.5 rounded-lg">
-                              <Icon.PiCurrencyNgn size={13} className="text-red-600" /> {opt.fee}
-                            </span>
-                          </div>
                         </div>
                       </motion.div>
                     )}
@@ -253,7 +232,7 @@ export default function ShippingInfoPage() {
         </Section>
 
         {/* ── Delivery Zones ──────────────────────────────────────────────────── */}
-        <Section title="Delivery Zones" icon={Icon.PiMapPin}>
+        <Section title="Delivery zones and fees" icon={Icon.PiMapPin}>
           {/* Fragile / carton notice */}
           <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-5 flex gap-3">
             <div className="w-8 h-8 bg-amber-100 text-amber-600 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
@@ -266,10 +245,10 @@ export default function ShippingInfoPage() {
           </div>
           <p className="text-xs text-gray-500 mb-4 flex items-center gap-1.5">
             <Icon.PiMapPinBold size={13} className="text-red-600 flex-shrink-0" />
-            All fees are calculated from our Abuja warehouse. The exact fee for your address is shown at checkout.
+            The exact delivery fee for your address and order is shown at checkout.
           </p>
           <div className="grid sm:grid-cols-2 gap-4">
-            {ZONES.map(({ zone, cities, eta, fee, color, dot }) => (
+            {ZONES.map(({ zone, cities, fee, color, dot }) => (
               <div key={zone} className={`rounded-2xl border p-5 ${color}`}>
                 <div className="flex items-center gap-2 mb-3">
                   <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${dot}`} />
@@ -282,12 +261,7 @@ export default function ShippingInfoPage() {
                     </span>
                   ))}
                 </div>
-                <div className="flex items-center justify-between text-xs text-gray-500 mt-1">
-                  <span className="flex items-center gap-1.5">
-                    <Icon.PiClock size={12} /> {eta}
-                  </span>
-                  <span className="font-semibold text-gray-700">{fee}</span>
-                </div>
+                <p className="mt-1 text-xs font-semibold text-gray-700">{fee}</p>
               </div>
             ))}
           </div>

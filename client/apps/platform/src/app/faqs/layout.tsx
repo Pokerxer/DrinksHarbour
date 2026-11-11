@@ -1,14 +1,16 @@
+import { DELIVERY_COPY, NATIONWIDE_DELIVERY_PROMISE } from '@/lib/deliveryCopy';
+import { publicSiteOrigin } from '@/lib/publicSiteOrigin';
 import { withSocialMetadata } from '@/lib/socialMetadata';
 import type { Metadata } from "next";
 import SeoContextBlock from '@/components/SEO/SeoContextBlock';
 import { jsonLdHtml } from '@/lib/jsonld';
 
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://www.drinksharbour.com";
+const BASE_URL = publicSiteOrigin();
 
 export const metadata: Metadata = withSocialMetadata({
   title: "FAQs — Frequently Asked Questions",
   description:
-    "Find answers to DrinksHarbour questions about placing orders, delivery in Nigeria, payments, returns and accounts before shopping for your next bottle.",
+    `Find answers about DrinksHarbour orders, payments and returns. ${NATIONWIDE_DELIVERY_PROMISE}`,
   openGraph: {
     url: `${BASE_URL}/faqs`,
     title: "FAQs | DrinksHarbour",
@@ -34,7 +36,7 @@ const FAQ_SCHEMA = {
       name: "Which areas do you deliver to?",
       acceptedAnswer: {
         "@type": "Answer",
-        text: "We deliver to all 36 states and the FCT across Nigeria. Same-day delivery is available in Abuja and the FCT. Nearby states are generally next-day, while other zones use the delivery estimate shown at checkout.",
+        text: DELIVERY_COPY.coverage,
       },
     },
     {
@@ -50,7 +52,7 @@ const FAQ_SCHEMA = {
       name: "How long does delivery take?",
       acceptedAnswer: {
         "@type": "Answer",
-        text: "Abuja and the FCT: same-day or next-day for orders before the stated cutoff. Nearby states are generally next-day; other locations use the zone estimate shown at checkout. You will receive SMS and email updates at each stage.",
+        text: DELIVERY_COPY.timing,
       },
     },
     {
@@ -88,7 +90,7 @@ export default function FaqsLayout({ children }: { children: React.ReactNode }) 
         ]}
         links={[
           { href: '/shop', label: 'Shop drinks online' },
-          { href: '/shipping-info', label: 'View shipping information' },
+          { href: '/shipping-info', label: 'View nationwide delivery times and fees' },
           { href: '/returns', label: 'Read returns and refunds' },
         ]}
       />

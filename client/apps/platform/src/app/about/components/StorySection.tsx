@@ -28,9 +28,9 @@ export function StorySection() {
               giving each vendor their own digital storefront with real-time inventory and nationwide reach.
             </p>
             <p>
-              Today, we serve a growing community of over 1,500 customers across the FCT and neighbouring states.
-              More than 60 brands and dozens of verified vendors list on DrinksHarbour — and we&apos;re just getting
-              started.
+              Today, DrinksHarbour is a Nigerian marketplace delivering to all 36 states and the FCT.
+              More than 60 brands and dozens of verified vendors list on DrinksHarbour. We&apos;re building a seller
+              network across Nigeria and welcome beverage businesses to <Link href="/vendors/register" className="text-red-700 underline underline-offset-2">apply to sell</Link>.
             </p>
             <p className="text-xs text-gray-400 pt-2">
               Need help? Visit our{' '}

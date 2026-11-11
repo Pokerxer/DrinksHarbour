@@ -6,6 +6,7 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import * as Icon from 'react-icons/pi';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useTenant } from '@/context/TenantContext';
 import { useModalCartContext } from '@/context/ModalCartContext';
 import { useCart, getEffectiveUnitPrice, getLineOriginPrice } from '@/context/CartContext';
 import { calculateDiscountPercentage } from '@/utils/product.utils';
@@ -21,6 +22,7 @@ const ModalCart = () => {
   const { addToWishlist } = useWishlist();
   const { openModalWishlist } = useModalWishlistContext();
   const router = useRouter();
+  const { isMainSite } = useTenant();
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [note, setNote] = useState('');
@@ -277,7 +279,7 @@ const ModalCart = () => {
             </AnimatePresence>
 
             {/* Free Shipping Progress */}
-            {cartCount > 0 && (
+            {!isMainSite && cartCount > 0 && (
               <div className="px-6 py-3.5 bg-red-50 border-b border-red-100">
                 {remainingForFree > 0 ? (
                   <div>
@@ -493,7 +495,7 @@ const ModalCart = () => {
                                       </span>
                                       <button
                                         onClick={() => handleQuantityChange(item.cartItemId, (item.quantity || 1) + 1)}
-                                        disabled={validating || (item.quantity || 1) >= maxQty}
+                                        disabled={validating || item.isGiftPackaging || (item.quantity || 1) >= maxQty}
                                         title={maxQty < 99 ? `Max ${maxQty} in stock` : validating ? 'Checking stock…' : undefined}
                                         className="w-8 h-8 flex items-center justify-center hover:bg-red-50 hover:text-red-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                                       >
@@ -606,15 +608,15 @@ const ModalCart = () => {
                   <div className="flex justify-between text-sm text-gray-600">
                     <span>Shipping</span>
                     <span className="font-semibold">
-                      {shipping === 0
+                      {isMainSite ? 'Calculated at checkout' : shipping === 0
                         ? <span className="text-red-700">Free</span>
                         : formatPrice(shipping)}
                     </span>
                   </div>
                   <div className="flex justify-between items-center pt-2.5 border-t border-gray-200">
-                    <span className="font-bold text-gray-900">Total</span>
+                    <span className="font-bold text-gray-900">{isMainSite ? 'Subtotal before delivery' : 'Total'}</span>
                     <span className="text-2xl font-black text-gray-900">
-                      {formatPrice(cartTotal + shipping)}
+                      {formatPrice(cartTotal + (isMainSite ? 0 : shipping))}
                     </span>
                   </div>
 

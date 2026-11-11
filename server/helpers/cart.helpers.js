@@ -47,6 +47,9 @@ const buildCartLine = (item, pricing) => {
     sku: subproduct.sku,
     images: product.images || [],
     type: product.type,
+    subType: product.subType,
+    category: product.category,
+    subCategory: product.subCategory,
     isAlcoholic: product.isAlcoholic,
     abv: product.abv,
 

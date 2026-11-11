@@ -14,7 +14,7 @@ const productService = require('../services/product.service');
 
 // Fields safe to expose publicly for a storefront.
 const PUBLIC_TENANT_FIELDS =
-  'name slug logo primaryColor plan productCount address canonicalState contactEmail description';
+  'name slug logo primaryColor plan productCount address canonicalState contactEmail description ratingAvg ratingCount marketplaceSalesTotal marketplaceSalesOrders';
 
 /** Map a Tenant document to the flat shape the storefront UI expects. */
 function toStoreCard(tenant) {
@@ -26,6 +26,10 @@ function toStoreCard(tenant) {
     primaryColor: tenant.primaryColor,
     plan: tenant.plan,
     productCount: tenant.productCount || 0,
+    ratingAvg: tenant.ratingAvg || 0,
+    ratingCount: tenant.ratingCount || 0,
+    marketplaceSalesTotal: tenant.marketplaceSalesTotal || 0,
+    marketplaceSalesOrders: tenant.marketplaceSalesOrders || 0,
     city: tenant.address?.city,
     state: tenant.address?.state || tenant.canonicalState,
     description: tenant.description,

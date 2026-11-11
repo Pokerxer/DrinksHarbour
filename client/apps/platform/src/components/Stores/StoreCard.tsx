@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import Image from '@/components/UI/OptimizedImage';
 import * as Icon from 'react-icons/pi';
+import RatingStars from './RatingStars';
 import type { Store } from './directory.types';
 
 const PLAN_BADGES: Record<string, { label: string; cls: string }> = {
@@ -77,6 +78,16 @@ export default function StoreCard({ store, featured = false }: { store: Store; f
             {store.productCount}
           </div>
         )}
+        {/* Marketplace sales chip — tracked from paid marketplace orders */}
+        {(store.marketplaceSalesOrders ?? 0) > 0 && (
+          <div
+            className="absolute bottom-3 left-3 bg-black/50 backdrop-blur-sm text-white text-[10px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-1"
+            title="Paid orders on the DrinksHarbour marketplace"
+          >
+            <Icon.PiTrendUp size={10} />
+            {(store.marketplaceSalesOrders ?? 0).toLocaleString()} sale{(store.marketplaceSalesOrders ?? 0) !== 1 ? 's' : ''}
+          </div>
+        )}
       </div>
 
       {/* Body */}
@@ -89,6 +100,14 @@ export default function StoreCard({ store, featured = false }: { store: Store; f
           <p className="flex items-center gap-1 text-xs text-gray-400 mb-2">
             <Icon.PiMapPin size={12} />
             {location}
+          </p>
+        )}
+
+        {(store.ratingCount ?? 0) > 0 && (
+          <p className="flex items-center gap-1.5 text-xs text-gray-500 mb-2">
+            <RatingStars value={store.ratingAvg ?? 0} size={12} />
+            <span className="font-semibold text-gray-700">{(store.ratingAvg ?? 0).toFixed(1)}</span>
+            <span className="text-gray-400">({store.ratingCount})</span>
           </p>
         )}
 

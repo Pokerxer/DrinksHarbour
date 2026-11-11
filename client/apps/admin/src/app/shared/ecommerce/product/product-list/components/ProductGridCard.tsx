@@ -1,6 +1,7 @@
 // @ts-nocheck
 'use client';
 
+import CatalogStatusBadge from '@/app/shared/ecommerce/catalog-status-badge';
 import { businessIcon } from '@/app/shared/ecommerce/business-catalog/business-icons';
 import { isBeverageProductType } from '@/utils/product-types';
 import Link from 'next/link';
@@ -52,18 +53,6 @@ export default function ProductGridCard({
   const BeverageIcon = getBeverageIcon(product.type);
   const variantCount = product.variantCount ?? product.subProductCount ?? 0;
 
-  const statusColor =
-    !product.isPublished || product.status === 'draft'
-      ? 'secondary'
-      : product.status === 'discontinued'
-        ? 'secondary'
-        : 'success';
-  const statusLabel =
-    !product.isPublished || product.status === 'draft'
-      ? 'Draft'
-      : product.status === 'discontinued'
-        ? 'Discontinued'
-        : 'Published';
   const hasPrice =
     product.price != null && Number.isFinite(Number(product.price)) && Number(product.price) > 0;
   const priceSymbol = currencySymbols[product.priceCurrency] || currencySymbols.NGN || '₦';
@@ -96,13 +85,7 @@ export default function ProductGridCard({
 
       {/* Status badge */}
       <div className="absolute right-3 top-3 z-10">
-        <Badge
-          color={statusColor}
-          variant="flat"
-          className="text-xs font-semibold shadow-sm"
-        >
-          {statusLabel}
-        </Badge>
+        <CatalogStatusBadge status={product.status} className="shadow-sm" />
       </div>
 
       {/* Image */}
@@ -311,6 +294,7 @@ export function ProductGridCardCompact({
         <p className="truncate text-[11px] font-semibold leading-tight text-gray-900">
           {product.name || 'Unknown'}
         </p>
+        <CatalogStatusBadge status={product.status} />
         {product.brand?.name && (
           <p className="truncate text-[10px] leading-none text-gray-400">
             {product.brand.name}

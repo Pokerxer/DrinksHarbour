@@ -1,6 +1,6 @@
 # DrinksHarbour
 
-> DrinksHarbour is an online beverage marketplace based in Abuja, Nigeria, connecting customers with independent beverage businesses. Discover and compare wines, whisky, other spirits, beers, soft drinks and non-alcoholic drinks.
+> DrinksHarbour is a Nigeria-based online beverage marketplace connecting customers with independent beverage businesses. It delivers nationwide and is building a seller network across Nigeria. Discover and compare wines, whisky, other spirits, beers, soft drinks and non-alcoholic drinks.
 
 This file describes the main DrinksHarbour marketplace at https://www.drinksharbour.com/.
 Participating businesses offer beverages from a shared product catalogue through their own stores. A product may have offers from multiple businesses, with different prices, sizes and availability. Public pages may call these businesses stores, sellers or vendors; the platform calls them tenants.
@@ -9,7 +9,7 @@ Use current product and store pages for selling prices, bottle sizes, stock and 
 
 Product details may include alcohol by volume (ABV), volume, origin and tasting notes. ABV is a percentage; bottle volume is a separate measurement. The published delivery policy requires recipients of alcoholic orders to be aged 18 or over and show valid identification.
 
-For delivery coverage, estimates, returns and refunds, consult the relevant pages below. Use the contact page for order-specific questions, damaged deliveries and bulk enquiries. This overview contains no customer account or order information.
+DrinksHarbour delivers to all 36 states and the Federal Capital Territory. Same-day delivery in Abuja. Delivery in 1–2 days (within 48 hours) elsewhere in Nigeria. Same-day delivery is available for eligible FCT addresses on orders placed before noon, subject to stock. Use the contact page for order-specific questions, damaged deliveries and bulk enquiries. This overview contains no customer account or order information.
 
 ## Browse drinks
 
@@ -23,9 +23,9 @@ For delivery coverage, estimates, returns and refunds, consult the relevant page
 
 ## Delivery
 
-- [Shipping information](https://www.drinksharbour.com/shipping-info): Delivery zones, conditions, fees and age-verification policy; confirm the fee for an address at checkout.
-- [Abuja and FCT delivery](https://www.drinksharbour.com/delivery/abuja): Local delivery information for Abuja, Gwagwalada, Kuje, Bwari and Kubwa; check the available delivery window at checkout.
-- [Lagos delivery](https://www.drinksharbour.com/delivery/lagos): Information about deliveries to Lagos from Abuja; consult checkout for the current estimate and fee.
+- [Nationwide delivery policy](https://www.drinksharbour.com/shipping-info): Delivery windows, zones, fees and age-verification policy; confirm the fee for an address at checkout.
+- [Abuja and FCT delivery](https://www.drinksharbour.com/delivery/abuja): Same-day service for eligible orders, including the noon cutoff and coverage details.
+- [Lagos delivery](https://www.drinksharbour.com/delivery/lagos): Delivery in 1–2 days (within 48 hours). Checkout shows the fee for your address.
 
 ## Customer information
 

@@ -1,5 +1,6 @@
 'use client';
 
+import CatalogStatusBadge from '@/app/shared/ecommerce/catalog-status-badge';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import cn from '@core/utils/class-names';
@@ -161,6 +162,8 @@ export default function ProductGridCard({
         <p className="line-clamp-2 text-sm font-semibold leading-tight text-gray-900">
           {product.product?.name || 'Unknown Product'}
         </p>
+
+        <CatalogStatusBadge status={product.status} />
 
         {/* Brand */}
         {product.product?.brand?.name && (

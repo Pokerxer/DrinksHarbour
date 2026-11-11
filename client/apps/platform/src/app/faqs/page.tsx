@@ -52,19 +52,19 @@ const FAQS: FAQ[] = [
   {
     category: 'ordering',
     q: 'Can I schedule a delivery for a specific date?',
-    a: 'Yes. During checkout you can select a preferred delivery date. Scheduled deliveries are subject to availability in your area. Same-day scheduling must be placed before 12 noon.',
+    a: 'Contact support to ask about a specific delivery date. Scheduling is subject to availability in your area. For same-day delivery in Abuja, place eligible orders before noon.',
   },
 
   // Delivery
   {
     category: 'delivery',
     q: 'Which areas do you deliver to?',
-    a: 'We deliver to all 36 states and the FCT across Nigeria. Same-day delivery is available in Abuja and the FCT. Nearby states are generally next-day, while other zones use the delivery estimate shown at checkout.',
+    a: DELIVERY_COPY.coverage,
   },
   {
     category: 'delivery',
     q: 'How long does delivery take?',
-    a: 'Abuja and the FCT: same-day or next-day for orders before the stated cutoff. Nearby states are generally next-day; other locations use the zone estimate shown at checkout. You will receive SMS and email updates at each stage.',
+    a: DELIVERY_COPY.timing,
   },
   {
     category: 'delivery',
@@ -368,6 +368,14 @@ export default function FAQPage() {
                         {items.length}
                       </span>
                     </div>
+                  )}
+                  {key === 'delivery' && (
+                    <p className="mb-4 text-sm leading-6 text-gray-700">
+                      {DELIVERY_COPY.timing}{' '}
+                      <Link href="/shipping-info" className="font-semibold text-red-800 underline">
+                        View nationwide delivery areas and fees
+                      </Link>
+                    </p>
                   )}
                   <div className="space-y-3">
                     {items.map((faq, i) => (

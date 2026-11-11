@@ -273,6 +273,18 @@ const tenantSchema = new Schema(
     approvedAt: Date,
     approvedBy: { type: ObjectId, ref: "User" }, // super-admin
 
+    // Denormalised customer-rating aggregate — recomputed from APPROVED
+    // TenantReview documents only (see tenantReview.controller.recalcTenantRating).
+    // Zero approved reviews must read as 0/0, never a stale value.
+    ratingAvg: { type: Number, default: 0, min: 0, max: 5 },
+    ratingCount: { type: Number, default: 0, min: 0 },
+
+    // Denormalised gross marketplace sales — recomputed from POSTED
+    // sales_revenue journals with source 'marketplace' (the same rows the
+    // settlement statements pay out on). See services/marketplaceSales.service.
+    marketplaceSalesTotal: { type: Number, default: 0, min: 0 },
+    marketplaceSalesOrders: { type: Number, default: 0, min: 0 },
+
     // Primary tenant owner/admin — the User with full control of this tenant.
     // Referenced by auth ownership checks (e.g., subproduct transfer, bulk ops).
     admin: {

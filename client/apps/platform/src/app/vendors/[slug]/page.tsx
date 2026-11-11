@@ -5,6 +5,8 @@ import Link from 'next/link';
 import Image from '@/components/UI/OptimizedImage';
 import * as Icon from 'react-icons/pi';
 import { API_URL } from '@/lib/api';
+import RatingStars from '@/components/Stores/RatingStars';
+import StoreReviews from '@/components/Stores/StoreReviews';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -32,6 +34,10 @@ interface Store {
   state?: string;
   plan?: string;
   productCount?: number;
+  ratingAvg?: number;
+  ratingCount?: number;
+  marketplaceSalesTotal?: number;
+  marketplaceSalesOrders?: number;
   description?: string;
   address?: { street?: string; city?: string; state?: string };
   email?: string;
@@ -70,6 +76,14 @@ function initials(name: string) {
 function discountPct(product: StoreProduct): number | null {
   if (!product.originalMinPrice || product.originalMinPrice <= product.minWebsitePrice) return null;
   return Math.round((1 - product.minWebsitePrice / product.originalMinPrice) * 100);
+}
+
+/** Compact naira display for sales figures: ₦2.4m / ₦850k / ₦0. */
+function formatNairaCompact(amount: number): string {
+  if (!amount || amount <= 0) return '₦0';
+  if (amount >= 1_000_000) return `₦${(amount / 1_000_000).toFixed(1).replace(/\.0$/, '')}m`;
+  if (amount >= 1_000) return `₦${Math.round(amount / 1_000)}k`;
+  return `₦${amount.toLocaleString()}`;
 }
 
 // ─── Product Card ─────────────────────────────────────────────────────────────
@@ -289,6 +303,13 @@ export default function VendorStorePage({ params }: { params: Promise<{ slug: st
                   <span className="flex items-center gap-1 text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">
                     <Icon.PiShieldCheck size={11} /> Verified
                   </span>
+                  {(store.ratingCount ?? 0) > 0 && (
+                    <span className="flex items-center gap-1.5 text-xs text-gray-600">
+                      <RatingStars value={store.ratingAvg ?? 0} size={13} />
+                      <span className="font-semibold text-gray-800">{(store.ratingAvg ?? 0).toFixed(1)}</span>
+                      <span className="text-gray-400">({store.ratingCount})</span>
+                    </span>
+                  )}
                   {planBadge && (
                     <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${planBadge.cls}`}>
                       {planBadge.label}
@@ -346,6 +367,16 @@ export default function VendorStorePage({ params }: { params: Promise<{ slug: st
                     <p className="text-2xl font-black text-gray-900">{store.productCount ?? 0}</p>
                     <p className="text-xs text-gray-400">Products</p>
                   </div>
+                  {(store.marketplaceSalesOrders ?? 0) > 0 && (
+                    <div className="text-center sm:text-right">
+                      <p className="text-2xl font-black text-gray-900" title={`₦${(store.marketplaceSalesTotal ?? 0).toLocaleString()} in marketplace sales`}>
+                        {formatNairaCompact(store.marketplaceSalesTotal ?? 0)}
+                      </p>
+                      <p className="text-xs text-gray-400">
+                        {(store.marketplaceSalesOrders ?? 0).toLocaleString()} marketplace sale{(store.marketplaceSalesOrders ?? 0) !== 1 ? 's' : ''}
+                      </p>
+                    </div>
+                  )}
                   {onSaleCount > 0 && (
                     <div className="text-center sm:text-right">
                       <p className="text-2xl font-black text-red-600">{onSaleCount}</p>
@@ -415,6 +446,9 @@ export default function VendorStorePage({ params }: { params: Promise<{ slug: st
             </>
           )}
         </div>
+
+        {/* ── Customer reviews ───────────────────────────────────────────── */}
+        <StoreReviews slug={store.slug} />
       </div>
     </div>
   );

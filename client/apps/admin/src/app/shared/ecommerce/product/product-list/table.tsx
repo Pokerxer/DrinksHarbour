@@ -617,6 +617,7 @@ type SPFilterKey =
   | 'published'
   | 'low_stock'
   | 'out_of_stock'
+  | 'discontinued'
   | 'archived'
   | 'alcoholic'
   | 'non_alcoholic';
@@ -668,6 +669,7 @@ const SP_FILTER_LABELS: Record<SPFilterKey, string> = {
   low_stock: 'Low Stock',
   out_of_stock: 'Out of Stock',
   archived: 'Archived',
+  discontinued: 'Discontinued',
   alcoholic: 'Alcoholic',
   non_alcoholic: 'Non-Alcoholic',
 };
@@ -786,6 +788,7 @@ function OdooSearchPanel({
             <FilterItem fkey="non_alcoholic" label="Non-Alcoholic" />
             <div className="my-1.5 border-t border-gray-100" />
             <FilterItem fkey="archived" label="Archived" />
+            <FilterItem fkey="discontinued" label="Discontinued" />
             <div className="my-1.5 border-t border-gray-100" />
             <div className="flex items-center gap-1">
               <button
@@ -1379,7 +1382,7 @@ function StatsHeader({
     },
     {
       id: 'published',
-      label: 'Published',
+      label: 'Active',
       value: stats.published,
       icon: PiCheckCircleBold,
       color: 'green',
@@ -1962,12 +1965,8 @@ export default function ProductsTable({
       draft: allProducts.filter(
         (p) => p.status === 'draft' || p.status === 'pending'
       ).length,
-      discontinued: allProducts.filter(
-        (p) =>
-          p.status === 'discontinued' ||
-          p.status === 'archived' ||
-          p.status === 'rejected'
-      ).length,
+      discontinued: allProducts.filter((p) => p.status === 'discontinued').length,
+      archived: allProducts.filter((p) => p.status === 'archived').length,
       lowStock: allProducts.filter(
         (p) => (p.totalStock ?? 0) > 0 && (p.totalStock ?? 0) <= 10
       ).length,
@@ -2036,14 +2035,6 @@ export default function ProductsTable({
         case 'draft':
           result = result.filter(
             (p) => p.status === 'draft' || p.status === 'pending'
-          );
-          break;
-        case 'discontinued':
-          result = result.filter(
-            (p) =>
-              p.status === 'discontinued' ||
-              p.status === 'archived' ||
-              p.status === 'rejected'
           );
           break;
         case 'low_stock':
@@ -2243,15 +2234,15 @@ export default function ProductsTable({
     if (spActiveFilters.has('non_alcoholic'))
       result = result.filter((p) => isBeverageProductType(p.type) && !p.isAlcoholic);
     if (spActiveFilters.has('archived'))
-      result = result.filter(
-        (p) => p.status === 'discontinued' || p.status === 'archived'
-      );
+      result = result.filter((p) => p.status === 'archived');
+    if (spActiveFilters.has('discontinued'))
+      result = result.filter((p) => p.status === 'discontinued');
 
     // Custom rules
     if (activeCustomRules && activeCustomRules.rules.length > 0) {
       if (!activeCustomRules.includeArchived)
         result = result.filter(
-          (p) => p.status !== 'archived' && p.status !== 'discontinued'
+          (p) => p.status !== 'archived'
         );
       result = result.filter((p) => {
         const tests = activeCustomRules.rules.map((r) => applyRule(p, r));
@@ -2878,7 +2869,7 @@ export default function ProductsTable({
               <option value="published">
                 Published ({stats.publishedFlag || 0})
               </option>
-              <option value="draft">Draft ({stats.draftFlag || 0})</option>
+              <option value="draft">Unpublished ({stats.draftFlag || 0})</option>
             </select>
 
             {/* Separator */}
@@ -2915,7 +2906,9 @@ export default function ProductsTable({
         <div className="flex flex-wrap items-center gap-1.5 px-3 py-2">
           {[
             { id: '', label: 'All', count: stats.total },
-            { id: 'published', label: 'Published', count: stats.published },
+            { id: 'published', label: 'Active', count: stats.published },
+            { id: 'discontinued', label: 'Discontinued', count: stats.discontinued },
+            { id: 'archived', label: 'Archived', count: stats.archived },
             { id: 'draft', label: 'Draft', count: stats.draft },
             { id: 'low_stock', label: 'Low Stock', count: stats.lowStock },
             {

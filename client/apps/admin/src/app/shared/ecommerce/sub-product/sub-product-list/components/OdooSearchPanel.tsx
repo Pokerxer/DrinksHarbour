@@ -30,7 +30,8 @@ export type SPFilterKey =
   | 'available_online'
   | 'has_sales'
   | 'no_sales'
-  | 'archived';
+  | 'archived'
+  | 'discontinued';
 
 export type SPGroupKey =
   | 'product_type'
@@ -102,6 +103,7 @@ export const SP_FILTER_LABELS: Record<SPFilterKey, string> = {
   has_sales: 'Has Sales',
   no_sales: 'Never Sold',
   archived: 'Archived',
+  discontinued: 'Discontinued',
 };
 
 export const SP_GROUP_LABELS: Record<SPGroupKey, string> = {
@@ -229,6 +231,7 @@ export default function OdooSearchPanel({
             <FilterItem fkey="no_sales" label="Never Sold" />
             <div className="my-1.5 border-t border-gray-100" />
             <FilterItem fkey="archived" label="Archived" />
+            <FilterItem fkey="discontinued" label="Discontinued" />
             <div className="my-1.5 border-t border-gray-100" />
             <div className="flex items-center gap-1">
               <button

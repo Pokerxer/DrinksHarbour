@@ -11,25 +11,35 @@ import { calculateDiscountPercentage } from '@/utils/product.utils';
 import { useWishlist } from '@/context/WishlistContext';
 import { useModalWishlistContext } from '@/context/ModalWishlistContext';
 import { viewItemListEvent, type GTagItem } from '@/lib/gtag';
+import CartGiftOptions from '@/components/Merchandising/CartGiftOptions';
+import { clearGiftMessage, giftCheckoutPath, saveGiftMessage } from '@/lib/giftCartDraft';
+import DrinkKit from '@/components/Merchandising/DrinkKit';
+import { useTenant } from '@/context/TenantContext';
 import RecommendedForYou from '@/components/Shop/RecommendedForYou';
 import { FirstOrderPerkBanner } from '@/components/Banner';
 
 const CartPage = () => {
   const router = useRouter();
+  const { isMainSite } = useTenant();
   const {
     cartState, updateQuantity, removeFromCart, cartTotal, cartCount, clearCart,
-    validationMap, validating, validateCartItems, applyValidationUpdates,
+    validationMap, validating, validateCartItems, applyValidationUpdates, syncCartToServer,
   } = useCart();
   const { addToWishlist } = useWishlist();
   const { openModalWishlist } = useModalWishlistContext();
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [isClient, setIsClient] = useState(false);
+  const [giftEnabled, setGiftEnabled] = useState(false);
+  const [giftMessage, setGiftMessage] = useState('');
+  const [giftError, setGiftError] = useState('');
+  const [startingGiftCheckout, setStartingGiftCheckout] = useState(false);
   const viewCartFired = useRef(false);
 
   useEffect(() => {
     setIsClient(true);
-  }, []);
+    if (isMainSite && new URLSearchParams(window.location.search).get('gift') === '1') setGiftEnabled(true);
+  }, [isMainSite]);
 
   useEffect(() => {
     if (isClient && cartState.cartArray.length > 0 && !viewCartFired.current) {
@@ -114,6 +124,10 @@ const CartPage = () => {
     setRemovingId('all');
     await new Promise(resolve => setTimeout(resolve, 300));
     clearCart();
+    try { clearGiftMessage(sessionStorage); } catch { /* Storage may be disabled. */ }
+    setGiftEnabled(false);
+    setGiftMessage('');
+    setGiftError('');
     setRemovingId(null);
     setShowClearConfirm(false);
   };
@@ -125,15 +139,38 @@ const CartPage = () => {
     return null;
   };
 
-  const handleCheckout = () => {
+  const handleCheckout = async () => {
+    if (startingGiftCheckout) return;
     const token = localStorage.getItem('dh_token') || sessionStorage.getItem('dh_token');
     
-    if (!token) {
-      router.push('/login?redirect=/checkout');
-      return;
+    const query = new URLSearchParams();
+    if (isMainSite && giftEnabled) {
+      query.set('gift', '1');
+      if (cartState.cartArray.some(item => item.isGiftPackaging)) query.set('wrap', '1');
+      if (giftMessage.trim()) {
+        try {
+          const id = crypto.randomUUID();
+          if (!saveGiftMessage(sessionStorage, id, giftMessage)) throw new Error();
+          query.set('draft', id);
+        } catch {
+          setGiftError('This browser could not carry your gift message to checkout. Clear it here and enter it at checkout.');
+          return;
+        }
+      }
     }
-    
-    router.push('/checkout');
+    const checkoutPath = giftCheckoutPath(query);
+    if (token && query.has('gift')) {
+      setStartingGiftCheckout(true);
+      try {
+        if (!await syncCartToServer()) {
+          setGiftError('Your gift options could not be saved to the cart. Try checkout again.');
+          return;
+        }
+      } finally {
+        setStartingGiftCheckout(false);
+      }
+    }
+    router.push(token ? checkoutPath : `/login?redirect=${encodeURIComponent(checkoutPath)}`);
   };
 
   if (!isClient) {
@@ -170,6 +207,8 @@ const CartPage = () => {
             </Link>
           </div>
           
+          {isMainSite && <DrinkKit />}
+
           {/* Recommended For You Section - Empty Cart */}
           <div className="mt-8 mb-8 max-w-7xl mx-auto">
             <RecommendedForYou maxItems={6} />
@@ -253,7 +292,19 @@ const CartPage = () => {
           )}
         </AnimatePresence>
 
-        {/* Free Shipping Progress */}
+        {isMainSite && <>
+          <CartGiftOptions enabled={giftEnabled} message={giftMessage} onMessage={value => { setGiftMessage(value); setGiftError(''); }}
+            onToggle={() => {
+              if (giftEnabled) {
+                cartState.cartArray.filter(item => item.isGiftPackaging).forEach(item => removeFromCart(item.cartItemId));
+                setGiftError('');
+              }
+              setGiftEnabled(enabled => !enabled);
+            }} />
+        </>}
+
+        {/* Tenant cart delivery estimate */}
+        {!isMainSite && (
         <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl sm:rounded-2xl p-4 mb-6 border border-green-100">
           {remainingForFree > 0 ? (
             <div>
@@ -284,6 +335,7 @@ const CartPage = () => {
             </div>
           )}
         </div>
+        )}
 
         <div className="flex flex-col lg:flex-row gap-6">
           {/* Cart Items */}
@@ -431,7 +483,7 @@ const CartPage = () => {
                                 </span>
                                 <button
                                   onClick={() => handleQuantityChange(item.cartItemId, (item.quantity || 1) + 1)}
-                                  disabled={(item.quantity || 1) >= maxQty}
+                                  disabled={item.isGiftPackaging || (item.quantity || 1) >= maxQty}
                                   title={maxQty < 99 ? `Max ${maxQty} available` : undefined}
                                   className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-sm"
                                 >
@@ -484,6 +536,8 @@ const CartPage = () => {
               </AnimatePresence>
             </div>
 
+            {isMainSite && <DrinkKit />}
+
             {/* Continue Shopping */}
             <Link
               href="/shop"
@@ -516,7 +570,7 @@ const CartPage = () => {
                 <div className="flex justify-between">
                   <span className="text-gray-500">Shipping</span>
                   <span className="font-medium">
-                    {shipping === 0 ? (
+                    {isMainSite ? 'Calculated at checkout' : shipping === 0 ? (
                       <span className="text-green-600">Free</span>
                     ) : (
                       formatPrice(shipping)
@@ -532,16 +586,18 @@ const CartPage = () => {
               <div className="border-t border-gray-100 my-4"></div>
 
               <div className="flex justify-between text-base font-bold mb-6">
-                <span>Total</span>
-                <span>{formatPrice(cartTotal + shipping)}</span>
+                <span>{isMainSite ? 'Subtotal before delivery' : 'Total'}</span>
+                <span>{formatPrice(cartTotal + (isMainSite ? 0 : shipping))}</span>
               </div>
 
+              {giftError && <p role="alert" className="mb-3 text-sm text-red-700">{giftError}</p>}
               <button
                 onClick={handleCheckout}
-                className="w-full py-3 sm:py-4 bg-gray-900 text-white font-semibold rounded-xl hover:bg-gray-800 transition-colors flex items-center justify-center gap-2"
+                disabled={startingGiftCheckout}
+                className="w-full py-3 sm:py-4 bg-gray-900 text-white font-semibold rounded-xl hover:bg-gray-800 transition-colors flex items-center justify-center gap-2 disabled:opacity-60"
               >
                 <Icon.PiLockKey size={18} />
-                Proceed to Checkout
+                {startingGiftCheckout ? 'Saving gift options…' : 'Proceed to Checkout'}
               </button>
 
               <div className="mt-4 flex items-center justify-center gap-2 text-xs text-gray-400">

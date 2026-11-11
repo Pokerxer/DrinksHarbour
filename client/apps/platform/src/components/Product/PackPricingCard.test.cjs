@@ -48,3 +48,13 @@ test('bulk action explicitly selects a quantity and does not imply adding to car
     await React.act(async () => root.unmount()); dom.window.close(); Object.assign(global, previous);
   }
 });
+
+test('an applied pack shows the total and savings for the selected quantity', () => {
+  const dom = new JSDOM(renderToStaticMarkup(React.createElement(Card, {...offer, quantity: 8, packRateActive: true})));
+  const text = dom.window.document.body.textContent;
+  assert.match(text, /Pack total · 8 units/);
+  assert.match(text, /₦888,800/);
+  assert.match(text, /Save ₦32,000/);
+  assert.doesNotMatch(text, /animate-pulse/);
+  dom.window.close();
+});

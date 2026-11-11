@@ -19,8 +19,12 @@ import AddressAutocomplete, { type AddressDetails } from '@/components/AddressAu
 import LocationPickerMap from '@/components/LocationPickerMap/LocationPickerMap';
 import PlacementBanner from '@/components/Banner/PlacementBanner';
 import FirstOrderPerkBanner from '@/components/Banner/FirstOrderPerkBanner';
+import { ABUJA_DELIVERY_ELIGIBILITY, ELSEWHERE_DELIVERY_WINDOW } from '@/lib/deliveryCopy';
 import { describeDeliveryLine, type FirstOrderPerk } from 'commerce-core';
+import DeliveryTopUp from '@/components/Merchandising/DeliveryTopUp';
+import { useTenant } from '@/context/TenantContext';
 import CheckoutGiftSection, { useGiftPackaging } from '@/components/Checkout/CheckoutGiftSection';
+import { clearGiftMessage, giftCheckoutPath, readGiftMessage } from '@/lib/giftCartDraft';
 import { lagosTodayISO, validateGiftDetails, buildGiftPayload, type GiftDetails, type GiftFieldErrors, type GiftPayload } from '@/lib/giftCheckout';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -111,6 +115,7 @@ function Field({ label, name, type = 'text', placeholder, required = true, icon:
 
 export default function CheckoutPage() {
   const router = useRouter();
+  const { isMainSite } = useTenant();
   const { cartState, clearCart, clearCartEverywhere, syncCartToServer, loadServerCart, validateCartItems, applyValidationUpdates, validationMap } = useCart();
 
   const [mounted,         setMounted]         = useState(false);
@@ -135,7 +140,8 @@ export default function CheckoutPage() {
   const [lgaLoading,      setLgaLoading]      = useState(false);
   const [shippingRate,    setShippingRate]     = useState<ShippingRate | null>(null);
   const [shippingLoading, setShippingLoading] = useState(false);
-  const shippingDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [shippingQuoteKey, setShippingQuoteKey] = useState('');
+  const [shippingQuoteAttempt, retryShippingQuote] = useState(0);
   const utmRef = useRef(readUTMParams());
 
   // Validation modal state
@@ -149,6 +155,15 @@ export default function CheckoutPage() {
   const [giftErrors,     setGiftErrors]     = useState<GiftFieldErrors>({});
   const [giftSubmitTick, setGiftSubmitTick] = useState(0);
   const giftPackaging    = useGiftPackaging();
+
+  useEffect(() => {
+    const query = new URLSearchParams(window.location.search);
+    if (!isMainSite || query.get('gift') !== '1') return;
+    setGiftEnabled(true);
+    let message = '';
+    try { message = readGiftMessage(sessionStorage, query.get('draft')); } catch { /* Storage may be disabled. */ }
+    setGift(current => ({ ...current, message, packagingRequested: query.get('wrap') === '1' }));
+  }, [isMainSite]);
 
   const handleGiftToggle = () => {
     const next = !giftEnabled;
@@ -230,9 +245,13 @@ export default function CheckoutPage() {
   // ── Init ──────────────────────────────────────────────────────────────────
   useEffect(() => {
     const token = localStorage.getItem('dh_token') || sessionStorage.getItem('dh_token');
-    if (!token) { router.push('/login?redirect=/checkout'); return; }
+    if (!token) {
+      const path = giftCheckoutPath(new URLSearchParams(window.location.search));
+      router.push(`/login?redirect=${encodeURIComponent(path)}`);
+      return;
+    }
     setMounted(true);
-    loadServerCart();
+    if (!isMainSite || new URLSearchParams(window.location.search).get('gift') !== '1') loadServerCart();
     // Fetch saved addresses
     fetchWithAuth(`${API_URL}/api/addresses`)
       .then(r => r.json())
@@ -248,7 +267,7 @@ export default function CheckoutPage() {
       .then(r => r.json())
       .then(d => { if (d.success) setWalletBalance(d.data?.balance ?? 0); })
       .catch(() => setWalletBalance(0));
-  }, [router, loadServerCart]);
+  }, [router, loadServerCart, isMainSite]);
 
   // The error banner renders above the form; when payment init fails the user
   // is usually scrolled down at the pay button and sees nothing happen.
@@ -348,43 +367,57 @@ export default function CheckoutPage() {
       .filter(Boolean)
   )];
 
+  const vendorKey = vendorIds.sort().join(',');
+  const quoteParams = new URLSearchParams({
+    state: form.state,
+    lga: form.lga || '',
+    subtotal: String(subtotal),
+  });
+  if (addressDetails?.lat && addressDetails?.lon) {
+    quoteParams.set('lat', String(addressDetails.lat));
+    quoteParams.set('lon', String(addressDetails.lon));
+  }
+  if (vendorIds.length >= 2) quoteParams.set('vendors', vendorKey);
+  const shippingQuery = quoteParams.toString();
+  const quoteKey = `${shippingQuery}|${vendorKey}`;
+
   useEffect(() => {
     if (!form.state) return;
-    if (shippingDebounce.current) clearTimeout(shippingDebounce.current);
-    shippingDebounce.current = setTimeout(() => {
-      setShippingLoading(true);
-      const params = new URLSearchParams({
-        state:    form.state,
-        lga:      form.lga || '',
-        subtotal: String(subtotal),
-      });
-      if (addressDetails?.lat && addressDetails?.lon) {
-        params.set('lat', String(addressDetails.lat));
-        params.set('lon', String(addressDetails.lon));
-      }
-      // Pass vendor IDs for multi-vendor route distance calculation
-      if (vendorIds.length >= 2) {
-        params.set('vendors', vendorIds.join(','));
-      }
-      // credentials matter here: the first-order delivery waiver depends on the
-      // httpOnly session cookie reaching the server. Without it every shopper
-      // looks like a guest and the waiver never applies.
-      fetch(`${API_URL}/api/shipping/calculate?${params}`, { credentials: 'include' })
-        .then(r => r.json())
-        .then(d => { if (d.success) setShippingRate(d.data); })
+    const controller = new AbortController();
+    setShippingLoading(true);
+    const timer = setTimeout(() => {
+      fetch(`${API_URL}/api/shipping/calculate?${shippingQuery}`, {
+        credentials: 'include',
+        signal: controller.signal,
+        cache: 'no-store',
+      })
+        .then(r => r.ok ? r.json() : null)
+        .then(d => {
+          if (!controller.signal.aborted && d?.success) {
+            setShippingRate(d.data);
+            setShippingQuoteKey(quoteKey);
+          }
+        })
         .catch(() => {})
-        .finally(() => setShippingLoading(false));
+        .finally(() => { if (!controller.signal.aborted) setShippingLoading(false); });
     }, 350);
-    return () => { if (shippingDebounce.current) clearTimeout(shippingDebounce.current); };
-  }, [form.state, form.lga, subtotal, addressDetails]);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [form.state, quoteKey, shippingQuery, shippingQuoteAttempt]);
 
   // ── Derived totals ────────────────────────────────────────────────────────
-  const shipping    = shippingRate?.fee ?? 0;
+  const hasCurrentShippingQuote = !isMainSite || shippingQuoteKey === quoteKey;
+  const shipping    = hasCurrentShippingQuote ? shippingRate?.fee ?? 0 : 0;
   const shippingZone = shippingRate?.label ?? '';
+  const marketplaceDeliveryTiming = toApiState(form.state) === 'Federal Capital Territory'
+    ? ABUJA_DELIVERY_ELIGIBILITY
+    : `Delivery in ${ELSEWHERE_DELIVERY_WINDOW}.`;
+  const tenantDeliveryEstimate = !isMainSite && shippingRate
+    ? `Est. ${shippingRate.deliveryDaysMin}–${shippingRate.deliveryDaysMax} business days`
+    : '';
   // The server's verdict on free delivery for a first purchase. `perkLine` is
   // null whenever there is nothing waived, so every use site can fall through
   // to the existing delivery copy.
-  const perk        = shippingRate?.firstOrderPerk ?? null;
+  const perk        = hasCurrentShippingQuote ? shippingRate?.firstOrderPerk ?? null : null;
   const perkApplied = !!perk?.eligible;
   const perkLine    = describeDeliveryLine(perk);
   const discount  = Math.min(couponDiscount, subtotal);
@@ -572,6 +605,7 @@ export default function CheckoutPage() {
       });
       finishCheckoutAttempt(localStorage);
       clearCartEverywhere();
+      try { clearGiftMessage(sessionStorage, new URLSearchParams(window.location.search).get('draft')); } catch { /* Storage may be disabled. */ }
       localStorage.setItem('customerEmail', form.email);
       router.push(`/order-confirmation?orderId=${orderId}`);
     } catch (e: any) {
@@ -646,6 +680,7 @@ export default function CheckoutPage() {
       if (!res.ok) throw new Error(data.message || 'Failed to place order');
       finishCheckoutAttempt(localStorage);
       clearCartEverywhere();
+      try { clearGiftMessage(sessionStorage, new URLSearchParams(window.location.search).get('draft')); } catch { /* Storage may be disabled. */ }
       localStorage.setItem('customerEmail', form.email);
       const orderId = data.data?.order?._id || data.data?.order?.id || data.order?._id;
       if (data.data?.guestAccessToken) localStorage.setItem(`dh:guest-order:${orderId}`, data.data.guestAccessToken);
@@ -692,6 +727,7 @@ export default function CheckoutPage() {
       });
       finishCheckoutAttempt(localStorage);
       clearCartEverywhere();
+      try { clearGiftMessage(sessionStorage, new URLSearchParams(window.location.search).get('draft')); } catch { /* Storage may be disabled. */ }
       localStorage.setItem('customerEmail', form.email);
       router.push(`/order-confirmation?orderId=${orderId}`);
     } catch (e: any) {
@@ -723,6 +759,7 @@ export default function CheckoutPage() {
       });
       finishCheckoutAttempt(localStorage);
       clearCartEverywhere();
+      try { clearGiftMessage(sessionStorage, new URLSearchParams(window.location.search).get('draft')); } catch { /* Storage may be disabled. */ }
       localStorage.setItem('customerEmail', form.email);
       router.push(`/order-confirmation?orderId=${orderId}`);
     } catch (e: any) {
@@ -822,6 +859,10 @@ export default function CheckoutPage() {
     e.preventDefault();
     if (!validate())                     return;
     if (cartState.cartArray.length === 0) { setError('Your cart is empty'); return; }
+    if (!hasCurrentShippingQuote) {
+      setError('Confirm the delivery quote before placing your order.');
+      return;
+    }
 
     // Gift block: invalid details block the submit and focus the first field.
     if (!validateGift()) return;
@@ -830,6 +871,10 @@ export default function CheckoutPage() {
     // so an inconsistent cart blocks with a clear message instead of re-adding.
     if (giftEnabled && gift.packagingRequested && giftPackaging.line && !giftPackaging.inCart) {
       setError('Gift packaging was removed from your cart — untick and re-tick it in the gift section, then try again.');
+      return;
+    }
+    if (giftEnabled && gift.packagingRequested && giftPackaging.quantity > 1) {
+      setError('Gift wrapping is limited to one per order. Untick and reselect it to keep one.');
       return;
     }
     if (giftEnabled && gift.packagingRequested && !giftPackaging.line) {
@@ -1147,6 +1192,9 @@ export default function CheckoutPage() {
                               <span className="w-4 h-4 rounded-full border-2 border-blue-200 border-t-blue-600 animate-spin flex-shrink-0" />
                               <span className="text-blue-600 text-xs">Calculating delivery fee…</span>
                             </>
+                          ) : isMainSite && shippingQuoteKey !== quoteKey ? (
+                            <button type="button" className="font-semibold text-blue-800 underline"
+                              onClick={() => retryShippingQuote(attempt => attempt + 1)}>Retry delivery quote</button>
                           ) : shippingRate ? (
                             <>
                               <Icon.PiTruckBold size={18} className={shippingRate.isFree ? 'text-green-600 flex-shrink-0' : 'text-blue-600 flex-shrink-0'} />
@@ -1175,14 +1223,19 @@ export default function CheckoutPage() {
                                   {shippingRate.isFree && !perkApplied
                                     ? 'Your order qualifies for free delivery!'
                                     : shippingRate.source === 'google' && shippingRate.distanceKm
-                                      ? `~${shippingRate.distanceKm} km${shippingRate.routeType === 'multi-vendor' ? ` · ${shippingRate.stops} pickup stops` : ''} · Est. ${shippingRate.deliveryDaysMin}–${shippingRate.deliveryDaysMax} business days`
-                                      : `${shippingRate.label} · Est. ${shippingRate.deliveryDaysMin}–${shippingRate.deliveryDaysMax} business days`
+                                      ? `~${shippingRate.distanceKm} km${shippingRate.routeType === 'multi-vendor' ? ` · ${shippingRate.stops} pickup stops` : ''}`
+                                      : `${shippingRate.label}`
                                   }
                                 </p>
+                                {(isMainSite ? form.state : tenantDeliveryEstimate) && (
+                                  <p className="text-xs text-gray-600 mt-0.5">
+                                    {isMainSite ? marketplaceDeliveryTiming : tenantDeliveryEstimate}
+                                  </p>
+                                )}
                                 {/* Suppressed once the waiver applies — telling someone
                                     who is already getting free delivery to spend ₦2m more
                                     to get free delivery reads as a bug. */}
-                                {!shippingRate.isFree && !perkApplied && shippingRate.remaining > 0 && (
+                                {!isMainSite && !shippingRate.isFree && !perkApplied && shippingRate.remaining > 0 && (
                                   <p className="text-xs text-blue-500 mt-0.5">
                                     Add {fmt(shippingRate.remaining)} more to get free delivery
                                   </p>
@@ -1366,7 +1419,13 @@ export default function CheckoutPage() {
                     {/* First-order free delivery. Renders the sign-in nudge for
                         guests and the "add ₦x more" hint below the minimum; stays
                         hidden for anyone who cannot claim it. */}
-                    <FirstOrderPerkBanner variant="card" subtotal={subtotal} returnTo="/checkout" />
+                    {(!isMainSite || !form.state || !form.lga) &&
+                      <FirstOrderPerkBanner variant="card" subtotal={subtotal} returnTo="/checkout" />}
+                    {isMainSite && form.state && form.lga && vendorKey && !shippingLoading &&
+                      cartState.cartArray.every(item => item.selectedVendorId || item.tenantId) &&
+                      shippingRate && shippingQuoteKey === quoteKey && (
+                        <DeliveryTopUp quote={shippingRate} subtotal={subtotal} sellerKey={vendorKey} />
+                      )}
 
                     {/* Coupon */}
                     <CouponComponent
@@ -1397,12 +1456,12 @@ export default function CheckoutPage() {
                             ? <span className="text-gray-400 text-xs">Select state</span>
                             : !form.lga
                               ? <span className="text-gray-400 text-xs">Select LGA</span>
-                              : shippingLoading
+                              : shippingLoading || (isMainSite && shippingQuoteKey !== quoteKey)
                                 ? <span className="text-gray-400 text-xs">…</span>
                                 : shipping === 0 ? 'Free' : fmt(shipping)}
                         </span>
                       </div>
-                      {shippingRate && !shippingLoading && (
+                      {shippingRate && hasCurrentShippingQuote && !shippingLoading && (
                         <div className="text-xs text-gray-400 space-y-0.5">
                           {perkLine ? (
                             <p className="text-green-600 flex items-center gap-1 font-semibold">
@@ -1425,9 +1484,11 @@ export default function CheckoutPage() {
                                   <Icon.PiMapPinBold size={11} /> {shippingZone}
                                 </p>
                               )}
-                              <p className="flex items-center gap-1">
-                                <Icon.PiCalendarBold size={11} /> Est. {shippingRate.deliveryDaysMin}–{shippingRate.deliveryDaysMax} business days
-                              </p>
+                              {tenantDeliveryEstimate && (
+                                <p className="flex items-center gap-1">
+                                  <Icon.PiCalendarBold size={11} /> {tenantDeliveryEstimate}
+                                </p>
+                              )}
                               <p className="flex items-center gap-1">
                                 <Icon.PiInfoBold size={11} /> Base rate — bulk/carton orders may vary
                               </p>

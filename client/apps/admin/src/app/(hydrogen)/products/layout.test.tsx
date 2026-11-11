@@ -3,6 +3,29 @@ import React from 'react';
 import { render, screen, cleanup } from '@testing-library/react';
 import { it, expect, vi, afterEach } from 'vitest';
 import ProductsLayout from './layout';
+import ProductsPage from './page';
+import PendingProductsPage from './pending/page';
+import CreateProductPage from './create/page';
+import ProductDetailsPage from './[slug]/page';
+import EditProductPage from './[slug]/edit/page';
+
+vi.mock('@/config/site.config', () => ({ metaObject: () => ({}) }));
+
+vi.mock('@/app/shared/ecommerce/product/product-list/table', () => ({
+  default: () => <div>product table</div>,
+}));
+vi.mock('@/app/shared/ecommerce/product/pending-queue', () => ({
+  PendingQueueView: () => <div>approval queue</div>,
+}));
+vi.mock('@/app/shared/ecommerce/product/create-edit', () => ({
+  default: () => <div>product editor</div>,
+}));
+vi.mock('@/app/shared/ecommerce/product/product-details', () => ({
+  default: () => <div>product details content</div>,
+}));
+vi.mock('@/context/TenantContext', () => ({
+  useTenant: () => ({ tenant: null }),
+}));
 
 vi.mock('@/layouts/hydrogen/app-launcher', () => ({
   LauncherButton: () => <button aria-label="Open apps" />,
@@ -19,6 +42,20 @@ vi.mock('next-auth/react', () => ({
 }));
 
 afterEach(cleanup);
+
+it.each([
+  ['list', () => <ProductsPage />],
+  ['pending', () => <PendingProductsPage />],
+  ['create', () => <CreateProductPage />],
+  ['detail', () => <ProductDetailsPage />],
+  ['edit', () => EditProductPage({ params: Promise.resolve({ slug: 'tomatin' }) })],
+])('renders one module header on the products %s page', async (_, page) => {
+  mockRole.mockReturnValue('super_admin');
+  render(<ProductsLayout>{await page()}</ProductsLayout>);
+
+  expect(screen.getAllByRole('button', { name: 'Open apps' })).toHaveLength(1);
+  expect(screen.getByRole('link', { name: 'Pending Approvals' })).toBeTruthy();
+});
 
 it('renders POS-style module chrome with the super-admin queue tab', () => {
   mockRole.mockReturnValue('super_admin');

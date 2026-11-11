@@ -1,3 +1,4 @@
+import { DELIVERY_COPY, NATIONWIDE_DELIVERY_PROMISE } from '@/lib/deliveryCopy';
 import * as Icon from 'react-icons/pi';
 
 type IconComp = React.ComponentType<{ size?: number; className?: string }>;
@@ -23,13 +24,13 @@ export const VALUES: ValueData[] = [
   {
     icon: Icon.PiTruckBold,
     title: 'Fast, Reliable Delivery',
-    body: 'Same-day delivery in Abuja and the FCT, with nationwide delivery through trusted logistics partners. Exact timing and fees are shown at checkout.',
+    body: NATIONWIDE_DELIVERY_PROMISE,
     color: 'bg-blue-50 text-blue-700',
   },
   {
     icon: Icon.PiHandshakeBold,
     title: 'Vendor Partnership',
-    body: 'We empower local wine merchants, importers, and distributors by giving them a digital storefront and access to a growing community of customers across the FCT and beyond.',
+    body: 'We empower local wine merchants, importers, and distributors by giving them a digital storefront and access to customers across Nigeria.',
     color: 'bg-amber-50 text-amber-700',
   },
   {
@@ -72,7 +73,7 @@ export const FAQ_SCHEMA = {
       name: "How fast is delivery in Nigeria?",
       acceptedAnswer: {
         "@type": "Answer",
-        text: "We offer same-day delivery in Abuja and delivery to neighbouring states. We partner with trusted logistics providers for safe and timely delivery, with new areas added regularly.",
+        text: DELIVERY_COPY.timing,
       },
     },
     {

@@ -1,7 +1,8 @@
 # Pricing — DrinksHarbour for beverage businesses
 
-DrinksHarbour is an online beverage marketplace based in Abuja, Nigeria
-(https://www.drinksharbour.com). Shoppers buy drinks on the marketplace;
+DrinksHarbour is a Nigeria-based online beverage marketplace
+(https://www.drinksharbour.com) with nationwide delivery. Beverage businesses
+across Nigeria can apply to sell. Shoppers buy drinks on the marketplace;
 beverage businesses (shops, bars, distributors, venues) pay a monthly
 subscription for a branded storefront and inventory/order management tools.
 

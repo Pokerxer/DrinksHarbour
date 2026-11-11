@@ -1,7 +1,6 @@
 import Link from 'next/link';
 import { routes } from '@/config/routes';
 import ProductDetails from '@/app/shared/ecommerce/product/product-details';
-import EcommercePageHeader from '@/app/shared/ecommerce/ecommerce-page-header';
 import { metaObject } from '@/config/site.config';
 
 export const metadata = {
@@ -11,7 +10,6 @@ export const metadata = {
 export default function ProductDetailsPage() {
   return (
     <>
-      <EcommercePageHeader hideHero />
       <div className="mt-4">
         <nav aria-label="Breadcrumb" className="mb-4 text-sm text-gray-600">
           <Link

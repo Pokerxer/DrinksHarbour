@@ -1,3 +1,4 @@
+import { NATIONWIDE_DELIVERY_PROMISE } from '@/lib/deliveryCopy';
 import type { Metadata } from "next";
 import SeoContextBlock from '@/components/SEO/SeoContextBlock';
 
@@ -7,7 +8,7 @@ const SITE_NAME = "DrinksHarbour";
 export const metadata: Metadata = {
   title: { absolute: "About Our Beverage Marketplace | DrinksHarbour" },
   description:
-    "Meet DrinksHarbour, the beverage marketplace founded in Abuja. Discover our story, our approach to authentic drinks and how we serve customers across Nigeria.",
+    "Meet DrinksHarbour, a Nigerian online beverage marketplace delivering nationwide and growing a network of verified sellers across the country.",
   robots: { index: true, follow: true },
   alternates: {
     canonical: `${BASE_URL}/about`,
@@ -19,7 +20,7 @@ export const metadata: Metadata = {
     siteName: SITE_NAME,
     title: "About DrinksHarbour | Nigeria's Premier Beverage Marketplace",
     description:
-      "Discover DrinksHarbour — Nigeria's trusted online marketplace for authentic wines, spirits, beers and non-alcoholic drinks. Shop 800+ products, enjoy same-day delivery in Abuja.",
+      `Discover DrinksHarbour, an online marketplace for authentic drinks. ${NATIONWIDE_DELIVERY_PROMISE}`,
     images: [{ url: `${BASE_URL}/og-default.jpg`, width: 1200, height: 630, alt: "DrinksHarbour — Premium Beverage Marketplace" }],
     locale: "en_NG",
   },
@@ -53,7 +54,7 @@ export default function AboutLayout({ children }: { children: React.ReactNode })
         heading="About DrinksHarbour, Nigeria's online beverage marketplace"
         paragraphs={[
           'DrinksHarbour is an online marketplace for authentic wines, spirits, beers and non-alcoholic drinks in Nigeria.',
-          'Customers can discover brands, compare bottles and buy drinks online with delivery from Abuja and across the country.',
+          'Customers can discover brands, compare bottles and buy drinks online for delivery across all 36 states and the FCT.',
         ]}
         links={[
           { href: '/shop', label: 'Buy drinks online' },

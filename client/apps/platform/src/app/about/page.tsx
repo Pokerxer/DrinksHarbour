@@ -51,8 +51,8 @@ export default function AboutPage() {
             </FadeIn>
             <FadeIn delay={0.2}>
               <p className="text-gray-300 text-base sm:text-lg max-w-2xl mx-auto leading-relaxed mb-8">
-                DrinksHarbour connects discerning Nigerians with authentic, premium beverages from
-                verified vendors across the FCT and beyond — delivered fast and priced fairly.
+                DrinksHarbour is a Nigerian online beverage marketplace. Shop authentic drinks from verified sellers
+                for delivery to all 36 states and the FCT.
               </p>
             </FadeIn>
             <FadeIn delay={0.3}>
@@ -185,7 +185,7 @@ export default function AboutPage() {
             </div>
             <h2 className="text-2xl font-black text-gray-900 mb-3">Ready to explore?</h2>
             <p className="text-gray-500 text-sm max-w-md mx-auto mb-6">
-              Browse hundreds of authentic beverages, compare prices across vendors, and get fast delivery across the FCT and beyond.
+              Browse hundreds of authentic beverages, compare prices across vendors, and order for delivery anywhere in Nigeria.
             </p>
             <div className="flex flex-wrap items-center justify-center gap-3">
               <Link

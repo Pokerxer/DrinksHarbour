@@ -1,17 +1,21 @@
+import { NATIONWIDE_DELIVERY_PROMISE } from '@/lib/deliveryCopy';
+import { jsonLdHtml } from '@/lib/jsonld';
+import { publicSiteOrigin } from '@/lib/publicSiteOrigin';
 import { withSocialMetadata } from '@/lib/socialMetadata';
 import type { Metadata } from "next";
 import SeoContextBlock from '@/components/SEO/SeoContextBlock';
 
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://www.drinksharbour.com";
+const BASE_URL = publicSiteOrigin();
+const TITLE = "Drinks Delivery Across Nigeria";
+const DESCRIPTION = `${NATIONWIDE_DELIVERY_PROMISE} See delivery zones, fees and eligibility.`;
 
 export const metadata: Metadata = withSocialMetadata({
-  title: "Shipping Information",
-  description:
-    "Delivery areas, shipping rates, and estimated times for DrinksHarbour orders across Nigeria. Fast, reliable beverage delivery.",
+  title: TITLE,
+  description: DESCRIPTION,
   openGraph: {
     url: `${BASE_URL}/shipping-info`,
-    title: "Shipping Information | DrinksHarbour",
-    description: "Delivery areas, shipping rates, and estimated delivery times across Nigeria.",
+    title: `${TITLE} | DrinksHarbour`,
+    description: DESCRIPTION,
   },
   alternates: { canonical: `${BASE_URL}/shipping-info` },
 });
@@ -19,14 +23,15 @@ export const metadata: Metadata = withSocialMetadata({
 const jsonLd = {
   "@context": "https://schema.org",
   "@type": "WebPage",
-  name: "Shipping Information",
-  description: "Delivery areas, shipping rates, and estimated delivery times for DrinksHarbour orders across Nigeria.",
+  name: TITLE,
+  description: DESCRIPTION,
+  inLanguage: "en-NG",
   url: `${BASE_URL}/shipping-info`,
   breadcrumb: {
     "@type": "BreadcrumbList",
     itemListElement: [
       { "@type": "ListItem", position: 1, name: "Home", item: BASE_URL },
-      { "@type": "ListItem", position: 2, name: "Shipping Information", item: `${BASE_URL}/shipping-info` },
+      { "@type": "ListItem", position: 2, name: TITLE, item: `${BASE_URL}/shipping-info` },
     ],
   },
 };
@@ -34,7 +39,7 @@ const jsonLd = {
 export default function ShippingInfoLayout({ children }: { children: React.ReactNode }) {
   return (
     <>
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdHtml(jsonLd) }} />
       {children}
       <SeoContextBlock
         heading="Drinks delivery across Nigeria"

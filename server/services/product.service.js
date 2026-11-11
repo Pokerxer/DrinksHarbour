@@ -5433,7 +5433,7 @@ const searchProducts = async (searchParams = {}) => {
 
 const CARD_TOP_LEVEL = [
   '_id', 'id', 'sku', 'name', 'slug', 'shortDescription',
-  'abv', 'volumeMl', 'isAlcoholic', 'originCountry', 'region', 'type',
+  'abv', 'volumeMl', 'isAlcoholic', 'originCountry', 'region', 'type', 'subType',
   'badge', 'availability', 'status', 'isFeatured', 'isGiftPackaging',
   'averageRating', 'reviewCount', 'totalSold', 'tenantCount',
   // `pricingInfo` is deliberately absent: it restates priceRange/hasDiscounts
@@ -5453,7 +5453,7 @@ const pick = (obj, keys) => {
 // media manager. A card renders a src and an alt.
 const cardImage = (img) => (img ? pick(img, ['url', 'alt']) : img);
 
-const cardTaxonomy = (t) => (t ? pick(t, ['_id', 'name', 'slug', 'type']) : t);
+const cardTaxonomy = (t) => (t ? pick(t, ['_id', 'name', 'slug', 'type', 'subType']) : t);
 
 // What a shopper is allowed to see of a size's price. The full pricing object
 // also carries costPrice, tenantPrice, platformCostPrice, platformMargin and
@@ -10377,7 +10377,7 @@ const getProductBySlug = async (slug, { shoppingLocation = null, tenantId = null
   const product = await Product.findOne({ slug, ...SELLABLE_PRODUCT_MATCH })
     .populate('brand', 'name slug logo description website countryOfOrigin verified')
     .populate('category', 'name slug type description icon')
-    .populate('subCategory', 'name slug subType description')
+    .populate('subCategory', 'name slug type subType description')
     .populate('tags', 'name slug type color description')
     .populate('flavors', 'name value color description')
     .lean();
@@ -10426,7 +10426,7 @@ const getProductBySlug = async (slug, { shoppingLocation = null, tenantId = null
         availability: { $in: [...SELLABLE_SIZE_MATCH.availability.$in, 'out_of_stock'] },
       },
       select:
-        'size displayName colorName optionName image imageScope sellingPrice costPrice wholesalePrice unitsPerPack sellingPriceMarkupOverridePct commissionPriceOverride packCommissionPriceOverride platformMarkupOverridePct packPlatformMarkupOverridePct discountedPrice compareAtPrice stock availableStock availability currency discount sku isDefault volumeMl',
+        'size displayName colorName optionName image imageScope sellingPrice costPrice wholesalePrice unitsPerPack sellingPriceMarkupOverridePct commissionPriceOverride packCommissionPriceOverride platformMarkupOverridePct packPlatformMarkupOverridePct discountedPrice compareAtPrice stock availableStock availability currency discount sku isDefault volumeMl minOrderQuantity maxOrderQuantity',
     })
     .select(
       'tenant sku imagesOverride costPrice baseSellingPrice currency discount discountType discountedPrice discountStart discountEnd sizes status totalSold totalRevenue isFeaturedByTenant isOnSale salePrice saleStartDate saleEndDate saleType saleDiscountValue'
@@ -10624,6 +10624,8 @@ const getProductBySlug = async (slug, { shoppingLocation = null, tenantId = null
         imageScope: size.imageScope,
         image: size.image?.url ? { url: size.image.url, alt: size.image.alt } : undefined,
         volumeMl: size.volumeMl,
+        minOrderQuantity: size.minOrderQuantity ?? 1,
+        maxOrderQuantity: size.maxOrderQuantity,
         sku: size.sku,
         isDefault: size.isDefault,
 
@@ -10881,6 +10883,9 @@ const getProductBySlug = async (slug, { shoppingLocation = null, tenantId = null
     producer: product.producer,
     vintage: product.vintage,
     age: product.age,
+    ageStatement: product.ageStatement,
+    caskType: product.caskType,
+    style: product.style,
 
     // ─── Relations ─────────────────────────────────────────────────────────
     brand: product.brand
@@ -10910,6 +10915,7 @@ const getProductBySlug = async (slug, { shoppingLocation = null, tenantId = null
         _id: product.subCategory._id,
         name: product.subCategory.name,
         slug: product.subCategory.slug,
+        type: product.subCategory.type,
         subType: product.subCategory.subType,
         description: product.subCategory.description,
       }

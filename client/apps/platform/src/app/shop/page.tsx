@@ -1483,7 +1483,7 @@ async function buildShopMetadata(params: Record<string, string>): Promise<Metada
     const brandLabel = ctx.brandLabel ?? toTitleCase(brand);
     const subLabel   = ctx.sub?.label ?? toTitleCase(subcategory);
     const title      = `Buy ${brandLabel} ${subLabel} Online`;
-    const description = `Shop authentic ${brandLabel} ${subLabel.toLowerCase()} in Nigeria. Competitive prices, fast delivery from Abuja to all 36 states on DrinksHarbour.`;
+    const description = `Shop authentic ${brandLabel} ${subLabel.toLowerCase()} in Nigeria. Competitive prices, fast delivery across Nigeria on DrinksHarbour.`;
     const url        = `${BASE_URL}/shop?brand=${encodeURIComponent(brand)}&subcategory=${encodeURIComponent(subcategory)}`;
     const subKw      = ctx.sub?.keywords?.slice(0, 6) ?? [`buy ${subLabel.toLowerCase()} Nigeria`];
     return {
@@ -1507,7 +1507,7 @@ async function buildShopMetadata(params: Record<string, string>): Promise<Metada
     const title    = buildPageTitle(sub?.titleOverride ?? `Buy ${subLabel} Online Nigeria`, SITE_NAME);
     const description = sub?.description
       ? `${sub.description.replace(/\.\s*$/, '')}. Fast delivery across all 36 states.`
-      : `Shop premium ${subLabel.toLowerCase()} online in Nigeria. Authentic products with fast delivery from Abuja.`;
+      : `Shop premium ${subLabel.toLowerCase()} online in Nigeria. Authentic products with fast delivery across Nigeria.`;
     // Canonicalize to the combined category+subcategory form when the parent is
     // known, so this standalone URL doesn't compete with the same page reached
     // via ?category=..&subcategory=.. (the form used in the sitemap & blog links).
@@ -1533,7 +1533,7 @@ async function buildShopMetadata(params: Record<string, string>): Promise<Metada
     const brandLabel = ctx.brandLabel ?? toTitleCase(brand);
     const catLabel   = ctx.cat?.label ?? toTitleCase(category);
     const title      = `Buy ${brandLabel} ${catLabel} Online`;
-    const description = `Shop authentic ${brandLabel} ${catLabel.toLowerCase()} in Nigeria. Fast delivery from Abuja to all 36 states on DrinksHarbour.`;
+    const description = `Shop authentic ${brandLabel} ${catLabel.toLowerCase()} in Nigeria. Fast delivery across Nigeria on DrinksHarbour.`;
     const url = `${BASE_URL}/shop?brand=${encodeURIComponent(brand)}&category=${encodeURIComponent(category)}`;
     return {
       title: { absolute: `${title} | ${SITE_NAME}` },
@@ -1552,7 +1552,7 @@ async function buildShopMetadata(params: Record<string, string>): Promise<Metada
     const title       = db?.metaTitle || `Buy ${brandLabel} Online in Nigeria`;
     const description = db?.metaDescription
       || db?.shortDescription
-      || `Shop authentic ${brandLabel} products in Nigeria. Competitive prices, fast delivery from Abuja to all 36 states on DrinksHarbour.`;
+      || `Shop authentic ${brandLabel} products in Nigeria. Competitive prices, fast delivery across Nigeria on DrinksHarbour.`;
     // Canonical, og:url and the CollectionPage @id/url all move to the brand
     // entity page together — see brandEntityUrl. A mixed signal would be worse
     // than leaving this page self-canonical.
@@ -1574,7 +1574,7 @@ async function buildShopMetadata(params: Record<string, string>): Promise<Metada
     const originAdj  = originInfo?.title ?? toTitleCase(origin);
     const pageTitle  = catLabel ? `Buy ${originAdj} ${catLabel} Online` : `Buy ${originAdj} Drinks Online`;
     const description = originInfo?.description
-      ? `${originInfo.description}. Fast delivery from Abuja to all 36 states.`
+      ? `${originInfo.description}. Fast delivery across Nigeria.`
       : `Shop premium ${toTitleCase(origin)} drinks in Nigeria with fast nationwide delivery.`;
     const originUrl  = `${BASE_URL}/shop?origin=${encodeURIComponent(origin)}${category ? `&category=${encodeURIComponent(category)}` : ''}`;
     const baseKw     = originInfo?.keywords ?? [`buy ${originAdj.toLowerCase()} drinks Nigeria`, `${originAdj.toLowerCase()} spirits Nigeria`];
@@ -1599,7 +1599,7 @@ async function buildShopMetadata(params: Record<string, string>): Promise<Metada
     const flavorLabel = flavorInfo?.title ?? toTitleCase(flavor);
     const pageTitle   = catLabel ? `${flavorLabel} ${catLabel}` : `${flavorLabel} Drinks`;
     const description = flavorInfo?.description
-      ? `${flavorInfo.description}. Fast delivery from Abuja nationwide.`
+      ? `${flavorInfo.description}. Fast delivery across Nigeria.`
       : `Shop ${toTitleCase(flavor)}-flavoured drinks in Nigeria with fast delivery.`;
     const flavorUrl  = `${BASE_URL}/shop?flavor=${encodeURIComponent(flavor)}${category ? `&category=${encodeURIComponent(category)}` : ''}`;
     const baseKw     = flavorInfo?.keywords ?? [`${flavorLabel.toLowerCase()} drinks Nigeria`, `shop ${flavorLabel.toLowerCase()} spirits Nigeria`];

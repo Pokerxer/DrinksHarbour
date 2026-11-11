@@ -37,6 +37,7 @@ import ClientOverlays from "@/components/Layout/ClientOverlays";
 import CommerceModals from "@/components/Layout/CommerceModals";
 import ExtensionNoiseGuard from "@/components/Layout/ExtensionNoiseGuard";
 import CommerceCoreInit from "@/components/Layout/CommerceCoreInit";
+import { NATIONWIDE_DELIVERY_PROMISE } from '@/lib/deliveryCopy';
 import { publicSiteOrigin } from '@/lib/publicSiteOrigin';
 
 
@@ -127,12 +128,7 @@ export const metadata: Metadata = {
   other: {
     "p:domain_verify": "3d1678895d2b97b7042bdd2fc97753a6",
     ...(ADSENSE_CLIENT_ID ? { "google-adsense-account": ADSENSE_CLIENT_ID } : {}),
-    // Legacy geo meta — ignored by Google but still read by Bing and some
-    // crawlers. FCT = ISO 3166-2:NG code NG-FC; coords are the Maitama store.
-    "geo.region": "NG-FC",
-    "geo.placename": "Abuja",
-    "geo.position": "9.0782726;7.5005914",
-    ICBM: "9.0782726, 7.5005914",
+    "geo.region": "NG",
   },
 };
 
@@ -145,7 +141,7 @@ const localBusinessJsonLd = {
   parentOrganization: { "@id": `${BASE_URL}/#organization` },
   logo: `${BASE_URL}/logo.png`,
   image: `${BASE_URL}/og-default.jpg`,
-  description: "Nigeria's premier online premium beverages store — whisky, wine, spirits, beer and non-alcoholic drinks delivered to Lagos, Abuja, Port Harcourt and nationwide.",
+  description: `Nigeria-based online beverage marketplace. ${NATIONWIDE_DELIVERY_PROMISE}`,
   address: {
     "@type": "PostalAddress",
     streetAddress: "Wyn City, 39 Gana Street, Maitama",
@@ -160,8 +156,6 @@ const localBusinessJsonLd = {
   email: "hello@drinksharbour.com",
   areaServed: [
     { "@type": "City", name: "Abuja" },
-    { "@type": "City", name: "Lagos" },
-    { "@type": "City", name: "Port Harcourt" },
     { "@type": "Country", name: "Nigeria" },
   ],
   sameAs: [

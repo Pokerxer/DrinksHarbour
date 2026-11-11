@@ -11,6 +11,7 @@ import {
   WorkspaceStatus,
 } from '../market-foundation/workspace';
 import MerchantRefundPanel from './merchant-refund-panel';
+import SalesSummary from './sales-summary';
 import { useMerchantQueue } from './use-merchant-queue';
 import QueueControls from './queue-controls';
 import QuantityRefundPanel from './quantity-refund-panel';
@@ -112,6 +113,7 @@ function Queue({ token, platform }: { token: string; platform: boolean }) {
           lines.
         </p>
       </header>
+      <SalesSummary token={token} />
       <WorkspaceStatus error={error || readError} notice={notice} />
       {readError && !error && (
         <div className="flex flex-wrap items-center gap-3">

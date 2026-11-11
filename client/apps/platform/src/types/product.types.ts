@@ -28,11 +28,12 @@ export interface ProductType {
 
   // Category & Brand
   category?: { _id?: string; name: string; type: string; slug?: string };
-  subCategory?: string;
+  subCategory?: string | { _id?: string; slug?: string; name?: string; type?: string; subType?: string } | null;
   brand?: { _id?: string; name: string; slug?: string; logo?: string };
 
   // Beverage Specific Attributes
   isAlcoholic?: boolean;
+  isGiftPackaging?: boolean;
   abv?: number;
   // Alcohol by Volume
   volumeMl?: number;
@@ -47,6 +48,7 @@ export interface ProductType {
   distilleryName?: string;
   breweryName?: string;
   vintage?: number;
+  age?: number;
   ageStatement?: string;
   caskType?: string;
   style?: string;

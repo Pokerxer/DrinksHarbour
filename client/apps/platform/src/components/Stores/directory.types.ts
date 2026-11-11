@@ -8,6 +8,12 @@ export interface Store {
   state?: string;
   plan?: string;
   productCount?: number;
+  /** Denormalised seller-rating aggregate (approved customer reviews only). */
+  ratingAvg?: number;
+  ratingCount?: number;
+  /** Denormalised gross marketplace sales (posted sales_revenue journals, source 'marketplace'). */
+  marketplaceSalesTotal?: number;
+  marketplaceSalesOrders?: number;
   description?: string;
 }
 

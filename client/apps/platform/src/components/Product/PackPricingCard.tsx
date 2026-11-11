@@ -35,14 +35,15 @@ const PackPricingCard: React.FC<PackPricingCardProps> = ({
   onQuickAddPack,
   compact = false,
 }) => {
-  const normalTotal = normalPrice * packThreshold;
-  const packTotal = packUnitPrice * packThreshold;
+  const units = packRateActive ? quantity : packThreshold;
+  const normalTotal = normalPrice * units;
+  const packTotal = packUnitPrice * units;
   const totalSavings = normalTotal - packTotal;
   const progressPct = Math.min(100, Math.round((quantity / packThreshold) * 100));
 
   return (
     <div
-      className={`relative rounded-2xl overflow-hidden transition-all duration-300 ${
+      className={`relative rounded-2xl overflow-hidden motion-safe:transition-all motion-safe:duration-300 ${
         packRateActive
           ? 'ring-2 ring-amber-400 shadow-lg shadow-amber-200/40'
           : 'ring-1 ring-amber-200 shadow-sm'
@@ -50,7 +51,7 @@ const PackPricingCard: React.FC<PackPricingCardProps> = ({
     >
       {/* Gradient background */}
       <div
-        className={`absolute inset-0 transition-opacity duration-300 ${
+        className={`absolute inset-0 motion-safe:transition-opacity motion-safe:duration-300 ${
           packRateActive
             ? 'bg-gradient-to-br from-amber-50 via-orange-50 to-amber-100'
             : 'bg-gradient-to-br from-amber-50/80 via-white to-orange-50/60'
@@ -62,7 +63,7 @@ const PackPricingCard: React.FC<PackPricingCardProps> = ({
         <div className="flex items-start justify-between gap-3 px-4 pt-4 pb-3">
           <div className="flex min-w-0 items-center gap-2.5">
             <div
-              className={`w-9 h-9 shrink-0 rounded-xl flex items-center justify-center transition-colors ${
+              className={`w-9 h-9 shrink-0 rounded-xl flex items-center justify-center motion-safe:transition-colors ${
                 packRateActive
                   ? 'bg-amber-500 text-white shadow-md shadow-amber-300/50'
                   : 'bg-amber-100 text-amber-600'
@@ -76,9 +77,9 @@ const PackPricingCard: React.FC<PackPricingCardProps> = ({
                   {packRateActive ? 'Pack Rate Active' : 'Bulk Pack Offer'}
                 </span>
                 {packRateActive && (
-                  <span className="flex items-center gap-0.5 text-[10px] font-bold text-amber-600 animate-pulse">
+                  <span className="flex items-center gap-0.5 text-[10px] font-bold text-amber-700">
                     <Icon.PiCheckCircleFill size={11} />
-                    LIVE
+                    Applied
                   </span>
                 )}
               </div>
@@ -91,7 +92,7 @@ const PackPricingCard: React.FC<PackPricingCardProps> = ({
           </div>
           {packSavingsPct != null && (
             <div
-              className={`flex flex-col items-center justify-center px-3 py-1.5 rounded-xl transition-colors ${
+              className={`flex flex-col items-center justify-center px-3 py-1.5 rounded-xl motion-safe:transition-colors ${
                 packRateActive
                   ? 'bg-amber-500 text-white'
                   : 'bg-amber-200/80 text-amber-800'
@@ -115,7 +116,7 @@ const PackPricingCard: React.FC<PackPricingCardProps> = ({
           <div className="grid grid-cols-2 gap-2">
             {/* Normal price */}
             <div
-              className={`rounded-xl px-3 py-2.5 text-center transition-all ${
+              className={`rounded-xl px-3 py-2.5 text-center motion-safe:transition-all ${
                 packRateActive
                   ? 'bg-white/60 opacity-60'
                   : 'bg-white/80 ring-1 ring-gray-200'
@@ -131,9 +132,9 @@ const PackPricingCard: React.FC<PackPricingCardProps> = ({
             </div>
             {/* Pack price */}
             <div
-              className={`rounded-xl px-3 py-2.5 text-center transition-all ring-1 ${
+              className={`rounded-xl px-3 py-2.5 text-center motion-safe:transition-all ring-1 ${
                 packRateActive
-                  ? 'bg-amber-100 ring-amber-300 scale-105'
+                  ? 'bg-amber-100 ring-amber-300'
                   : 'bg-amber-50 ring-amber-200'
               }`}
             >
@@ -151,7 +152,7 @@ const PackPricingCard: React.FC<PackPricingCardProps> = ({
         {/* Savings summary */}
         <div className="mx-4 mb-3 rounded-lg bg-amber-100/60 px-3 py-2 flex flex-wrap items-center justify-between gap-2 text-[11px]">
           <span className="text-amber-700 font-medium">
-            Pack total · {packThreshold} units:
+            Pack total · {units} units
           </span>
           <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
             <span className="text-gray-400 line-through">
@@ -178,21 +179,16 @@ const PackPricingCard: React.FC<PackPricingCardProps> = ({
               {onQuickAddPack && <button
                 type="button"
                 onClick={onQuickAddPack}
-                className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500 text-white text-[10px] font-bold hover:bg-amber-600 transition-colors"
+                className="flex min-h-11 items-center gap-1 rounded-lg bg-amber-800 px-3 text-xs font-bold text-white hover:bg-amber-900 motion-safe:transition-colors"
               >
                 <Icon.PiPlus size={9} />
                 Select {packThreshold} units
               </button>}
             </div>
-            <div className="h-2.5 rounded-full bg-amber-200/50 overflow-hidden">
-              <div
-                className="h-full rounded-full bg-gradient-to-r from-amber-400 via-orange-400 to-orange-500 transition-all duration-500 ease-out relative overflow-hidden"
-                style={{ width: `${progressPct}%` }}
-              >
-                {progressPct > 0 && progressPct < 100 && (
-                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-pulse" />
-                )}
-              </div>
+            <div role="progressbar" aria-label="Progress toward pack pricing" aria-valuenow={progressPct}
+              className="h-2 rounded-full bg-amber-200/50 overflow-hidden">
+              <div className="h-full rounded-full bg-amber-600 motion-safe:transition-[width] motion-safe:duration-300"
+                style={{ width: `${progressPct}%` }} />
             </div>
           </div>
         )}

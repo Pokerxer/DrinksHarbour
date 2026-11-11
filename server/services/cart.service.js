@@ -431,7 +431,11 @@ const getCart = async (userId) => {
   const cart = await Cart.findOne({ user: userId })
     .populate({
       path: 'items.product',
-      select: 'name slug images type isAlcoholic abv status platformMarkup platformDiscount',
+      select: 'name slug images type subType category subCategory isAlcoholic abv status platformMarkup platformDiscount',
+      populate: [
+        { path: 'category', select: 'name slug type' },
+        { path: 'subCategory', select: 'name slug type subType' },
+      ],
     })
     .populate({
       // The sale fields are REQUIRED here: applySubProductSale below reads them,

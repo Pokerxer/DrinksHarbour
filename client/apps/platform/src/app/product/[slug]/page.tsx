@@ -260,8 +260,10 @@ function formatType(type: string): string {
 
 export default async function ProductPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ slug: string }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { slug } = await params;
   const tenantHeaders = await buildTenantHeaders();
@@ -270,6 +272,9 @@ export default async function ProductPage({
   if (!fetched) notFound();
 
   const { product: p, related } = fetched;
+  const { seller, size } = await searchParams ?? {};
+  const preferredOffer = typeof seller === 'string' && typeof size === 'string' && seller.length <= 64 && size.length <= 64
+    ? { seller, size } : undefined;
   const schemas = buildSchemas(p, slug);
 
   return (
@@ -299,6 +304,7 @@ export default async function ProductPage({
         slug={slug}
         initialProduct={p}
         initialRelated={related}
+        preferredOffer={preferredOffer}
         initialBannerData={banners}
         /** Server-resolved surface flag so the client refetch (location
          * revision change) keeps the same backend surface the SSeR fetch
