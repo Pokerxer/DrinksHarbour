@@ -3,13 +3,22 @@ const test = require('node:test');
 const assert = require('node:assert');
 const { buildCartItemId, mergeCartLines } = require('../helpers/cart.helpers');
 
+// Identity scheme (2026-11-13): `productId-size-vendor` plus a colour slot
+// ONLY when the colour is truthy. The platform is a beverage marketplace —
+// drinks have no colour dimension (the Size row is the variant), so their ids
+// are colourless; fashion tenant lines keep per-colour ids. The always-present
+// `-default` tail (plus clients synthesizing "colorName · optionName" labels)
+// drifted identical offers into duplicate lines — the 2026-11-13 report.
 test('buildCartItemId matches the client generateCartItemId scheme', () => {
-  assert.strictEqual(buildCartItemId('p1', '70cl', 'Wyn City', ''), 'p1-70cl-Wyn City-default');
-  assert.strictEqual(buildCartItemId('p1', '', '', ''), 'p1-default-default-default');
+  // Beverage: no colour → no colour slot.
+  assert.strictEqual(buildCartItemId('p1', '70cl', 'Wyn City', ''), 'p1-70cl-Wyn City');
+  assert.strictEqual(buildCartItemId('p1', '', '', ''), 'p1-default-default');
+  // Fashion: a real colour keeps its slot and separates variants.
+  assert.strictEqual(buildCartItemId('p1', 'M', 'Wyn City', 'Emerald'), 'p1-M-Wyn City-Emerald');
 });
 
 test('buildCartItemId coerces null and undefined the same way as empty string', () => {
-  assert.strictEqual(buildCartItemId('p1', null, undefined, null), 'p1-default-default-default');
+  assert.strictEqual(buildCartItemId('p1', null, undefined, null), 'p1-default-default');
 });
 
 test('mergeCartLines keeps the higher quantity when a line exists on both sides', () => {
@@ -83,7 +92,8 @@ const pricing = () => ({ finalPrice: 128500, packUnitPrice: 122000, packThreshol
 
 test('buildCartLine produces a client-shaped line with the platform price', () => {
   const line = buildCartLine(populatedItem(), pricing());
-  assert.strictEqual(line.cartItemId, 'p1-70cl-Wyn City-default');
+  // Beverage size — no colourName → colourless id, no `-default` noise.
+  assert.strictEqual(line.cartItemId, 'p1-70cl-Wyn City');
   assert.strictEqual(line.name, 'Hennessy VSOP');
   assert.strictEqual(line.slug, 'hennessy-vsop-cognac');
   assert.strictEqual(line.price, 128500);
@@ -109,8 +119,11 @@ test('buildCartLine keeps selectedSize on the raw code and puts the human label 
     ...populatedItem(),
     size: { _id: 'sz1', size: 'apparel', sizeLabel: 'size M', displayName: 'M · Emerald', colorName: 'Emerald Green' },
   }, pricing());
-  // Identity agreement with the client's generateCartItemId: raw code.
-  assert.strictEqual(line.cartItemId, buildCartItemId('p1', 'apparel', 'Wyn City', ''));
+  // Identity agreement with the client's generateCartItemId: raw code, and
+  // the size's OWN colourName feeds the colour slot — two colour variants of
+  // the same garment must never share an id (they used to: the helper passed
+  // a literal '' here, so M/Emerald and M/Ruby merged on reload).
+  assert.strictEqual(line.cartItemId, buildCartItemId('p1', 'apparel', 'Wyn City', 'Emerald Green'));
   assert.strictEqual(line.selectedSize, 'apparel');
   // Display label + colour never bleed into the identity fields.
   assert.strictEqual(line.selectedSizeLabel, 'M · Emerald');

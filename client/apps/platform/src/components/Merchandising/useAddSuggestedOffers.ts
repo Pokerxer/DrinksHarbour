@@ -42,7 +42,7 @@ export function useAddSuggestedOffers() {
         // This offer identifies the exact size even when a seller has two
         // variants with the same display size. Cart pricing reads this listing.
         const selectedProduct = { ...product, price, availableAt: [{ ...seller, sizes: [size] }] };
-        addToCart(selectedProduct, size.size, [size.colorName, size.optionName].filter(Boolean).join(' · '),
+        addToCart(selectedProduct, size.size, size.colorName || '',
           seller.tenant.name, seller.tenant._id, 1, size._id, seller._id, size.displayName);
       }
       gtagEvent('merchandising_add', {

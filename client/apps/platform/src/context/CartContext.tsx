@@ -149,9 +149,23 @@ const LEGACY_STORAGE_KEY = 'drinksharbour_cart';
 const storageKeyFor = (userId: string | null): string =>
   `${STORAGE_PREFIX}:${userId || 'guest'}`;
 
-const generateCartItemId = (productId: string, size: string, vendor: string, color: string): string => {
-  return `${productId}-${size || 'default'}-${vendor || 'default'}-${color || 'default'}`;
-};
+/**
+ * Cart line identity: `productId-size-vendor`, plus a colour slot ONLY when
+ * the line genuinely carries a colour.
+ *
+ * The platform is a beverage marketplace — for drinks the Size row IS the
+ * variant and colour is display metadata, so their ids are colourless. The
+ * old always-present `-default` colour slot (plus call sites synthesizing
+ * "colorName · optionName" labels) drifted identical offers into duplicate
+ * lines — the 2026-11-13 cart duplication. Fashion tenant storefronts keep
+ * per-colour lines via the conditional slot.
+ *
+ * MUST stay byte-identical to buildCartItemId in server/helpers/cart.helpers.js.
+ */
+const generateCartItemId = (productId: string, size: string, vendor: string, color: string): string =>
+  color
+    ? `${productId}-${size || 'default'}-${vendor || 'default'}-${color}`
+    : `${productId}-${size || 'default'}-${vendor || 'default'}`;
 
 const getPackFromAvailableAt = (product: ProductType, vendorName: string, size: string): { packUnitPrice: number | null; packThreshold: number | null } => {
   const none = { packUnitPrice: null, packThreshold: null };

@@ -48,15 +48,34 @@ Server `addToCart` already dedupes DB lines on product+subproduct+size, and
 `mergeCart`'s union is followed by `syncCart` which re-dedupes — so the DB
 never stores drift-duplicates; the bug was purely in the client array.
 
+## Refinement (2026-11-13): colour leaves the identity for beverages
+
+The user's point: the platform is a beverage marketplace — drinks have no
+colour dimension. The Size row IS the variant. So the identity scheme became
+`productId-size-vendor` plus a colour slot ONLY when the colour is truthy:
+
+- Beverage adds are colourless (`p1-70cl-Wyn City`) — no more `-default`
+  noise, and no colour string can drift an id.
+- Fashion tenant storefronts keep per-colour ids (`p1-M-Wyn City-Emerald`).
+- Client call sites stopped synthesizing `colorName · optionName` labels
+  (Detail, merchandising suggested offers) — they pass `size.colorName || ''`
+  and the human label already lives in `selectedSizeLabel`.
+- Server `buildCartLine` now feeds the size's OWN `colorName` into the id —
+  previously it passed a literal `''`, so a fashion tenant's two colour
+  variants (M/Emerald, M/Ruby) shared one id and merged on reload. Same fix
+  in `buildCartItemId` keeps client/server byte parity.
+
+Existing carts carrying `-default` ids heal via the already-shipped
+offer-identity fallback and LOAD dedupe. Known legacy behaviour (unchanged):
+two size rows sharing one display size string merge under the string id.
+
 ## Tests
 
-- `src/context/cart-identity.test.tsx` (8 tests): drifted color / drifted
-  size label merge into one line and adopt the incoming id; different
-  sizeId / different subProductId / gift SKU still separate; legacy
-  no-id lines keep string behavior; polluted stored cart collapses on load;
-  clean payloads stay idempotent.
-- Reducer + `CartItem` exported from CartContext for tests.
-- `vitest.shop.config.ts` include list extended with `src/context/**` (the
-  test lives beside the code it tests).
-- Green: cart-identity 8/8, full shop suite 50/50, purchase-flow +
-  quickview-offer + wedding-chat node tests, `tsc --noEmit` clean.
+- `src/context/cart-identity.test.tsx` (10 tests): colorless beverage ids,
+  fashion colour slot + per-colour separation, drift-merge fallback,
+  separation guards, legacy lines, load collapse.
+- `server/__tests__/cart.helpers.test.js` updated for the scheme; the fashion
+  fixture now proves two colour variants get distinct ids.
+- Green: cart-identity 10/10, shop suite 52/52, purchase-flow/quickview/
+  wedding-chat node tests, server cart helpers + write-path 33/33,
+  `tsc --noEmit` clean.

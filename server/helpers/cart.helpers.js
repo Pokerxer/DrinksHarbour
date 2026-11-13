@@ -6,10 +6,15 @@
  * client/apps/platform/src/context/CartContext.tsx — if these drift, merged
  * lines duplicate instead of collapsing.
  *
- * `vendor` is the tenant NAME, not its id.
+ * `vendor` is the tenant NAME, not its id. The colour slot appears ONLY when
+ * the colour is truthy: the platform is a beverage marketplace (no colour
+ * dimension — the Size row is the variant), while fashion tenant lines keep
+ * per-colour ids.
  */
 const buildCartItemId = (productId, size, vendor, color) =>
-  `${productId}-${size || 'default'}-${vendor || 'default'}-${color || 'default'}`;
+  color
+    ? `${productId}-${size || 'default'}-${vendor || 'default'}-${color}`
+    : `${productId}-${size || 'default'}-${vendor || 'default'}`;
 
 /**
  * Turn a populated Cart.items[n] into the shape client/CartContext stores.
@@ -37,7 +42,7 @@ const buildCartLine = (item, pricing) => {
   const vendorName = tenant.name || '';
 
   return {
-    cartItemId: buildCartItemId(productId, idSizeLabel, vendorName, ''),
+    cartItemId: buildCartItemId(productId, idSizeLabel, vendorName, size.colorName || ''),
 
     // Product identity — the cart page reads _id/id, name, slug, images
     _id: productId,
