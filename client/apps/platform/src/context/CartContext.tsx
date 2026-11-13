@@ -17,9 +17,8 @@ import { resolveProductPrice } from "@/utils/product.utils";
 import { addToCartEvent, removeFromCartEvent, type GTagItem } from "@/lib/gtag";
 import { fireAddToCart, fireAllPixels } from "@/lib/pixels";
 
-interface CartItem extends ProductType {
-  cartItemId: string;
-  quantity: number;
+export interface CartItem extends ProductType {
+  cartItemId: string;  quantity: number;
   selectedSize: string;
   /** Human variant label (e.g. "M · Emerald", "256 GB") — raw channel codes
    *  like "apparel"/"electronics" go to selectedSize for price lookup keys. */
@@ -191,15 +190,19 @@ const getPriceFromAvailableAt = (product: ProductType, vendorName: string, size:
 
 const CartContext = createContext<CartContextProps | undefined>(undefined);
 
+// Exported for tests — the reducer is where duplicate-line bugs live.
+// (Function declarations are hoisted, so the export can precede the const.)
+export { cartReducer };
+
 const cartReducer = (state: CartState, action: CartAction): CartState => {
   switch (action.type) {
     case "ADD_TO_CART": {
       const { product, size, color, vendor, vendorId, quantity, sizeId, subProductId, sizeLabel } = action.payload;
       const cartItemId = generateCartItemId(product._id || product.id, size, vendor, color);
-      
-      const existingItem = state.cartArray.find(item => item.cartItemId === cartItemId);
+
       const qty = quantity || 1;
-      
+
+      const existingItem = state.cartArray.find(item => item.cartItemId === cartItemId);
       if (existingItem) {
         return {
           ...state,
@@ -210,7 +213,53 @@ const cartReducer = (state: CartState, action: CartAction): CartState => {
           ),
         };
       }
-      
+
+      // Offer-identity fallback. The legacy id string above is built from
+      // COSMETIC inputs that ~10 call sites construct differently (Product
+      // Detail and merchandising send the joined "colorName · optionName",
+      // cards send '', the server persists colorName only) — identical offers
+      // drifted into duplicate lines. The real identity of a purchasable line
+      // is the seller's SKU + size row; when both sides carry them, match on
+      // those. Gift packaging is its own SKU (own subProductId), so a
+      // packaging line can never collapse into a drink line.
+      const offerKey = (item: { selectedSubProductId?: string; selectedSizeId?: string }) =>
+        item.selectedSubProductId && item.selectedSizeId
+          ? `${item.selectedSubProductId}-${item.selectedSizeId}`
+          : null;
+      const incomingKey = sizeId && subProductId ? `${subProductId}-${sizeId}` : null;
+      const driftedItem = incomingKey
+        ? state.cartArray.find(item => offerKey(item) === incomingKey)
+        : undefined;
+      if (driftedItem) {
+        return {
+          ...state,
+          cartArray: state.cartArray.map(item =>
+            item === driftedItem
+              ? {
+                  // Adopt the incoming line wholesale — its id and cosmetic
+                  // strings are what THIS add path (and the next lookup on it)
+                  // will use — but keep the earlier line's product snapshot for
+                  // anything the incoming product object didn't carry.
+                  ...item,
+                  ...product,
+                  cartItemId,
+                  quantity: item.quantity + qty,
+                  selectedSize: size || item.selectedSize,
+                  selectedSizeLabel: sizeLabel || item.selectedSizeLabel,
+                  selectedColor: color || item.selectedColor,
+                  selectedVendor: vendor || item.selectedVendor,
+                  selectedVendorId: vendorId || item.selectedVendorId,
+                  selectedSizeId: sizeId || item.selectedSizeId,
+                  selectedSubProductId: subProductId || item.selectedSubProductId,
+                  price: getPriceFromAvailableAt(product as ProductType, vendor || '', size || '') || item.price,
+                  addedAt: Date.now(),
+                  ...getPackFromAvailableAt(product as ProductType, vendor || '', size || ''),
+                }
+              : item
+          ),
+        };
+      }
+
       const selectedSize = size || product.sizes?.[0]?.size || "";
       const selectedColor = color || product.variation?.[0]?.color || "";
       const selectedVendor = vendor || "";
@@ -293,16 +342,46 @@ const cartReducer = (state: CartState, action: CartAction): CartState => {
         ),
       };
     
-    case "LOAD_CART":
+    case "LOAD_CART": {
+      // Collapse drift-duplicates already stored by the old identity scheme:
+      // lines sharing an offer (selectedSubProductId+selectedSizeId) are ONE
+      // purchasable offer — sum their quantities, keep the first line (server
+      // lines arrive with freshly-computed pricing, so the earliest wins).
+      // Idempotent: a clean payload passes through unchanged.
+      const byOffer = new Map<string, number>();
+      const deduped: CartItem[] = [];
+      for (const item of action.payload) {
+        const offerKey =
+          item.selectedSubProductId && item.selectedSizeId
+            ? `${item.selectedSubProductId}-${item.selectedSizeId}`
+            : null;
+        if (!offerKey) {
+          deduped.push(item);
+          continue;
+        }
+        const seenAt = byOffer.get(offerKey);
+        if (seenAt === undefined) {
+          byOffer.set(offerKey, deduped.length);
+          deduped.push(item);
+        } else {
+          deduped[seenAt] = {
+            ...deduped[seenAt],
+            quantity: (deduped[seenAt].quantity || 1) + (item.quantity || 1),
+          };
+        }
+      }
+      const payload = deduped;
+
       // Skip if cart is already the same (compare by IDs and quantities)
-      const sameCart = state.cartArray.length === action.payload.length && 
-        state.cartArray.every((item, i) => 
-          item.cartItemId === action.payload[i].cartItemId && item.quantity === action.payload[i].quantity
+      const sameCart = state.cartArray.length === payload.length &&
+        state.cartArray.every((item, i) =>
+          item.cartItemId === payload[i].cartItemId && item.quantity === payload[i].quantity
         );
       if (sameCart) {
         return state;
       }
-      return { ...state, cartArray: action.payload };
+      return { ...state, cartArray: payload };
+    }
     
     case "CLEAR_CART":
       return { ...state, cartArray: [] };
