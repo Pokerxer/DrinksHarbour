@@ -9,6 +9,9 @@ import { routes } from '@/config/routes';
 import BuilderHeader from './builder-header';
 import BuilderCustomerBar from './builder-customer-bar';
 import BuilderReviewPanel from './builder-review-panel';
+import BuilderTotalsCard from './builder-totals-card';
+import BuilderLineTable from './builder-line-table';
+import useBuilderLines from './use-builder-lines';
 import DeliveryCard, { type DeliveryDraft } from './delivery-card';
 import { printOrderDocuments } from '@/utils/print/whatsapp-order-print';
 import {
@@ -44,7 +47,11 @@ export default function OrderBuilder() {
 
   const [customer, setCustomer] = useState<DraftShape['customer']>({ firstName: '', lastName: '', email: '', phone: '' });
   const [delivery, setDelivery] = useState<DeliveryDraft>({ address: '', lga: '', state: '', zipCode: '', country: 'Nigeria' });
-  const [lines, setLines] = useState<BuilderLine[]>([]);
+  // Lines are owned by useBuilderLines (line mutators + live server-priced
+  // preview). The draft below restores/saves through its setLines/lines.
+  const {
+    lines, setLines, addProductLine, addSection, addNote, remove, update, setQuantity, previewing,
+  } = useBuilderLines([]);
   const [shippingFee, setShippingFee] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [created, setCreated] = useState<{ orderId: string; orderNumber: string; totalAmount: number } | null>(null);
@@ -153,10 +160,13 @@ export default function OrderBuilder() {
       <div className="grid min-w-0 grid-cols-1 gap-4 2xl:grid-cols-[minmax(0,1fr)_288px]">
         <fieldset disabled={submitting} className="min-w-0 space-y-4">
           <BuilderCustomerBar value={customer} onChange={setCustomer} token={token} onStatus={setCustomerStatusText} />
-          {/* Lines card — placeholder card until Task 5 swaps in the line table */}
+          <BuilderLineTable lines={lines} previewing={previewing}
+            onAddProduct={() => addProductLine({})} onAddSection={addSection} onAddNote={addNote}
+            onOpenCatalog={() => setCatalogOpen(true)} onOpenScan={() => setScanOpen(true)}
+            onUpdate={update} onSetQuantity={setQuantity} onRemove={remove} />
+          {/* Totals under the lines table (SalesTotals placement), its own card. */}
           <div className="rounded-xl border border-gray-200 bg-white">
-            <div className="border-b border-gray-100 px-4 py-3 font-lexend text-sm font-bold text-gray-900">Order lines</div>
-            <div className="p-4 text-sm text-gray-400">Lines editor lands in the next task.</div>
+            <BuilderTotalsCard subtotal={subtotal} shippingFee={shippingFee} total={total} />
           </div>
           <DeliveryCard value={delivery} onChange={setDelivery} subtotal={subtotal} onFee={setShippingFee} token={token} />
         </fieldset>
