@@ -9,3 +9,9 @@ Supplier/balance columns and raw-reference/lot search make receipt matching reli
 Handoff: docs/superpowers/specs/RESUME-inventory-receipts.md. Verification recorded there after final checks.
 
 Verified 2026-10-04: full admin 238 files / 2,421 tests, focused receipt/movement TypeScript and whitespace checks passed. No authenticated browser verification; backend unchanged.
+
+2026-11-15. The purchases receipt confirmation panel now lists each receiving
+line missing a required expiry by product, variant and SKU. Each entry links
+to its input. Errors clear as the operator supplies a date or sets the
+receiving quantity to zero. The rule still applies to newly received,
+batch-tracked lines classified as non-alcoholic.

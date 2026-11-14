@@ -33,6 +33,7 @@ export type AgreementStatus =
 export type AgreementType = 'blanket_order' | 'call_for_tender' | 'none';
 
 export interface POItem {
+  _id?: string;
   subProductId: string;
   subProductName?: string;
   productName: string;

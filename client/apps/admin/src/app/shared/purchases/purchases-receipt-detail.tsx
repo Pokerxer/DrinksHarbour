@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
@@ -26,7 +26,7 @@ import {
 } from '@/services/purchaseOrder.service';
 import { warehouseService, type Warehouse } from '@/services/warehouse.service';
 import { pickSeedWarehouse } from './warehouse-select-helpers';
-import type { PurchaseOrder } from './types';
+import type { POItem, PurchaseOrder } from './types';
 import { getPurchaseWorkflow, outstandingPurchaseQuantity } from './purchase-workflow-state';
 
 type RowStatus = 'done' | 'receiving-all' | 'partial' | 'pending';
@@ -36,6 +36,11 @@ function getRowStatus(remaining: number, receiving: number): RowStatus {
   if (receiving === remaining) return 'receiving-all';
   if (receiving !== 0) return 'partial';
   return 'pending';
+}
+
+function receiptProductName(item: POItem) {
+  const name = item.subProductName || item.productName || item.sku || 'Unnamed product';
+  return item.sizeName && !name.includes(item.sizeName) ? `${name} – ${item.sizeName}` : name;
 }
 
 export default function PurchasesReceiptDetail({ id }: { id: string }) {
@@ -52,6 +57,8 @@ export default function PurchasesReceiptDetail({ id }: { id: string }) {
   const [notes, setNotes] = useState('');
   const [validating, setValidating] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [expiryCheck, setExpiryCheck] = useState(0);
+  const expiryAlert = useRef<HTMLDivElement>(null);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [warehouseId, setWarehouseId] = useState<string>('');
 
@@ -60,11 +67,12 @@ export default function PurchasesReceiptDetail({ id }: { id: string }) {
     setLoading(true);
     try {
       const res = await purchaseOrderService.getPurchaseOrder(id, token);
-      const data = res.data;
+      const data: PurchaseOrder = res.data;
       setPO(data);
+      setExpiryCheck(0);
       const init: Record<string, number> = {};
       data.items.forEach((item, idx) => {
-        const key = (item as any)._id?.toString() ?? String(idx);
+        const key = item._id?.toString() ?? String(idx);
         init[key] = validateOnly ? 0 : outstandingPurchaseQuantity(item);
       });
       setReceivedQtys(init);
@@ -130,7 +138,7 @@ export default function PurchasesReceiptDetail({ id }: { id: string }) {
     let backorderUnits = 0;
     let backorderLines = 0;
     po.items.forEach((item, idx) => {
-      const key = (item as any)._id?.toString() ?? String(idx);
+      const key = item._id?.toString() ?? String(idx);
       const qty = receivedQtys[key] ?? 0;
       const unitCost = item.unitCost ?? item.unitPrice ?? 0;
       const remaining = outstandingPurchaseQuantity(item);
@@ -172,11 +180,23 @@ export default function PurchasesReceiptDetail({ id }: { id: string }) {
     ? po.items.every((item) => outstandingPurchaseQuantity(item) === 0)
     : false;
 
+  const missingExpiry = (po?.items ?? []).flatMap((item, index) => {
+    const key = item._id?.toString() ?? String(index);
+    return item.tracksBatch && !item.isAlcoholic && (receivedQtys[key] ?? 0) > 0 && !expiryDates[key]
+      ? [{ index, name: receiptProductName(item), sku: item.sku }]
+      : [];
+  });
+  const invalidExpiryRows = new Set(expiryCheck ? missingExpiry.map(line => line.index) : []);
+
+  useEffect(() => {
+    if (expiryCheck) expiryAlert.current?.focus();
+  }, [expiryCheck]);
+
   function receiveAll() {
     if (!po) return;
     const next: Record<string, number> = {};
     po.items.forEach((item, idx) => {
-      const key = (item as any)._id?.toString() ?? String(idx);
+      const key = item._id?.toString() ?? String(idx);
       next[key] = outstandingPurchaseQuantity(item);
     });
     setReceivedQtys(next);
@@ -186,7 +206,7 @@ export default function PurchasesReceiptDetail({ id }: { id: string }) {
     if (!po) return;
     const next: Record<string, number> = {};
     po.items.forEach((item, idx) => {
-      const key = (item as any)._id?.toString() ?? String(idx);
+      const key = item._id?.toString() ?? String(idx);
       next[key] = 0;
     });
     setReceivedQtys(next);
@@ -218,22 +238,8 @@ export default function PurchasesReceiptDetail({ id }: { id: string }) {
   async function handleValidate() {
     if (!po || !canProcessReceipt) return;
 
-    // Perishable (non-alcoholic) batch-tracked lines being received now must
-    // carry an expiry date; alcoholic tracked lines may leave it blank.
-    const missingExpiry = po.items.some((item, idx) => {
-      const key = (item as any)._id?.toString() ?? String(idx);
-      const receiving = receivedQtys[key] ?? 0;
-      return (
-        item.tracksBatch &&
-        !item.isAlcoholic &&
-        receiving > 0 &&
-        !expiryDates[key]
-      );
-    });
-    if (missingExpiry) {
-      toast.error(
-        'Enter an expiry date for each perishable (non-alcoholic) item being received.'
-      );
+    if (missingExpiry.length) {
+      setExpiryCheck(count => count + 1);
       return;
     }
 
@@ -246,7 +252,7 @@ export default function PurchasesReceiptDetail({ id }: { id: string }) {
       // new, we skip the receive call and just validate to post any pending stock.
       const receiptLines = po.items
         .map((item, idx) => {
-          const key = (item as any)._id?.toString() ?? String(idx);
+          const key = item._id?.toString() ?? String(idx);
           return {
             itemId: key,
             receivedQty: receivedQtys[key] ?? 0,
@@ -494,20 +500,17 @@ export default function PurchasesReceiptDetail({ id }: { id: string }) {
             </thead>
             <tbody className="divide-y divide-gray-100">
               {po.items.map((item, idx) => {
-                const key = (item as any)._id?.toString() ?? String(idx);
+                const key = item._id?.toString() ?? String(idx);
                 const remaining = outstandingPurchaseQuantity(item);
                 const receiving = receivedQtys[key] ?? 0;
                 const unitCost = item.unitCost ?? item.unitPrice ?? 0;
                 const lineCost = receiving * unitCost;
                 const rowStatus = getRowStatus(remaining, receiving);
 
-                const baseName =
-                  (item as any).subProductName ?? item.productName ?? '';
-                const sizeName = (item as any).sizeName;
-                const displayName =
-                  sizeName && !baseName.includes(sizeName)
-                    ? `${baseName} – ${sizeName}`
-                    : baseName;
+                const displayName = receiptProductName(item);
+                const expiryRequired = !item.isAlcoholic && receiving > 0;
+                const expiryInvalid = invalidExpiryRows.has(idx);
+                const expiryId = `receipt-expiry-${idx}`;
 
                 const lineProgress =
                   item.quantity > 0
@@ -564,7 +567,11 @@ export default function PurchasesReceiptDetail({ id }: { id: string }) {
                             className="w-40 rounded border border-gray-200 px-2 py-1 text-xs"
                           />
                           <input
+                            id={expiryId}
                             type="date"
+                            aria-label={`Expiry date for ${displayName}`}
+                            aria-invalid={expiryInvalid || undefined}
+                            aria-describedby={expiryInvalid ? `${expiryId}-error` : undefined}
                             value={expiryDates[key] ?? ''}
                             onChange={(e) =>
                               setExpiryDates((m) => ({
@@ -572,14 +579,15 @@ export default function PurchasesReceiptDetail({ id }: { id: string }) {
                                 [key]: e.target.value,
                               }))
                             }
-                            required={!item.isAlcoholic}
-                            title={
-                              item.isAlcoholic
-                                ? 'Expiry date (optional)'
-                                : 'Expiry date (required)'
-                            }
-                            className="w-40 rounded border border-gray-200 px-2 py-1 text-xs"
+                            required={expiryRequired}
+                            title={expiryRequired ? 'Expiry date (required)' : 'Expiry date (optional)'}
+                            className={`w-40 scroll-mt-24 rounded border px-2 py-1 text-xs ${expiryInvalid ? 'border-red-600 bg-red-50' : 'border-gray-200'}`}
                           />
+                          {expiryInvalid && (
+                            <p id={`${expiryId}-error`} className="w-full text-xs font-medium text-red-700">
+                              Enter the expiry date for this batch.
+                            </p>
+                          )}
                         </div>
                       )}
                     </td>
@@ -728,6 +736,22 @@ export default function PurchasesReceiptDetail({ id }: { id: string }) {
               </>
             )}
           </p>
+          {expiryCheck > 0 && missingExpiry.length > 0 && (
+            <div ref={expiryAlert} tabIndex={-1} role="alert" className="mb-3 rounded-lg border border-red-300 bg-white p-3 text-sm text-red-800">
+              <p className="font-semibold">
+                {missingExpiry.length === 1 ? '1 product needs an expiry date' : `${missingExpiry.length} products need expiry dates`}
+              </p>
+              <ul className="mt-1 max-h-48 list-disc space-y-1 overflow-y-auto pl-5">
+                {missingExpiry.map(({ index, name, sku }) => (
+                  <li key={index}>
+                    <a href={`#receipt-expiry-${index}`} className="underline underline-offset-2">
+                      {name}{sku && sku !== name ? ` (${sku})` : ''}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           {validateOnly ? null : warehouses.length === 0 ? (
             <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">
               No warehouses exist yet. You must{' '}
