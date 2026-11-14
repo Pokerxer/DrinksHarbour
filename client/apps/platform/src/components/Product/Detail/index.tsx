@@ -41,6 +41,7 @@ import ShareButton from './ShareButton';
 import OrderWhatsAppButton from './OrderWhatsAppButton';
 import ProductReviews from '@/components/Product/ProductReviews';
 import RelatedProducts from './RelatedProducts';
+import BoughtTogether from './BoughtTogether';
 import PackPricingCard from '@/components/Product/PackPricingCard';
 import { ProductType } from '@/types/product.types';
 import { pickDefaultSizeFrom, resolvePackPricing } from 'commerce-core';
@@ -868,6 +869,9 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
           </div>
         </div>
       </section>
+
+      {/* Bought-together bundle — hides itself when there is no data. */}
+      <BoughtTogether product={productData} />
 
       {/* Related Products — RelatedProducts owns the whole section (heading,
           "View All", arrows and slider). Wrapping it in another section with a
