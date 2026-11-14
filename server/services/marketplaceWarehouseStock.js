@@ -43,13 +43,15 @@ function availabilityStages(blockExpired, includeIdentity = false) {
           { $eq: ['$tenant', '$$tenant'] }, { $eq: ['$warehouse', '$$warehouse'] },
           { $eq: ['$subProduct', '$$subProduct'] }, { $eq: ['$size', '$$size'] },
         ] } } },
-        { $group: { _id: null, eligible: { $sum: { $cond: [
-          unexpired, '$quantity', 0,
-        ] } }, expired: { $sum: { $cond: [
-          { $not: [unexpired] }, '$quantity', 0,
-        ] } } } },
+        { $group: {
+          _id: null,
+          eligible: { $sum: { $cond: [unexpired, '$quantity', 0] } },
+          expired: { $sum: { $cond: [{ $not: [unexpired] }, '$quantity', 0] } },
+          total: { $sum: 1 },
+        } },
       ],
     } },
+
     { $project: { _id: 0, ...(includeIdentity ? { tenant: 1, warehouse: 1, subProduct: 1, size: 1 } : {}), stock: {
       $let: { vars: {
         free: { $max: [0, { $subtract: [
@@ -58,9 +60,22 @@ function availabilityStages(blockExpired, includeIdentity = false) {
         ] }] },
       }, in: { $cond: [
         { $eq: [{ $first: '$_product.tracksBatch' }, false] }, '$$free',
-        { $min: ['$$free', quantity({ $first: '$_batches.eligible' })] },
+        // ZERO batch rows = the ledger's untracked slack: stock that arrived
+        // through manual adjustments/receipts/imports (which write
+        // WarehouseStock but no WarehouseBatch rows - see warehouse.service
+        // adjustStock). Reservation (salesReservations/allocate) and
+        // fulfillment (depleteBatchesFefo with no rows -> no-op) are
+        // batch-agnostic, so the ledger stock sells as free stock; only SKUs
+        // that HAVE batch rows are capped by their eligible (unexpired,
+        // non-quarantined) quantity. Gating this case to 0 read every
+        // manually-stocked SKU as out_of_stock - the 2026-11-14 report.
+        { $cond: [
+          { $eq: [quantity({ $first: '$_batches.total' }), 0] }, '$$free',
+          { $min: ['$$free', quantity({ $first: '$_batches.eligible' })] },
+        ] },
       ] } },
     } } },
+
   ];
 }
 

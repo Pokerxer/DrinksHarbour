@@ -603,7 +603,7 @@ const validateCartItems = async (items, { checkout = false } = {}) => {
   const defaults = new Map();
   function getDefault(tenant) {
     const key = String(tenant._id);
-    if (!defaults.has(key)) defaults.set(key, resolveDefaults([tenant]).then(locations => locations.get(key)));
+    if (!defaults.has(key)) defaults.set(key, require('./marketplaceDefaultWarehouse').resolveCheckoutDefault(tenant));
     return defaults.get(key);
   }
 
