@@ -219,6 +219,7 @@ app.use('/api', async (req, res, next) => {
 // ────────────────────────────────────────────────
 app.use('/api', require('./middleware/adminReportCache').invalidateReports);
 app.use('/api/orders',             orderRoutes);
+app.use('/api/whatsapp-orders',    require('./routes/whatsappOrder.routes'));
 app.use('/api/cart',               cartRoutes);
 app.use('/api/products',           productRoutes);
 app.use('/api/merchandising/pairings', merchandisingPairingRoutes);

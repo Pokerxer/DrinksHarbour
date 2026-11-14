@@ -13,6 +13,12 @@ async function settle(provider, reference) {
   if (row.order) {
     const order = await Order.findById(row.order);
     if (!order) throw new ConflictError('Payment order requires reconciliation');
+    // Manual (WhatsApp) orders settle through the invoice service: the payer
+    // is a guest, so trust.attach's order.user === claim.user check does not
+    // apply. Settlement still goes through gateway-verified evidence.
+    if (order.source === 'manual') {
+      return require('./whatsappOrderInvoice').settleFromWebhook(order, provider, reference);
+    }
     await trust.attach(order, { method: provider, reference }, actor);
   } else {
     await Claim.updateOne({ _id: row._id, state: { $in: ['ready', 'uncertain', 'initializing'] } },
