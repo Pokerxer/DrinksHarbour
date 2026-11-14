@@ -1,16 +1,29 @@
-import type { PurchaseOrder } from '@/app/shared/purchases/types';
+import type { POItem, PurchaseOrder } from '@/app/shared/purchases/types';
+import { lineTypeOf } from '@/app/shared/purchases/purchases-create-lines';
 import {
   linePackSize,
   packNounOf,
   packsLabel,
 } from '@/app/shared/purchases/types';
-import { COMPANY, fmtDate, warehouseContactLine, warehouseHeadOf, warehouseLocalityLine, warehouseStreetLine } from './print-shared';
+import { COMPANY, fmtAmt, fmtDate, warehouseContactLine, warehouseHeadOf, warehouseLocalityLine, warehouseStreetLine } from './print-shared';
 import { warehouseLabelOf } from '@/services/purchaseOrder.service';
-import type { DocumentModel } from './doc-model';
+import type { DocCell, DocumentModel } from './doc-model';
 
-// An RFQ asks the vendor for prices — it does not state them. Lines are
-// rendered with blank quote cells to fill in by hand, plus explicit response
-// instructions so a paper RFQ is actionable on its own.
+function quotedAmounts(item: POItem) {
+  const savedUnitPrice = item.unitCost ?? item.unitPrice;
+  const unitPrice = Number.isFinite(savedUnitPrice) ? savedUnitPrice : undefined;
+  const savedTotal = Number.isFinite(item.totalCost) ? item.totalCost : undefined;
+  // The purchase model defaults both amounts to zero for an unpriced request.
+  if (!unitPrice && !savedTotal) return {};
+
+  return {
+    unitPrice: unitPrice ?? (savedTotal != null && item.quantity > 0
+      ? savedTotal / item.quantity
+      : undefined),
+    lineTotal: savedTotal ?? (unitPrice == null ? undefined : unitPrice * item.quantity),
+  };
+}
+
 export function buildRFQInvoice(
   po: PurchaseOrder,
   companyName: string
@@ -34,24 +47,32 @@ export function buildRFQInvoice(
       }
     : { heading: 'Quote To (Buyer)', name: companyName };
 
-  const displayNameOf = (item: PurchaseOrder['items'][number]) => {
-    const name = (item as any).subProductName ?? item.productName ?? '—';
-    const size = item.sizeName;
-    return size && !name.includes(size) ? `${name} – ${size}` : name;
-  };
+  let quotedTotal: number | undefined;
+  const money = (amount: number | undefined) =>
+    amount == null ? '' : fmtAmt(amount, po.currency);
+  const rows: DocCell[][] = po.items.map((item) => {
+    const type = lineTypeOf(item);
+    if (type !== 'product') {
+      const text = type === 'section' ? item.name : item.description;
+      return [{ text: text ?? '', strong: type === 'section' }, { text: '' }, { text: '' }, { text: '' }];
+    }
 
-  const rows = po.items.map((item) => {
-    const uom = (item as any).uom ? ` ${(item as any).uom}` : '';
+    const name = item.subProductName ?? item.productName ?? '—';
+    const size = item.sizeName;
+    const displayName = size && !name.includes(size) ? `${name} – ${size}` : name;
+    const uom = item.uom ? ` ${item.uom}` : '';
     const packs = packsLabel(
       item.quantity,
-      linePackSize(item as any),
-      packNounOf((item as any).packaging)
+      linePackSize(item),
+      packNounOf(item.packaging)
     );
+    const { unitPrice, lineTotal } = quotedAmounts(item);
+    if (lineTotal != null) quotedTotal = (quotedTotal ?? 0) + lineTotal;
     return [
-      { text: displayNameOf(item) },
+      { text: displayName },
       { text: `${item.quantity}${uom}`, sub: packs },
-      { text: '' },
-      { text: '' },
+      { text: money(unitPrice) },
+      { text: money(lineTotal), strong: lineTotal != null },
     ];
   });
 
@@ -84,11 +105,7 @@ export function buildRFQInvoice(
       {
         heading: 'Vendor / Supplier',
         name: po.vendorName ?? '—',
-        lines: [
-          (po as any).vendorReference
-            ? `Vendor ref: ${(po as any).vendorReference}`
-            : '',
-        ],
+        lines: [po.vendorReference ? `Vendor ref: ${po.vendorReference}` : ''],
       },
     ],
     meta: [
@@ -106,7 +123,9 @@ export function buildRFQInvoice(
       ],
       rows,
     },
-    totals: [],
+    totals: quotedTotal == null
+      ? []
+      : [{ label: 'Quoted Total', value: money(quotedTotal), variant: 'grand' }],
     sections,
     signatures: [{ role: 'Requested by' }, { role: 'Vendor Quote & Stamp' }],
     fileName: `Request for Quotation ${po.poNumber}.pdf`,

@@ -1,6 +1,12 @@
 const { ValidationError } = require('../utils/errors');
-const TEMPLATE_IDS = ['classic', 'modern', 'editorial', 'ledger', 'signature', 'axis', 'atelier', 'blueprint'];
-const FAMILIES = ['sales', 'purchases', 'pricelist', 'stock'];
+const TEMPLATE_IDS = [
+  'classic', 'modern', 'editorial', 'ledger', 'signature', 'axis', 'atelier', 'blueprint',
+  'letterhead', 'centred', 'split-panel', 'balance-first', 'ruled-register',
+  'remittance', 'folio', 'boxed-statement', 'banner', 'compact',
+  'docket', 'panorama', 'dispatch', 'quarter', 'letterpress',
+  'index', 'column', 'outline', 'proof', 'field-report',
+];
+const FAMILIES = ['invoice', 'sales', 'purchases', 'pricelist', 'stock'];
 const defaults = () => ({ version: 1, defaultTemplate: 'classic', families: {} });
 const object = value => value && typeof value === 'object' && !Array.isArray(value);
 function validatePreferences(value) {

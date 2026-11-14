@@ -1,3 +1,6 @@
+import { COLLECTION_IDS, COLLECTION_TEMPLATES } from './layout-collection';
+import { LAYOUT_IDS, LAYOUT_PRESETS, type LayoutId } from './layout-presets';
+
 export const TEMPLATE_IDS = [
   'classic',
   'modern',
@@ -7,9 +10,11 @@ export const TEMPLATE_IDS = [
   'axis',
   'atelier',
   'blueprint',
+  ...LAYOUT_IDS,
+  ...COLLECTION_IDS,
 ] as const;
 export type TemplateId = (typeof TEMPLATE_IDS)[number];
-export type DocumentFamily = 'sales' | 'purchases' | 'pricelist' | 'stock';
+export type DocumentFamily = 'invoice' | 'sales' | 'purchases' | 'pricelist' | 'stock';
 export interface TemplatePreferences {
   version?: 1;
   defaultTemplate: string;
@@ -25,8 +30,12 @@ export interface DocumentTemplate {
   font: 'helvetica' | 'times' | 'courier';
   density: number;
   headerHeight: number;
+  layout?: LayoutId;
+  collection?: (typeof COLLECTION_IDS)[number];
+  references?: 'strip' | 'stack';
+  totalsPlacement?: 'left' | 'full' | 'before-items';
   table: 'grid' | 'striped' | 'plain';
-  parties: 'cards' | 'open' | 'ruled';
+  parties: 'cards' | 'open' | 'ruled' | 'stacked';
   totals: 'bar' | 'rule' | 'frame';
 }
 export const TEMPLATES: readonly DocumentTemplate[] = [
@@ -142,11 +151,14 @@ export const TEMPLATES: readonly DocumentTemplate[] = [
     parties: 'cards',
     totals: 'bar',
   },
+  ...LAYOUT_PRESETS,
+  ...COLLECTION_TEMPLATES,
 ];
 export function templateById(id?: string): DocumentTemplate {
   return TEMPLATES.find((t) => t.id === id) ?? TEMPLATES[0];
 }
 export function documentFamily(kind: string): DocumentFamily {
+  if (kind === 'invoice') return 'invoice';
   if (kind === 'pricelist') return 'pricelist';
   if (['transfer', 'return', 'stock'].includes(kind)) return 'stock';
   if (['rfq', 'po', 'bill'].includes(kind)) return 'purchases';
@@ -157,7 +169,9 @@ export function resolveTemplate(
   kind: string,
   override?: string
 ): TemplateId {
+  const family = documentFamily(kind);
+  const inherited = family === 'invoice' ? preferences?.families?.sales : undefined;
   return templateById(
-    override ?? preferences?.families?.[documentFamily(kind)] ?? preferences?.defaultTemplate
+    override ?? preferences?.families?.[family] ?? inherited ?? preferences?.defaultTemplate
   ).id;
 }

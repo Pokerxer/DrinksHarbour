@@ -1,6 +1,6 @@
 import type jsPDF from 'jspdf';
 import type { DocumentTemplate } from './registry';
-import { BOTTOM, CONTINUATION_TOP, CW, M, box, color } from './pdf-layout';
+import { BOTTOM, CONTINUATION_TOP, CW, M, box, color, line } from './pdf-layout';
 
 /** Original individual reference cards, wrapping long values instead of clipping. */
 export function drawMeta(
@@ -33,13 +33,19 @@ export function drawMeta(
       doc.addPage();
       y = CONTINUATION_TOP;
     }
+    if (t.references === 'strip') {
+      box(doc, M, y, CW, height, t.wash);
+      line(doc, M, y + height, CW, t.secondary);
+    }
     cards.forEach((card, i) => {
       const x = M + i * (width + 7);
       doc.setFillColor('#f9fafb');
       doc.setDrawColor('#e5e7eb');
       doc.setLineWidth(0.5);
-      doc.roundedRect(x, y, width, height, 3, 3, 'FD');
-      box(doc, x + 3, y, width - 6, 2, t.accent);
+      if (t.references !== 'strip') {
+        doc.roundedRect(x, y, width, height, 3, 3, 'FD');
+        box(doc, x + 3, y, width - 6, 2, t.accent);
+      }
       doc.setFont(t.font, 'bold').setFontSize(6.1);
       color(doc, '#6b7280');
       doc.text(card.labels, x + 6, y + 13, { lineHeightFactor: 1.3 });

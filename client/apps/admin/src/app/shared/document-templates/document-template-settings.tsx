@@ -14,7 +14,8 @@ import TemplateCard from './template-card';
 import PdfPreview from './pdf-preview';
 import SettingsPageHeader from '@/app/shared/settings/settings-page-header';
 const FAMILIES: [DocumentFamily, string][] = [
-  ['sales', 'Sales & quotations'],
+  ['invoice', 'Invoices'],
+  ['sales', 'Sales orders & quotations'],
   ['purchases', 'Purchases & bills'],
   ['pricelist', 'Price lists'],
   ['stock', 'Stock & transfers'],
@@ -51,7 +52,7 @@ function SettingsForm({
   const canSave = checkPermission('settings:write');
   const [draft, setDraft] = useState(initial);
   const [saved, setSaved] = useState(initial);
-  const [family, setFamily] = useState<DocumentFamily>('sales');
+  const [family, setFamily] = useState<DocumentFamily>('invoice');
   const [preview, setPreview] = useState(true);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
@@ -65,19 +66,10 @@ function SettingsForm({
     };
   }, []);
   const sample = useMemo(
-    () => ({
-      ...templateSample(family, state.tenant?.name),
-      templateId: resolveTemplate(
-        draft,
-        family === 'purchases'
-          ? 'po'
-          : family === 'stock'
-            ? 'stock'
-            : family === 'pricelist'
-              ? 'pricelist'
-              : 'quotation'
-      ),
-    }),
+    () => {
+      const model = templateSample(family, state.tenant?.name);
+      return { ...model, templateId: resolveTemplate(draft, model.kind) };
+    },
     [family, state.tenant?.name, draft]
   );
   const dirty = JSON.stringify(draft) !== JSON.stringify(saved);
@@ -111,7 +103,7 @@ function SettingsForm({
       <SettingsPageHeader
         title="Document templates"
         eyebrow="Your business, on paper"
-        description={`Choose a consistent look for ${state.tenant?.name ?? 'your business'}. Preview eight styles and set defaults for invoices, purchases, price lists and stock documents.`}
+        description={`Choose a consistent look for ${state.tenant?.name ?? 'your business'}. Preview ${TEMPLATES.length} styles and set defaults for invoices, purchases, price lists and stock documents.`}
       >
         <div className="flex flex-wrap items-center gap-3">
           {dirty && (
@@ -156,27 +148,12 @@ function SettingsForm({
           defaults.
         </p>
       )}
-      <fieldset
-        disabled={busy}
-        className="grid grid-cols-1 gap-4 disabled:opacity-60 min-[400px]:grid-cols-2 lg:grid-cols-4"
-      >
-        <legend className="mb-4 text-lg font-semibold">Business default</legend>
-        {TEMPLATES.map((t) => (
-          <TemplateCard
-            key={t.id}
-            template={t}
-            selected={draft.defaultTemplate === t.id}
-            onSelect={() => setDraft((d) => ({ ...d, defaultTemplate: t.id }))}
-          />
-        ))}
-      </fieldset>
       <section className="rounded-2xl border border-muted bg-white p-5 dark:bg-gray-50 sm:p-6">
         <h2 className="text-lg font-semibold">Defaults by document type</h2>
         <p className="mt-1 text-sm text-gray-500">
-          Use your business default everywhere, or choose a different style for
-          a document family.
+          Choose a template for each document type and select Save defaults.
         </p>
-        <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
           {FAMILIES.map(([key, label]) => (
             <label key={key} className="grid gap-2 text-sm font-medium">
               {label}
@@ -191,7 +168,11 @@ function SettingsForm({
                   setDraft((d) => ({ ...d, families }));
                 }}
               >
-                <option value="">Use business default</option>
+                <option value="">
+                  {key === 'invoice' && draft.families?.sales
+                    ? 'Use sales default'
+                    : 'Use business default'}
+                </option>
                 {TEMPLATES.map((t) => (
                   <option key={t.id} value={t.id}>
                     {t.name}
@@ -233,6 +214,20 @@ function SettingsForm({
         </p>
         {preview && <PdfPreview model={sample} />}
       </section>
+      <fieldset
+        disabled={busy}
+        className="grid grid-cols-1 gap-4 disabled:opacity-60 min-[400px]:grid-cols-2 lg:grid-cols-4"
+      >
+        <legend className="mb-4 text-lg font-semibold">Business default</legend>
+        {TEMPLATES.map((t) => (
+          <TemplateCard
+            key={t.id}
+            template={t}
+            selected={draft.defaultTemplate === t.id}
+            onSelect={() => setDraft((d) => ({ ...d, defaultTemplate: t.id }))}
+          />
+        ))}
+      </fieldset>
     </div>
   );
 }

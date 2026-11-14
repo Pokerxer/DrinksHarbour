@@ -1,7 +1,7 @@
 import type jsPDF from 'jspdf';
 import type { DocTotalRow } from '../doc-model';
 import type { DocumentTemplate } from './registry';
-import { W, M, BOTTOM, CONTINUATION_TOP, box, color } from './pdf-layout';
+import { W, M, CW, BOTTOM, CONTINUATION_TOP, box, color, line } from './pdf-layout';
 
 /** Rounded, right-aligned summary from the original invoice design. */
 export function drawTotals(
@@ -10,8 +10,11 @@ export function drawTotals(
   t: DocumentTemplate,
   startY: number
 ): number {
-  const width = 268,
-    x = W - M - width;
+  const full = t.totalsPlacement === 'full' || t.totalsPlacement === 'before-items';
+  const width = full ? CW : 268;
+  const x = full || t.totalsPlacement === 'left' ? M : W - M - width;
+  const right = x + width;
+  const wrapExtra = (width - 268) / 2;
   const entries = rows.flatMap((row) => {
     const grand = row.variant === 'grand';
     const size = grand ? 10 : 8.6;
@@ -19,8 +22,8 @@ export function drawTotals(
     // Grand totals have a wide, two-column banner. Give the label enough room
     // to keep short summaries such as "ITEMS TOTAL (1 LINE)" on one line,
     // while retaining a dedicated right-hand column for the amount.
-    const labelWidth = grand ? 120 : 100;
-    const valueWidth = grand ? width - 153 : width - 139;
+    const labelWidth = (grand ? 120 : 100) + wrapExtra;
+    const valueWidth = (grand ? 115 : 129) + wrapExtra;
     const label = doc.splitTextToSize(
       grand ? row.label.toUpperCase() : row.label,
       labelWidth
@@ -53,12 +56,15 @@ export function drawTotals(
     doc.setFillColor('#f9fafb');
     doc.setDrawColor('#e5e7eb');
     doc.setLineWidth(0.7);
-    doc.roundedRect(x, y, width, height, 4, 4, 'FD');
+    if (t.totals === 'frame') box(doc, x, y, width, height, t.wash, t.secondary);
+    else if (t.totals === 'bar') doc.roundedRect(x, y, width, height, 4, 4, 'FD');
     let rowY = y + 6;
     for (const entry of entries.slice(offset, end)) {
       const grand = entry.row.variant === 'grand';
-      if (grand) box(doc, x + 0.7, rowY, width - 1.4, entry.height, t.accent);
-      color(doc, grand ? '#ffffff' : (entry.row.color ?? '#6b7280'));
+      const filled = grand && t.totals === 'bar';
+      if (filled) box(doc, x + 0.7, rowY, width - 1.4, entry.height, t.accent);
+      else if (grand) line(doc, x, rowY, width, t.accent, 1);
+      color(doc, grand ? (filled ? '#ffffff' : t.accent) : (entry.row.color ?? '#6b7280'));
       doc
         .setFont(t.font, grand || entry.row.variant === 'strong' ? 'bold' : 'normal')
         .setFontSize(entry.size);
@@ -66,7 +72,7 @@ export function drawTotals(
         doc.text(entry.label, x + 13, rowY + 13, { lineHeightFactor: 12 / entry.size });
       doc.setFont(t.font, 'bold');
       if (entry.value.length)
-        doc.text(entry.value, W - M - 13, rowY + 13, {
+        doc.text(entry.value, right - 13, rowY + 13, {
           align: 'right',
           lineHeightFactor: 12 / entry.size,
         });

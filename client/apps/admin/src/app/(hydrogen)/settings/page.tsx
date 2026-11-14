@@ -909,6 +909,7 @@ const WAREHOUSE_ANCHORS = [
 
 const D_WH: WarehouseSettings = {
   defaultWarehouse: '',
+  marketplaceWarehouses: [],
   lowStockThreshold: 10,
   valuationMethod: 'fifo',
   allowNegativeStock: false,
@@ -1058,6 +1059,10 @@ export default function SettingsPage() {
           const w = {
             ...D_WH,
             ...whRes.data.warehouseSettings,
+            marketplaceWarehouses: whRes.data.warehouseSettings.marketplaceWarehouses ??
+              (whRes.data.warehouseSettings.marketplaceWarehouse
+                ? [whRes.data.warehouseSettings.marketplaceWarehouse]
+                : []),
             // server may send null for an unset default warehouse
             defaultWarehouse:
               whRes.data.warehouseSettings.defaultWarehouse ?? '',
@@ -1219,7 +1224,12 @@ export default function SettingsPage() {
         setSavedPurch({ ...purch });
       }
       if (objDirty(wh, savedWh)) {
-        await warehouseService.updateWarehouseSettings(token, wh);
+        const { marketplaceWarehouse: _legacyWarehouse, marketplaceWarehouses, ...warehouseSettings } = wh;
+        const locationsChanged = JSON.stringify(marketplaceWarehouses) !== JSON.stringify(savedWh.marketplaceWarehouses);
+        await warehouseService.updateWarehouseSettings(token, {
+          ...warehouseSettings,
+          ...(locationsChanged ? { marketplaceWarehouses } : {}),
+        });
         setSavedWh({ ...wh });
       }
       toast.success('Settings saved');

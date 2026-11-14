@@ -1,13 +1,22 @@
 import type { DocumentModel } from '@/utils/print/doc-model';
 import type { DocumentFamily } from '@/utils/print/templates/registry';
 export function templateSample(
-  family: DocumentFamily = 'sales',
+  family: DocumentFamily = 'invoice',
   companyName = 'Harbour House'
 ): DocumentModel {
-  const stock = family === 'stock',
+  const invoice = family === 'invoice',
+    stock = family === 'stock',
     list = family === 'pricelist';
   return {
-    kind: stock ? 'stock' : list ? 'pricelist' : family === 'purchases' ? 'po' : 'quotation',
+    kind: stock
+      ? 'stock'
+      : list
+        ? 'pricelist'
+        : family === 'purchases'
+          ? 'po'
+          : invoice
+            ? 'invoice'
+            : 'quotation',
     companyName,
     head: { city: 'Abuja, Nigeria', email: 'Sample contact details' },
     department: 'SAMPLE — Preview only',
@@ -17,20 +26,30 @@ export function templateSample(
         ? 'Price list'
         : family === 'purchases'
           ? 'Purchase order'
-          : 'Quotation',
-    number: 'SAMPLE-2026-042',
+          : invoice
+            ? 'Invoice'
+            : 'Quotation',
+    number: invoice ? 'INV-SAMPLE-042' : 'SAMPLE-2026-042',
     status: 'draft',
     parties: list
       ? []
       : [
-          { heading: 'Issued by', name: companyName },
           {
-            heading: stock ? 'Location' : 'Prepared for',
+            heading: 'Issued by',
+            name: companyName,
+            ...(invoice ? { lines: ['Maitama, Abuja'] } : {}),
+          },
+          {
+            heading: stock ? 'Location' : invoice ? 'Bill to' : 'Prepared for',
             name: stock ? 'Maitama Store' : 'Sample customer',
+            ...(invoice
+              ? { lines: ['Accounts payable', 'Abuja, Nigeria'] }
+              : {}),
           },
         ],
     meta: [
       ['Date', '07 Sep 2026'],
+      ...(invoice ? [['Due date', '21 Sep 2026'] as [string, string]] : []),
       ['Currency', 'NGN'],
       ['Reference', 'Preview only'],
     ],
@@ -38,7 +57,14 @@ export function templateSample(
       columns: [
         { label: 'Beverage' },
         { label: stock ? 'On hand' : 'Quantity', align: 'right' },
-        ...(!stock ? [{ label: list ? 'Retail price' : 'Amount', align: 'right' as const }] : []),
+        ...(!stock
+          ? [
+              {
+                label: list ? 'Retail price' : 'Amount',
+                align: 'right' as const,
+              },
+            ]
+          : []),
       ],
       rows: [
         ['Reserve Red Wine', '750 ml', '6', 'NGN 90,000.00'],

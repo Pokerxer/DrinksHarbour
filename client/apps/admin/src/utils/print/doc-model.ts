@@ -16,6 +16,8 @@ export interface DocCell {
 export interface DocColumn {
   label: string;
   align?: DocAlign;
+  /** Repeat a variant or location identifier when a wide table continues across pages. */
+  repeatOnContinuation?: boolean;
 }
 
 export interface DocTable {

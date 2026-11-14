@@ -1,0 +1,7 @@
+# Wyn City workbook 17 — 12 November 2026
+
+Verified active WH-001 and updated 551 existing stock variants (536 barcode, 15 name), 521 quantities, 65 costs and 84 retail prices. 591 unchanged, 1,647 held. Independent read-back at 10:45 Lagos time verified values, both movement ledgers, reservations, batches and stock in other locations. Final WH-001 total: 25,754 units. Tenant pricing overrides/publication untouched. No new stock lines or catalogue products. 18 focused inventory/import tests passed. Backups, plans, audit result and held-row report in `outputs/wyncity-2026-11-12-template17/`. See `docs/superpowers/specs/RESUME-wyncity-template17-2026-11-12.md`. Never replay `apply.cjs --commit` or prior warehouse recoveries.
+
+## Barcode follow-up
+
+Verified at 11:18 Lagos time on 12 November. Exact Size barcode took precedence over workbook name. 109 more rows updated across 97 stock balances, 37 costs and 29 selling prices. 46 WH-001 stock lines added for existing sizes with positive counts. WH-001 totals 32,226 units. Separate read-back confirmed ledger entries, other locations' stock, batch records and protected fields. 32 focused warehouse and batch tests passed. Six batch-related stock counts, two shared prices within those six rows, 13 negative counts and one archived listing still need resolution. The first plan was rejected by automatic approval review. Only the revised plan committed. See `outputs/wyncity-2026-11-12-template17-barcode/WH-001-barcode-review.md` for exact unresolved values. Do not replay the completed update.

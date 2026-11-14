@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { inflateSync } from 'node:zlib';
 import { buildSalesDoc, printableBankAccounts } from './so-print';
 import { renderDocument } from './pdf-render';
+import { COLLECTION_IDS } from './templates/layout-collection';
 import type { QuoteStatus, SalesOrder } from '@/services/salesOrder.service';
 
 /** Inflate a PDF's page streams so drawn text is greppable. */
@@ -318,4 +319,16 @@ describe('sales documents — payment details', () => {
 it('printed footer starts with gross subtotal so line discounts are deducted once',()=>{
  const model=buildSalesDoc(baseOrder,'DrinksHarbour','quotation');
  expect(model.totals[0].value).toContain('450,000');
+});
+
+
+it.each(COLLECTION_IDS)('%s preserves quotations, pro formas and sales orders', (templateId) => {
+  for (const variant of ['quotation', 'proforma', 'sales-order'] as const) {
+    const model = buildSalesDoc({ ...baseOrder, warehouseId: warehouse }, 'Harbour House', variant);
+    const pdf = renderDocument({ ...model, templateId });
+    const content = pageStreams(pdf.output());
+    for (const text of [model.number, 'Maitama Store', 'Ada Obi', 'Hennessy VS', '427,500.00']) {
+      expect(content, variant).toContain(text);
+    }
+  }
 });

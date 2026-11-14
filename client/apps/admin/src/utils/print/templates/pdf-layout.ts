@@ -45,7 +45,7 @@ function fitted(
 }
 
 /** Masthead lines must stay on one baseline so a long tenant name cannot collide with its address. */
-function fittedSingle(
+export function fittedSingle(
   doc: jsPDF,
   value: string,
   x: number,
@@ -57,9 +57,20 @@ function fittedSingle(
   if (!value) return;
   doc.setFontSize(size);
   while (doc.getTextWidth(value) > width && size > 5) doc.setFontSize((size -= 0.25));
-  doc.text(value, x, y, { align });
+  const textWidth = doc.getTextWidth(value);
+  // jsPDF aligns using the unscaled text width. Shift the anchor so exceptionally
+  // long IDs stay inside their panel without truncation or a second baseline.
+  const scale = Math.min(1, width / textWidth);
+  if (scale === 1) {
+    doc.text(value, x, y, { align });
+    return;
+  }
+  const offset = (textWidth - textWidth * scale) * (align === 'right' ? 1 : align === 'center' ? 0.5 : 0);
+  doc.saveGraphicsState();
+  doc.text(value, x + offset, y, { align, horizontalScale: scale });
+  doc.restoreGraphicsState();
 }
-/** Original 104pt masthead shared by every colour choice. */
+/** Original 104pt masthead used by the original colour choices. */
 export function drawHeader(doc: jsPDF, m: DocumentModel, t: DocumentTemplate) {
   const panel = W * 0.575;
   const ink = mix(t.accent, '#000000', 0.48);

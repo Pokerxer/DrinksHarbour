@@ -1,12 +1,13 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { validatePreferences, TEMPLATE_IDS } = require('../config/document-templates');
+const { validatePreferences, TEMPLATE_IDS, FAMILIES } = require('../config/document-templates');
 
-test('all eight approved styles can be saved with family overrides', () => {
-  assert.equal(TEMPLATE_IDS.length, 8);
+test('all twenty-eight styles can be saved with family overrides', () => {
+  assert.equal(TEMPLATE_IDS.length, 28);
   for (const id of TEMPLATE_IDS) {
-    assert.deepEqual(validatePreferences({ defaultTemplate: id, families: { stock: 'ledger' } }),
-      { version: 1, defaultTemplate: id, families: { stock: 'ledger' } });
+    const families = Object.fromEntries(FAMILIES.map(family => [family, id]));
+    assert.deepEqual(validatePreferences({ defaultTemplate: id, families }),
+      { version: 1, defaultTemplate: id, families });
   }
 });
 test('rejects arbitrary templates, families, versions and tenant selectors', () => {

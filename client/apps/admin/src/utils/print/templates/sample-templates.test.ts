@@ -1,19 +1,15 @@
 import { expect, it } from 'vitest';
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { inflateSync } from 'node:zlib';
+import { pdfPageStreams } from './pdf-test-content';
 import { TEMPLATES } from './registry';
+import { COLLECTION_IDS } from './layout-collection';
+import { LAYOUT_IDS } from './layout-presets';
 import { renderDocument, renderDocuments } from '../pdf-render';
 import { templateSample } from '@/app/shared/document-templates/template-sample';
-// Compressed streams are binary: a trailing CR is data, not a CRLF delimiter.
 function streams(raw: string) {
-  return Array.from(raw.matchAll(/<<([^>]*\/Length\s+(\d+)[^>]*)>>\s*stream\r?\n/g))
-    .map(match => {
-      const bytes = raw.slice(match.index! + match[0].length, match.index! + match[0].length + Number(match[2]));
-      return /\/FlateDecode/.test(match[1])
-        ? inflateSync(Buffer.from(bytes, 'latin1')).toString('latin1') : bytes;
-    }).join('\n');
+  return pdfPageStreams(raw).join('\n');
 }
-it('renders all eight sample PDFs and preserves financial text in their page streams', () => {
+it('renders all twenty-eight sample PDFs and preserves financial text in their page streams', () => {
   mkdirSync('/tmp/document-template-preview', { recursive: true });
   for (const t of TEMPLATES) {
     const doc = renderDocument({ ...templateSample(), templateId: t.id });
@@ -39,8 +35,9 @@ it('bulk exports retain both documents and separate page counts', () => {
   expect(content).toContain('FIRST');
   expect(content).toContain('SECOND');
 });
-it('long notes and final rows survive pagination in every style', () => {
-  for (const t of TEMPLATES) {
+it.each(TEMPLATES)(
+  'long notes and final rows survive pagination in $name',
+  (t) => {
     const sample = templateSample();
     const rows = Array.from({ length: 120 }, (_, i) => [
       { text: `Product ${i}` },
@@ -51,23 +48,65 @@ it('long notes and final rows survive pagination in every style', () => {
       ...sample,
       templateId: t.id,
       table: { ...sample.table, rows },
-      sections: [{ title: 'Terms', body: 'Long terms with details. '.repeat(600) + 'FINAL TERMS' }],
+      sections: [
+        {
+          title: 'Terms',
+          body: 'Long terms with details. '.repeat(600) + 'FINAL TERMS',
+        },
+      ],
     });
     const content = streams(doc.output());
     expect(content).toContain('Product 119');
     expect(content).toContain('FINAL TERMS');
   }
-});
-it('writes a review catalogue containing all eight approved layouts', () => {
+);
+it('writes a review catalogue containing all twenty-eight layouts', () => {
   const models = TEMPLATES.map((t) => ({
     ...templateSample(),
     templateId: t.id,
-    sections: [{ title: `${t.name} template`, body: t.description + '. Demonstration data only.' }],
+    sections: [
+      {
+        title: `${t.name} template`,
+        body: t.description + '. Demonstration data only.',
+      },
+    ],
   }));
   const doc = renderDocuments(models);
-  expect(doc.getNumberOfPages()).toBe(8);
+  expect(doc.getNumberOfPages()).toBe(TEMPLATES.length);
   writeFileSync(
     '/tmp/document-template-preview/template-catalogue.pdf',
     Buffer.from(doc.output('arraybuffer'))
   );
+});
+
+it('gives all new invoice mastheads different text positions', () => {
+  const placements = [...LAYOUT_IDS, ...COLLECTION_IDS].map((templateId) => {
+    const content = streams(
+      renderDocument({ ...templateSample(), templateId }).output()
+    );
+    const positionOf = (label: string) => {
+      const positions = [
+        ...content.matchAll(
+          new RegExp(`([^\\n]+ Td)\\n\\(${label}\\) Tj`, 'g')
+        ),
+      ];
+      expect(positions.length, label).toBeGreaterThan(0);
+      return positions.at(-1)![1];
+    };
+    return [positionOf('Harbour House'), positionOf('INVOICE')].join(' / ');
+  });
+  expect(new Set(placements).size).toBe(20);
+});
+
+it('places totals before itemisation only in Balance First', () => {
+  for (const templateId of [...LAYOUT_IDS, ...COLLECTION_IDS]) {
+    const content = streams(
+      renderDocument({ ...templateSample(), templateId }).output()
+    );
+    const total = content.indexOf('285,950.00');
+    const item = content.indexOf('Reserve Red Wine');
+    expect(total).toBeGreaterThan(-1);
+    expect(item).toBeGreaterThan(-1);
+    expect(total < item).toBe(templateId === 'balance-first');
+  }
 });

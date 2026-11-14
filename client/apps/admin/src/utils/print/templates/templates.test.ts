@@ -28,15 +28,24 @@ describe('template selection', () => {
     expect(resolveTemplate(undefined, 'bill')).toBe('classic');
     expect(resolveTemplate({ defaultTemplate: 'invalid' }, 'bill')).toBe('classic');
   });
-  it('renders eight visually distinct documents without changing content', () => {
-    expect(TEMPLATES).toHaveLength(8);
+  it('resolves the invoice default ahead of Sales while preserving inheritance', () => {
+    const preferences = { defaultTemplate: 'classic', families: { sales: 'modern', invoice: 'compact' } };
+    expect(resolveTemplate(preferences, 'invoice')).toBe('compact');
+    expect(resolveTemplate(preferences, 'quotation')).toBe('modern');
+    expect(resolveTemplate(preferences, 'sales-order')).toBe('modern');
+    expect(resolveTemplate(preferences, 'invoice', 'folio')).toBe('folio');
+    expect(resolveTemplate({ defaultTemplate: 'classic', families: { sales: 'modern' } }, 'invoice')).toBe('modern');
+    expect(resolveTemplate({ defaultTemplate: 'classic' }, 'invoice')).toBe('classic');
+  });
+  it('registers twenty-eight selectable document templates', () => {
+    expect(TEMPLATES).toHaveLength(28);
     const outputs = TEMPLATES.map((template) => {
       const doc = renderDocument({ ...model, templateId: template.id });
       const raw = doc.output();
       expect(raw).toContain(`/Subject (Quotation | ${template.name})`);
       return raw;
     });
-    expect(new Set(outputs).size).toBe(8);
+    expect(new Set(outputs).size).toBe(TEMPLATES.length);
   });
   it.each([
     'stock',
@@ -66,5 +75,5 @@ describe('template selection', () => {
       });
       expect(doc.getNumberOfPages()).toBeGreaterThan(1);
     }
-  });
+  }, 30_000);
 });

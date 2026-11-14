@@ -1,10 +1,14 @@
 # Document template samples
 
-Eight styles are integrated under **Settings → Document templates**. Each tenant
-can save a business default and optional sales, purchases, price-list and stock
-defaults. Existing Print/PDF actions open a preview with a temporary style picker.
+Twenty-eight styles are integrated under **Settings → Document templates**. Each tenant
+can save a business default and optional invoice, sales, purchases, price-list
+and stock defaults. Invoices inherit Sales, then Business default when unset. Existing Print/PDF actions open a preview with a temporary style picker.
 
-[View the eight-style PDF catalogue](./template-catalogue.pdf)
+[View the second collection of ten layouts](./additional-layouts-catalogue.pdf)
+
+[View the first collection of ten invoice layouts](./invoice-layouts-catalogue.pdf)
+
+[View the original eight-style PDF catalogue](./template-catalogue.pdf)
 
 | Style | Sample | Character |
 | --- | --- | --- |
@@ -17,7 +21,7 @@ defaults. Existing Print/PDF actions open a preview with a temporary style picke
 | Atelier | [PDF](./atelier.pdf) | Terracotta and sand |
 | Blueprint | [PDF](./blueprint.pdf) | Blue and slate |
 
-All eight now share the original slanted masthead, status badge, rounded party
+The original eight share the original slanted masthead, status badge, rounded party
 cards, reference cards, compact table, shaded notes and rounded totals panel.
 The historical PDF renderer at commit `3c78f3fc` is the design reference.
 

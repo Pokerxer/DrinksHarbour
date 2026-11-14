@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import jsPDF from 'jspdf';
 import {
   buildRFQInvoice,
   buildPOInvoice,
@@ -7,6 +8,7 @@ import {
   buildReturnInvoice,
 } from './purchaseInvoice';
 import { moneyWords } from './print/print-shared';
+import { renderDocument } from './print/pdf-render';
 import type { DocumentModel } from './print/doc-model';
 import type { PurchaseOrder } from '@/app/shared/purchases/types';
 import type { VendorBill } from '@/services/vendorBill.service';
@@ -104,6 +106,48 @@ describe('buildRFQInvoice', () => {
     }
     // No computed line totals — the RFQ asks for prices, it does not state them
     expect(JSON.stringify(doc)).not.toContain('totalCost');
+  });
+
+  it('renders the saved unit prices, line amounts and quotation total in the PDF', () => {
+    const saved = buildRFQInvoice({
+      ...rfq,
+      currency: 'USD',
+      items: [
+        { ...rfq.items[0], quantity: 31, packagingQty: 6, unitCost: 12.5, packPrice: 75, totalCost: 375 },
+        { ...rfq.items[1], quantity: 3, unitPrice: 16 },
+      ],
+    }, 'DrinksHarbour');
+
+    expect(saved.table.rows[0].slice(1).map(cell => cell.text)).toEqual([
+      '31', 'USD 12.50', 'USD 375.00',
+    ]);
+    expect(saved.table.rows[0][1].sub).toBe('5 packs & 1 bottle');
+    expect(saved.table.rows[1].slice(2).map(cell => cell.text)).toEqual(['USD 16.00', 'USD 48.00']);
+    expect(saved.totals).toEqual([{ label: 'Quoted Total', value: 'USD 423.00', variant: 'grand' }]);
+
+    const pdf = renderDocument(saved, new jsPDF({ unit: 'pt', format: 'a4', compress: false })).output();
+    for (const amount of ['USD 12.50', 'USD 375.00', 'USD 16.00', 'USD 48.00', 'USD 423.00']) {
+      expect(pdf).toContain(`(${amount})`);
+    }
+  });
+
+  it('keeps unpriced defaults and presentation lines out of the totals', () => {
+    const saved = buildRFQInvoice({
+      ...rfq,
+      items: [
+        { ...rfq.items[0], lineType: 'section', name: 'Beverages', totalCost: 500 },
+        { ...rfq.items[0], quantity: 1, unitCost: 15, totalCost: 0 },
+        { ...rfq.items[1], unitCost: 0, totalCost: 0 },
+        { ...rfq.items[0], lineType: 'note', description: 'Deliver on Friday', totalCost: 500 },
+      ],
+    }, 'DrinksHarbour');
+
+    expect(saved.table.rows.map(row => row.slice(2).map(cell => cell.text))).toEqual([
+      ['', ''], ['NGN 15.00', 'NGN 0.00'], ['', ''], ['', ''],
+    ]);
+    expect(saved.table.rows[0][0].text).toBe('Beverages');
+    expect(saved.table.rows[3][0].text).toBe('Deliver on Friday');
+    expect(saved.totals).toEqual([{ label: 'Quoted Total', value: 'NGN 0.00', variant: 'grand' }]);
   });
 
   it('breaks requested quantities into packs', () => {

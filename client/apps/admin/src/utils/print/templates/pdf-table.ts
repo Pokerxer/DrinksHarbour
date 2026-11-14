@@ -5,6 +5,7 @@ import type { DocCell, DocColumn } from '../doc-model';
 import type { DocumentTemplate } from './registry';
 import { hexToRgb } from '../pdf-theme';
 import { BOTTOM, H, M } from './pdf-layout';
+import { measureTableColumns, splitTableColumns } from './pdf-table-widths';
 export function drawTable(
   doc: jsPDF,
   t: DocumentTemplate,
@@ -13,6 +14,36 @@ export function drawTable(
   y: number,
   compact = false
 ): number {
+  if (!columns.length) return y;
+  // The existing auto-fit works for standard tables. Reserve readable widths
+  // for dense tables, including stock valuation and multi-tier price lists.
+  const widths = columns.length >= 7 ? measureTableColumns(doc, t, columns, rows, compact) : [];
+  if (!widths.length) return drawTablePage(doc, t, columns, rows, y, compact, widths);
+
+  for (const [index, group] of splitTableColumns(widths, columns).entries()) {
+    if (index) {
+      doc.addPage();
+      y = CONTINUATION_TOP;
+    }
+    y = drawTablePage(
+      doc, t, group.map((i) => columns[i]),
+      rows.map((row) => group.map((i) => row[i] ?? { text: '' })),
+      y, compact, group.map((i) => widths[i])
+    );
+  }
+  return y;
+}
+
+function drawTablePage(
+  doc: jsPDF,
+  t: DocumentTemplate,
+  columns: DocColumn[],
+  rows: DocCell[][],
+  y: number,
+  compact: boolean,
+  minWidths: number[]
+): number {
+  const openHeader = t.table === 'plain';
   autoTable(doc, {
     startY: y,
     margin: { left: M, right: M, top: CONTINUATION_TOP, bottom: H - BOTTOM },
@@ -30,13 +61,13 @@ export function drawTable(
       overflow: 'linebreak',
     },
     headStyles: {
-      fillColor: hexToRgb(compact ? '#f3f4f6' : t.accent),
-      textColor: hexToRgb(compact ? '#6b7280' : '#ffffff'),
+      fillColor: hexToRgb(compact ? '#f3f4f6' : openHeader ? t.wash : t.accent),
+      textColor: hexToRgb(compact ? '#6b7280' : openHeader ? t.accent : '#ffffff'),
       fontStyle: 'bold',
       fontSize: compact ? 6.6 : 7.2,
       cellPadding: compact ? 4 : { top: 7, bottom: 7, left: t.density, right: t.density },
     },
-    alternateRowStyles: { fillColor: hexToRgb('#f9fafb') },
+    alternateRowStyles: openHeader ? {} : { fillColor: hexToRgb('#f9fafb') },
     columnStyles: Object.fromEntries(columns.map((c, i) => [i, { halign: c.align ?? 'left' }])),
     willDrawCell(data) {
       if (data.section !== 'body' || data.row.spansMultiplePages) return;
@@ -45,10 +76,14 @@ export function drawTable(
       doc.setFont(t.font, cell.strong ? 'bold' : 'normal').setFontSize(data.cell.styles.fontSize);
       data.cell.text = doc.splitTextToSize(
         cell.text,
-        data.cell.width - data.cell.padding('left') - data.cell.padding('right')
+        data.cell.width - data.cell.padding('left') - data.cell.padding('right') + 1
       );
     },
     didDrawCell(data) {
+      if (data.section === 'body' && openHeader) {
+        const { x, y, width, height } = data.cell;
+        doc.setDrawColor('#e5e7eb').setLineWidth(0.4).line(x, y + height, x + width, y + height);
+      }
       if (data.section !== 'body' || data.row.spansMultiplePages) return;
       const cell = rows[data.row.index]?.[data.column.index];
       if (!cell?.sub) return;
@@ -72,6 +107,7 @@ export function drawTable(
     },
     didParseCell(data) {
       data.cell.styles.halign = columns[data.column.index]?.align ?? 'left';
+      data.cell.styles.minCellWidth = minWidths[data.column.index] ?? 0;
       if (data.section !== 'body') return;
       const cell = rows[data.row.index]?.[data.column.index];
       if (cell?.strong) {

@@ -29,5 +29,5 @@ export function printProformaInvoice(
 }
 
 export function printSalesInvoice(so: SalesOrder, companyName: string): void {
-  downloadPdf(buildSalesDoc(so, companyName, 'sales-order'));
+  downloadPdf({ ...buildSalesDoc(so, companyName, 'sales-order'), kind: 'invoice' });
 }

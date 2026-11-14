@@ -37,8 +37,8 @@ export function buildStockDoc(
     table: {
       columns: [
         { label: 'Product' },
-        { label: 'Size' },
-        { label: 'Warehouse' },
+        { label: 'Size', repeatOnContinuation: true },
+        { label: 'Warehouse', repeatOnContinuation: true },
         { label: 'On hand', align: 'right' },
         { label: 'Reserved', align: 'right' },
         ...(valuation

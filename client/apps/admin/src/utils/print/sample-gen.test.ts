@@ -2,6 +2,8 @@
 // /tmp/invoice-preview so the layout can be inspected by eye. It asserts only
 // that rendering succeeds — the layout itself is judged from the files.
 import { it, expect } from 'vitest';
+import { pdfPageStreams } from './templates/pdf-test-content';
+import { TEMPLATES } from './templates/registry';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { buildRFQInvoice } from './rfq-print';
 import { buildPOInvoice } from './po-print';
@@ -336,4 +338,26 @@ it('writes sample PDFs', () => {
     console.log(`wrote ${outDir}/${name}.pdf pages=${doc.getNumberOfPages()}`);
   }
   expect(docs).toHaveLength(7);
+});
+
+
+const purchaseAndInventorySamples = [
+  { model: buildRFQInvoice(rfq, 'Harbour House'), markers: ['RFQ-2026-0001', 'MSD-4471', 'Hennessy VS Cognac'] },
+  { model: buildPOInvoice(po, 'Harbour House'), markers: ['PO-2026-0100', 'PO-2026-0088', 'Maitama Store'] },
+  { model: buildBillInvoice(paidBill, 'Harbour House'), markers: ['BILL-2026-0043', 'TRF-88991', 'RCPT-00212', '4,300,000.00', '(PAID)'] },
+  { model: buildTransferInvoice(transfer, 'Harbour House'), markers: ['TRF-2026-0017', 'Wuse II Outlet'] },
+  { model: buildReturnInvoice(vendorReturn, 'Harbour House'), markers: ['RET-2026-0009', 'GIG-771254', 'RF-00341', '1,472,750.00'] },
+];
+
+it.each(TEMPLATES)('$name preserves purchase and stock movement details', ({ id, collection }) => {
+  for (const { model, markers } of purchaseAndInventorySamples) {
+    const pdf = renderDocument({ ...model, templateId: id });
+    const content = pdfPageStreams(pdf.output()).join('\n');
+    for (const marker of markers) expect(content, `${id} / ${model.kind}`).toContain(marker);
+    if (collection && process.env.DOCUMENT_TEMPLATE_REVIEW) {
+      const outDir = '/tmp/document-template-preview/cross-document';
+      mkdirSync(outDir, { recursive: true });
+      writeFileSync(`${outDir}/${id}-${model.kind}.pdf`, Buffer.from(pdf.output('arraybuffer')));
+    }
+  }
 });

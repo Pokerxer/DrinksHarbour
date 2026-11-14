@@ -44,11 +44,12 @@ export default function DirectDocumentPrint({
         return buildBillInvoice(data, name);
       }
       const { data } = await purchaseOrderService.getPurchaseOrder(id, token!);
-      return ['confirmed', 'received', 'validated', 'billed', 'partially_received'].includes(
-        data.status
-      )
-        ? buildPOInvoice(data as Parameters<typeof buildPOInvoice>[0], name)
-        : buildRFQInvoice(data as Parameters<typeof buildRFQInvoice>[0], name);
+      const isQuotation = data.type
+        ? data.type === 'rfq'
+        : !['confirmed', 'received', 'validated', 'billed', 'partially_received'].includes(data.status);
+      return isQuotation
+        ? buildRFQInvoice(data, name)
+        : buildPOInvoice(data, name);
     }
     load()
       .then((model) => {

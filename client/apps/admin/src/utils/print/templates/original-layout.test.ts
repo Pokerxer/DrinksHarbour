@@ -4,7 +4,7 @@ import { drawHeader } from './pdf-layout';
 import { TEMPLATES } from './registry';
 import { templateSample } from '@/app/shared/document-templates/template-sample';
 
-it.each(TEMPLATES)(
+it.each(TEMPLATES.filter((t) => !t.layout && !t.collection))(
   'retains the original slanted band and department badge in $name',
   (template) => {
     const doc = new jsPDF({ unit: 'pt', format: 'a4', compress: false });

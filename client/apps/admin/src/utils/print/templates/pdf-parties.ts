@@ -2,7 +2,8 @@ import type jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import type { DocumentModel } from '../doc-model';
 import type { DocumentTemplate } from './registry';
-import { M, H, CW, BOTTOM, CONTINUATION_TOP, box, color } from './pdf-layout';
+import { drawTable } from './pdf-table';
+import { M, H, CW, BOTTOM, CONTINUATION_TOP, box, color, line } from './pdf-layout';
 
 export function drawParties(
   doc: jsPDF,
@@ -11,6 +12,16 @@ export function drawParties(
   startY: number
 ): number {
   if (!m.parties.length) return startY;
+  if (t.parties === 'stacked') {
+    return drawTable(
+      doc, t, [{ label: 'Party' }, { label: 'Details' }],
+      m.parties.map((party) => [
+        { text: party.heading, strong: true },
+        { text: party.name, sub: party.lines?.filter(Boolean).join('\n') },
+      ]),
+      startY, true
+    ) + 13;
+  }
   const width = (CW - 12 * (m.parties.length - 1)) / m.parties.length;
   const cards = m.parties.map((p) => {
     doc.setFont(t.font, 'bold').setFontSize(6.6);
@@ -55,19 +66,27 @@ export function drawParties(
     doc.setFillColor(t.wash);
     doc.setDrawColor('#e5e7eb');
     doc.setLineWidth(0.7);
-    doc.roundedRect(x, y, width, height, 4, 4, 'FD');
-    box(doc, x + 0.7, y + 5, 2.6, height - 10, i % 2 ? t.secondary : t.accent);
+    if (t.parties === 'cards') {
+      doc.roundedRect(x, y, width, height, 4, 4, 'FD');
+      box(doc, x + 0.7, y + 5, 2.6, height - 10, i % 2 ? t.secondary : t.accent);
+    } else if (t.parties === 'ruled') {
+      line(doc, x, y, width, t.secondary);
+      line(doc, x, y + height, width, t.secondary);
+    }
+    const mirror = t.layout === 'centred' && i % 2 === 1;
+    const textX = mirror ? x + width - 14 : x + 14;
+    const align = mirror ? 'right' : 'left';
     doc.setFont(t.font, 'bold').setFontSize(6.6);
     color(doc, '#6b7280');
-    doc.text(card.heading, x + 14, y + 16);
+    doc.text(card.heading, textX, y + 16, { align });
     doc.setFontSize(10.5);
     color(doc, '#111827');
     const nameY = y + 24 + card.heading.length * 8;
-    doc.text(card.name, x + 14, nameY, { lineHeightFactor: 1.2 });
+    doc.text(card.name, textX, nameY, { align, lineHeightFactor: 1.2 });
     doc.setFont(t.font, 'normal').setFontSize(8);
     color(doc, '#6b7280');
     if (card.details.length)
-      doc.text(card.details, x + 14, nameY + card.name.length * 13, { lineHeightFactor: 1.375 });
+      doc.text(card.details, textX, nameY + card.name.length * 13, { align, lineHeightFactor: 1.375 });
   });
   return y + height + 13;
 }

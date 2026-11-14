@@ -5,6 +5,7 @@ import type { DocumentModel } from './doc-model';
 import { sanitize } from './pdf-text';
 import { templateById } from './templates/registry';
 import { drawHeader, drawFooter, color, line, M, W, H, CW, BOTTOM } from './templates/pdf-layout';
+import { drawLayoutMasthead } from './templates/pdf-mastheads';
 import { drawTable } from './templates/pdf-table';
 import { drawTotals } from './templates/pdf-totals';
 import { drawMeta } from './templates/pdf-meta';
@@ -58,26 +59,24 @@ export function renderDocument(model: DocumentModel, target?: jsPDF): jsPDF {
       offset += count;
     } while (offset < lines.length);
   };
-  y = drawParties(doc, m, t, y);
-  if (m.meta.length) {
-    y =
-      drawMeta(doc, m.meta, t, y) ??
-      drawTable(
-        doc,
-        t,
-        m.meta.map(([label]) => ({ label })),
-        [m.meta.map(([, value]) => ({ text: value }))],
-        y,
-        true
-      ) + 14;
-  }
-  if (m.notice) paragraph(m.notice.title, m.notice.body);
-  y = drawTable(doc, t, m.table.columns, m.table.rows, y) + 16;
-  if (m.totals.length) {
-    // Keep normal totals together when possible; oversized summaries paginate.
+  const totals = () => {
+    if (!m.totals.length) return;
     ensure(Math.min(180, m.totals.length * 24 + 16));
     y = drawTotals(doc, m.totals, t, y) + 16;
+  };
+  y = drawParties(doc, m, t, y);
+  if (m.meta.length) {
+    const cards = t.references === 'stack' ? undefined : drawMeta(doc, m.meta, t, y);
+    y = cards ?? drawTable(
+      doc, t, [{ label: 'Reference' }, { label: 'Details' }],
+      m.meta.map(([label, value]) => [{ text: label, strong: true }, { text: value }]),
+      y, true
+    ) + 14;
   }
+  if (m.notice) paragraph(m.notice.title, m.notice.body);
+  if (t.totalsPlacement === 'before-items') totals();
+  y = drawTable(doc, t, m.table.columns, m.table.rows, y) + 16;
+  if (t.totalsPlacement !== 'before-items') totals();
   if (m.words) paragraph('Amount in words', m.words);
   for (const table of m.miniTables ?? []) {
     ensure(60);
@@ -96,21 +95,29 @@ export function renderDocument(model: DocumentModel, target?: jsPDF): jsPDF {
     paragraph(group.title, group.items.map(([label, value]) => `${label}: ${value}`).join('\n'));
   for (const section of m.sections) paragraph(section.title, section.body);
   if (m.signatures.length) {
-    ensure(90);
-    y += 25;
     const width = CW / m.signatures.length;
-    for (let i = 0; i < m.signatures.length; i++) {
-      const signature = m.signatures[i];
-      const x = M + i * width;
+    const columns = m.signatures.map((signature) => {
+      doc.setFontSize(6.6).setFont(t.font, 'bold');
+      const role = doc.splitTextToSize(signature.role, width - 20) as string[];
+      doc.setFont(t.font, 'normal');
+      const name = signature.name
+        ? doc.splitTextToSize(signature.name, width - 20) as string[]
+        : [];
+      return { role, name };
+    });
+    ensure(36 + Math.max(...columns.map(({ role, name }) => (role.length + name.length) * 9)));
+    y += 20;
+    columns.forEach(({ role, name }, index) => {
+      const x = M + index * width;
       line(doc, x, y, width - 20, '#cbd5e1');
-      color(doc, '#9ca3af');
+      color(doc, '#6b7280');
       doc.setFont(t.font, 'bold').setFontSize(6.6);
-      doc.text(doc.splitTextToSize(signature.role, width - 20), x, y + 14);
-      if (signature.name) {
+      doc.text(role, x, y + 13);
+      if (name.length) {
         doc.setFont(t.font, 'normal');
-        doc.text(doc.splitTextToSize(signature.name, width - 20), x, y + 38);
+        doc.text(name, x, y + 18 + role.length * 9);
       }
-    }
+    });
   }
   const total = doc.getNumberOfPages();
   for (let page = firstPage; page <= total; page++) {
@@ -126,8 +133,9 @@ export function renderDocument(model: DocumentModel, target?: jsPDF): jsPDF {
       doc.text(m.watermark, W / 2, H / 2, { align: 'center', angle: 30 });
       doc.restoreGraphicsState();
     }
-    if (page === firstPage) drawHeader(doc, m, t);
-    else drawContinuationHeader(doc, m, t);
+    if (page !== firstPage) drawContinuationHeader(doc, m, t);
+    else if (t.layout || t.collection) drawLayoutMasthead(doc, m, t);
+    else drawHeader(doc, m, t);
     drawFooter(doc, m, t, page - firstPage + 1, total - firstPage + 1);
   }
   return doc;

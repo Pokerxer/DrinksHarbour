@@ -68,7 +68,7 @@ export function buildPricelistDoc(
 
   const columns: DocumentModel['table']['columns'] = [
     { label: 'Product' },
-    { label: 'Size' },
+    { label: 'Size', repeatOnContinuation: true },
     ...(o.showAvailability
       ? [{ label: 'Available', align: 'right' as const }]
       : []),
