@@ -1,9 +1,10 @@
 // client/apps/platform/src/components/Product/Detail/BoughtTogether.tsx
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
+import { gtagEvent, viewItemListEvent, type GTagItem } from '@/lib/gtag';
 import { useCart } from '@/context/CartContext';
 import { cardPrice, useMerchandising, type MerchandisingProduct } from '@/components/Merchandising/useMerchandising';
 import type { ProductType } from '@/types/product.types';
@@ -41,6 +42,21 @@ const BoughtTogether: React.FC<BoughtTogetherProps> = ({ product }) => {
     () => (data?.boughtTogether ?? []).slice(0, 2) as MerchandisingProduct[],
     [data]
   );
+
+  const viewedRef = useRef(false);
+  useEffect(() => {
+    if (viewedRef.current || complements.length === 0) return;
+    viewedRef.current = true;
+    viewItemListEvent({
+      item_list_id: 'bought_together',
+      item_list_name: 'Complete the purchase',
+      items: [product, ...complements].map((p) => ({
+        item_id: (p as { slug?: string }).slug,
+        item_name: (p as { name?: string }).name,
+      })) as GTagItem[],
+    });
+  }, [complements, product]);
+
   if (complements.length < 1) return null;
 
   const selected = complements.filter((c) => !unchecked[c._id]);
@@ -51,6 +67,10 @@ const BoughtTogether: React.FC<BoughtTogetherProps> = ({ product }) => {
   const addSelected = () => {
     addToCart(product as ProductType);
     for (const item of selected) addToCart(item as unknown as ProductType);
+    gtagEvent('add_to_cart_merchandising', {
+      item_list_id: 'bought_together',
+      sources: [...complements.map((c) => c.source ?? 'unknown'), 'pdp_product'],
+    });
   };
 
   return (

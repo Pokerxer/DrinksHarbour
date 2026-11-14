@@ -1,9 +1,10 @@
 // client/apps/platform/src/components/Merchandising/CartCrossSellStrip.tsx
 'use client';
 
-import React from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
+import { gtagEvent, viewItemListEvent, type GTagItem } from '@/lib/gtag';
 import { useCart, getEffectiveUnitPrice, type CartItem } from '@/context/CartContext';
 import { cardPrice, useMerchandising, type MerchandisingProduct } from './useMerchandising';
 import type { ProductType } from '@/types/product.types';
@@ -44,16 +45,35 @@ const CartCrossSellStrip: React.FC = () => {
   const primary = pickPrimaryLine(cartArray);
   const { data } = useMerchandising(primary?._id ?? primary?.id, 'cart');
 
-  if (!cartArray.length || !data) return null;
+  // Hook-order discipline: all hooks run before the hide-when-empty early
+  // returns below, so `suggestions` lives in a memo over the same inputs.
+  const suggestions = useMemo(() => {
+    if (!cartArray.length || !data) return [] as MerchandisingProduct[];
+    const cartIds = cartArray.map((i) => (i as { _id?: string })._id).filter(Boolean) as string[];
+    return excludable(
+      data.crossSells.map((p) => p._id),
+      cartIds
+    )
+      .map((id) => data.crossSells.find((p) => p._id === id))
+      .filter((p): p is MerchandisingProduct => !!p && cardPrice(p) !== null)
+      .slice(0, 4);
+  }, [cartArray, data]);
 
-  const cartIds = cartArray.map((i) => (i as { _id?: string })._id).filter(Boolean) as string[];
-  const suggestions = excludable(
-    data.crossSells.map((p) => p._id),
-    cartIds
-  )
-    .map((id) => data.crossSells.find((p) => p._id === id))
-    .filter((p): p is MerchandisingProduct => !!p && cardPrice(p) !== null)
-    .slice(0, 4);
+  const viewedRef = useRef(false);
+  useEffect(() => {
+    if (viewedRef.current || suggestions.length === 0) return;
+    viewedRef.current = true;
+    viewItemListEvent({
+      item_list_id: 'cart_cross_sell',
+      item_list_name: 'Goes well with your cart',
+      items: suggestions.map((p) => ({
+        item_id: p.slug,
+        item_name: p.name,
+      })) as GTagItem[],
+    });
+  }, [suggestions]);
+
+  if (!cartArray.length || !data) return null;
 
   if (suggestions.length === 0) return null;
   const fmt = (n: number) => `₦${n.toLocaleString('en-NG')}`;
@@ -77,7 +97,13 @@ const CartCrossSellStrip: React.FC = () => {
             <span className="text-sm font-semibold text-gray-900">{fmt(cardPrice(p) as number)}</span>
             <button
               type="button"
-              onClick={() => addToCart(p as unknown as ProductType)}
+              onClick={() => {
+                addToCart(p as unknown as ProductType);
+                gtagEvent('add_to_cart_merchandising', {
+                  item_list_id: 'cart_cross_sell',
+                  sources: [p.source ?? 'unknown'],
+                });
+              }}
               className="mt-auto w-full rounded-full border border-gray-900 px-3 py-1.5 text-xs font-semibold text-gray-900 transition hover:bg-gray-900 hover:text-white"
             >
               Quick add
