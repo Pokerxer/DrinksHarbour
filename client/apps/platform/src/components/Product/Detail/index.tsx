@@ -11,6 +11,7 @@ import {purchaseLimits,clampPurchaseQuantity} from './purchase-quantity';
 import { resolveSellerChoice } from '@/utils/representativeOffer';
 import { resolveCatalogueHref } from '@/lib/catalogueLinks';
 import { useOfferImpression } from '@/components/Merchandising/useOfferImpression';
+import { useMerchandising } from '@/components/Merchandising/useMerchandising';
 import { purchasableOffers } from '@/components/Merchandising/offers';
 import { GiftOffer, PremiumOffer, SizeUpgrade } from '@/components/Merchandising/ProductOffers';
 import { gtagEvent } from '@/lib/gtag';
@@ -118,6 +119,9 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
 
   const productId = productData?._id || productData?.id || '';
   const isProductInCompare = isInCompare(productId);
+
+  // Premium upsell data for the "Step Up Your Pick" rail (hides itself when empty).
+  const { data: merch } = useMerchandising(productData?._id, 'pdp');
 
   const vendors = useMemo(() => productData?.availableAt || [], [productData]);
 
@@ -884,6 +888,12 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
             ? `/shop?category=${encodeURIComponent(productData.category.slug)}`
             : '/shop'
         }
+      />
+
+      {/* Premium upsell rail — same section component, hides itself when empty. */}
+      <RelatedProducts
+        products={(merch?.upSells ?? []) as ProductType[]}
+        title="Step Up Your Pick"
       />
 
       {/* Image Modal */}
