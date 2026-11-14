@@ -525,6 +525,21 @@ const orderSchema = new Schema(
       default: undefined,
     },
 
+    // ── Presentation layout for manually-intaked orders (WhatsApp builder) ──
+    // Sections and notes are presentation-only (never affect money); product
+    // entries reference their index in `items`. Written ONLY by the manual
+    // branch of createOrder. Print documents and the hosted invoice page
+    // render from this when present.
+    printLines: {
+      type: [{
+        lineType: { type: String, enum: ['product', 'section', 'note'], default: 'product' },
+        name: { type: String, default: '', maxlength: 300 },
+        description: { type: String, default: '', maxlength: 1000 },
+        productIndex: { type: Number, default: null },
+      }],
+      default: null,
+    },
+
     receiptNumber: {
       type: String,
       index: true,

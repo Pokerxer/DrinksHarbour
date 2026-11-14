@@ -87,6 +87,25 @@ exports.createOrder = asyncHandler(async (req, res) => {
     if (canonicalPaymentMethod !== 'bank_transfer') throw new ValidationError('Manual orders are invoiced for bank transfer / card payment');
     if (couponCode) throw new ValidationError('Coupons are not supported on manual orders');
   }
+  if (!isManual && Array.isArray(req.body.printLines)) {
+    throw new ValidationError('printLines is only accepted on manual orders');
+  }
+
+  // Presentation layout: sections/notes/per-line descriptions for the printed
+  // quotation & invoice. Presentation-only — never affects totals or revenue.
+  let printLines = null;
+  if (isManual && Array.isArray(manualOrder.printLines)) {
+    printLines = manualOrder.printLines
+      .filter((l) => l && ['product', 'section', 'note'].includes(l.lineType))
+      .map((l) => ({
+        lineType: l.lineType,
+        name: String(l.name ?? '').trim().slice(0, 300),
+        description: String(l.description ?? '').trim().slice(0, 1000),
+        productIndex: Number.isInteger(l.productIndex) && l.productIndex >= 0 && l.productIndex < items.length
+          ? l.productIndex
+          : null,
+      }));
+  }
 
   // For hosted-gateway payments the browser only knows which button was pressed
   // before hand-off — Korapay's checkout offers card, bank transfer and USSD
@@ -384,6 +403,7 @@ exports.createOrder = asyncHandler(async (req, res) => {
       originChannel: manualOrder.originChannel,
       placedBy: req.user._id,
     } : {}),
+    ...(printLines ? { printLines } : {}),
     items: orderItems,
     subtotal: calculatedSubtotal,
     discountTotal,

@@ -186,3 +186,45 @@ test('manual order must use the invoice payment method and no coupons', async (t
     /invoiced/i,
   );
 });
+
+test('manual order accepts and normalizes printLines', async (t) => {
+  const m = setupMocks(t, { matchedUser: null });
+  const { createOrder } = require('../controllers/order.controller');
+  const body = reqBody({ subProductId: String(m.ids.subId), sizeId: String(m.ids.sizeId) });
+  body.manualOrder = {
+    originChannel: 'whatsapp',
+    printLines: [
+      { lineType: 'section', name: '  Wines  ' },
+      { lineType: 'product', productIndex: 0, description: 'chilled' },
+      { lineType: 'note', name: 'note', description: 'deliver before Friday' },
+      { lineType: 'bogus', name: 'dropped' },                       // invalid type → dropped
+      { lineType: 'product', productIndex: 99 },                     // out of bounds → clamped to null
+      { lineType: 'product', productIndex: -3 },                     // negative → clamped to null
+    ],
+  };
+  const req = { body, user: ADMIN, get: () => 'idem-pl-1' };
+  let code;
+  const res = { status(c) { code = c; return { json: () => {} }; }, json: () => {} };
+  await createOrder(req, res, (e) => { throw e; });
+  assert.strictEqual(code, 201);
+  const pl = m.captured().printLines;
+  assert.strictEqual(pl.length, 5, 'invalid lineType dropped');
+  assert.strictEqual(pl[0].lineType, 'section');
+  assert.strictEqual(pl[0].name, 'Wines');
+  assert.strictEqual(pl[1].description, 'chilled');
+  assert.strictEqual(pl[2].lineType, 'note');
+  assert.strictEqual(pl[3].productIndex, null, 'out-of-bounds productIndex clamped');
+  assert.strictEqual(pl[4].productIndex, null, 'negative productIndex clamped');
+});
+
+test('non-manual orders reject printLines entirely', async (t) => {
+  const m = setupMocks(t, { matchedUser: CUSTOMER_USER });
+  const { createOrder } = require('../controllers/order.controller');
+  const body = reqBody({ subProductId: String(m.ids.subId), sizeId: String(m.ids.sizeId) });
+  delete body.manualOrder;
+  body.printLines = [{ lineType: 'section', name: 'x' }];
+  const res = { status: () => ({ json: () => {} }), json: () => {} };
+  await assert.rejects(
+    () => createOrder({ body, user: ADMIN, get: () => 'k' }, res, (e) => { throw e; }),
+  );
+});
