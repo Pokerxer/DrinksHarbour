@@ -12,6 +12,7 @@ import { useWishlist } from '@/context/WishlistContext';
 import { useModalWishlistContext } from '@/context/ModalWishlistContext';
 import { viewItemListEvent, type GTagItem } from '@/lib/gtag';
 import CartGiftOptions from '@/components/Merchandising/CartGiftOptions';
+import CartCrossSellStrip from '@/components/Merchandising/CartCrossSellStrip';
 import { clearGiftMessage, giftCheckoutPath, saveGiftMessage } from '@/lib/giftCartDraft';
 import DrinkKit from '@/components/Merchandising/DrinkKit';
 import { useTenant } from '@/context/TenantContext';
@@ -535,6 +536,8 @@ const CartPage = () => {
                 })}
               </AnimatePresence>
             </div>
+
+            <CartCrossSellStrip />
 
             {isMainSite && <DrinkKit />}
 
