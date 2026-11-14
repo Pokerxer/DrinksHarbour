@@ -12,6 +12,7 @@ import {
   PiReceiptDuotone,
   PiStarDuotone,
   PiImageDuotone,
+  PiPathDuotone,
   PiTruckDuotone,
   PiUserGearDuotone,
   PiUsersThreeDuotone,
@@ -244,6 +245,13 @@ export const tenantMenuItems: TenantMenuEntry[] = [
     href: routes.eCommerce.banners,
     icon: <PiImageDuotone />,
     requiredPlan: 'starter',
+  },
+  {
+    name: 'Merchandising',
+    minRole: 'tenant_admin',
+    href: routes.eCommerce.merchandising,
+    icon: <PiPathDuotone />,
+    requiredPlan: 'growth',
   },
 
   // ─── Purchases ──────────────────────────────────────────────

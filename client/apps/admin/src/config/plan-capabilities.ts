@@ -255,6 +255,14 @@ export const ROUTE_CAPABILITIES: RouteRequirement[] = [
     anyOf: ['purchase_orders'],
     label: 'Purchase Orders',
   },
+  {
+    // Manual "buy X with Y" pairings — capability added with phase-2
+    // merchandising; the server's /api/merchandising/pairings enforces the
+    // same merchandising_manual gate via requireCapability.
+    prefix: '/merchandising',
+    anyOf: ['merchandising_manual'],
+    label: 'Manual Pairings',
+  },
   { prefix: '/support', anyOf: ANY_CRM, label: 'Customer Support & CRM' },
   { prefix: '/contacts', anyOf: ANY_CRM, label: 'Contacts & CRM' },
   { prefix: '/point-of-sale', anyOf: ANY_POS, label: 'Point of Sale' },

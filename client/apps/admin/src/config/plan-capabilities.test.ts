@@ -92,6 +92,25 @@ describe('capability gates follow the pricing', () => {
     expect(allow('/inventory', 'free_trial')).toBe(true);
     expect(allow('/warehouses', 'free_trial')).toBe(true);
   });
+
+  it('grants Growth+ the manual pairings module and refuses Starter', () => {
+    // merchandising_manual is sold from Growth up (matches the server's
+    // requireCapability('merchandising_manual') on /api/merchandising/*).
+    expect(routeRequirementFor('/merchandising/create')?.prefix).toBe(
+      '/merchandising'
+    );
+    expect(allow('/merchandising', 'growth')).toBe(true);
+    expect(allow('/merchandising/create', 'pro')).toBe(true);
+    expect(allow('/merchandising', 'starter')).toBe(false);
+    expect(allow('/merchandising', 'free_trial')).toBe(false);
+    expect(
+      checkPlanAccess({
+        path: '/merchandising',
+        role: 'tenant_owner',
+        plan: 'starter',
+      }).upgradeTo
+    ).toBe('growth');
+  });
 });
 
 describe('legacy thresholds', () => {
