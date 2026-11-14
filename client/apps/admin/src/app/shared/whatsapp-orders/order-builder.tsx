@@ -1,149 +1,143 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import * as Icon from 'react-icons/pi';
+import toast from 'react-hot-toast';
 import { useAuthorization } from '@/hooks/use-authorization';
 import { routes } from '@/config/routes';
-import { whatsappOrderService } from '@/services/whatsapp-order.service';
-import CustomerCard, { type CustomerDraft } from './customer-card';
-import ProductPickerModal, { type PickedLine } from './product-picker-modal';
+import BuilderHeader from './builder-header';
+import BuilderCustomerBar from './builder-customer-bar';
+import BuilderReviewPanel from './builder-review-panel';
 import DeliveryCard, { type DeliveryDraft } from './delivery-card';
-import TotalsPanel from './totals-panel';
+import { printOrderDocuments } from '@/utils/print/whatsapp-order-print';
+import {
+  whatsappOrderService, type BuilderLine, type ManualPrintLine,
+} from '@/services/whatsapp-order.service';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+const DRAFT_KEY = 'dh:wa-builder-draft-v2';
 
 const fmtNgn = (n: number) =>
   new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 }).format(n);
 
-/** Idempotency key survives retries of the same submission (checkoutAttemptKey pattern). */
+/** Idempotency key survives retries of the same submission (checkout pattern). */
 function attemptKey(): string {
-  const KEY = 'dh:wa-order-attempt';
-  let v = window.sessionStorage.getItem(KEY);
-  if (!v) { v = `wa-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`; window.sessionStorage.setItem(KEY, v); }
+  let v = window.sessionStorage.getItem('dh:wa-order-attempt');
+  if (!v) {
+    v = `wa-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    window.sessionStorage.setItem('dh:wa-order-attempt', v);
+  }
   return v;
 }
 function finishAttempt() { window.sessionStorage.removeItem('dh:wa-order-attempt'); }
 
+interface DraftShape {
+  customer: { firstName: string; lastName: string; email: string; phone: string };
+  delivery: DeliveryDraft;
+  lines: BuilderLine[];
+}
+
 export default function OrderBuilder() {
-  const { user } = useAuthorization();
+  const { user } = useAuthorization() as unknown as { user: { token?: string } };
   const token = user?.token || '';
 
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const [lines, setLines] = useState<PickedLine[]>([]);
-  const [customer, setCustomer] = useState<CustomerDraft>({ firstName: '', lastName: '', email: '', phone: '' });
+  const [customer, setCustomer] = useState<DraftShape['customer']>({ firstName: '', lastName: '', email: '', phone: '' });
   const [delivery, setDelivery] = useState<DeliveryDraft>({ address: '', lga: '', state: '', zipCode: '', country: 'Nigeria' });
+  const [lines, setLines] = useState<BuilderLine[]>([]);
   const [shippingFee, setShippingFee] = useState(0);
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState('');
   const [created, setCreated] = useState<{ orderId: string; orderNumber: string; totalAmount: number } | null>(null);
+  // Lifted customer-match status — BuilderCustomerBar's lookup effect reports it.
+  const [customerStatusText, setCustomerStatusText] = useState('Checking…');
+  // Overlays mounted by Tasks 6–7 (catalogue modal, scan drawer).
+  const [catalogOpen, setCatalogOpen] = useState(false);
+  const [scanOpen, setScanOpen] = useState(false);
 
-  const subtotal = useMemo(() => lines.reduce((s, l) => s + l.unitPrice * l.quantity, 0), [lines]);
+  // ── sessionStorage draft (restore once on mount; save on change) ──
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(DRAFT_KEY);
+      if (raw) {
+        const d = JSON.parse(raw) as DraftShape;
+        setCustomer(d.customer); setDelivery(d.delivery); setLines(d.lines || []);
+      }
+    } catch { /* ignore */ }
+  }, []);
+  useEffect(() => {
+    if (created) return;
+    try { sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ customer, delivery, lines })); } catch { /* ignore */ }
+  }, [customer, delivery, lines, created]);
+
+  const productLines = lines.filter((l) => l.lineType === 'product');
+  const subtotal = productLines.reduce((s, l) => s + (l.unitPrice || 0) * l.quantity, 0);
   const total = subtotal + shippingFee;
-
   const canSubmit = Boolean(
     customer.firstName.trim() && customer.phone.trim() && customer.email.trim() &&
-    delivery.address.trim() && delivery.state.trim() && delivery.lga.trim() && lines.length > 0 && token
+    delivery.address.trim() && delivery.state.trim() && delivery.lga.trim() &&
+    productLines.length > 0 && token && !submitting &&
+    !productLines.some((l) => l.unitPrice == null)   // every product line has a server price
   );
 
-  const submit = async () => {
+  const submit = useCallback(async () => {
     if (!canSubmit || submitting) return;
-    setSubmitting(true); setError('');
+    setSubmitting(true);
     try {
-      // Server-priced preview first — the same validation checkout uses — so
-      // stale price/stock problems surface before the order is created. The
-      // endpoint is public and prices items itself from subProductId/sizeId.
-      // NOTE: the marketplace price routinely differs from the tenant retail
-      // price the picker displays, so `price_changed` is EXPECTED for most
-      // lines — we adopt the server-corrected price/quantity (mirroring
-      // checkout's "Accept & Continue" modal) and only block on lines that
-      // are truly unbuyable.
-      const preview = await fetch(`${API_URL}/api/cart/validate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ items: lines.map(l => ({
-          subProductId: l.subProductId, sizeId: l.sizeId, quantity: l.quantity, price: l.unitPrice,
-        })) }),
-      });
-      const previewBody = (await preview.json()) as {
-        success?: boolean;
-        data?: { items?: Array<{ subProductId?: string; sizeId?: string | null; status: string; name?: string; currentPrice?: number | null; maxQuantity?: number | null }> };
-      };
-      let corrected = lines;
-      let shippingFeeForOrder = shippingFee;
-      if (previewBody.success) {
-        const results = previewBody.data?.items || [];
-        const blocked: string[] = [];
-        let adjusted = false;
-        corrected = lines.map((l) => {
-          const v = results.find(r =>
-            r.subProductId === l.subProductId && (r.sizeId || null) === (l.sizeId || null));
-          if (!v || v.status === 'ok') return l;
-          if (v.status === 'out_of_stock' || v.status === 'unavailable') {
-            blocked.push(`${l.productName}${l.sizeName ? ` (${l.sizeName})` : ''} — unavailable`);
-            return l;
-          }
-          const next = { ...l };
-          if (v.status === 'price_changed' && v.currentPrice != null && v.currentPrice > 0) next.unitPrice = v.currentPrice;
-          if (v.status === 'quantity_reduced' && v.maxQuantity != null) next.quantity = Math.max(1, v.maxQuantity);
-          if (next.unitPrice !== l.unitPrice || next.quantity !== l.quantity) adjusted = true;
-          return next;
-        });
-        if (blocked.length) {
-          throw new Error(`Some items cannot be ordered: ${blocked.join(', ')}. Please remove or replace them.`);
-        }
-        if (adjusted) {
-          setLines(corrected);
-          // The delivery fee was quoted against the pre-correction subtotal —
-          // re-quote so the order never posts a stale fee below the zone floor.
-          const cSubtotal = corrected.reduce((s, l) => s + l.unitPrice * l.quantity, 0);
-          const requote = await fetch(`${API_URL}/api/shipping/calculate?${new URLSearchParams({
-            state: delivery.state, lga: delivery.lga, subtotal: String(cSubtotal),
-          })}`);
-          const requoteBody = (await requote.json()) as { success?: boolean; data?: { fee?: number } };
-          if (requoteBody.success && typeof requoteBody.data?.fee === 'number') {
-            setShippingFee(requoteBody.data.fee);
-            shippingFeeForOrder = requoteBody.data.fee;
-          }
-        }
-      }
-      const orderSubtotal = corrected.reduce((s, l) => s + l.unitPrice * l.quantity, 0);
-      const orderShipping = shippingFeeForOrder;
+      // printLines: presentation layout in client line order; product entries
+      // carry their index into the items array (only product lines are items).
+      const productIndexByKey = new Map<string, number>();
+      let idx = 0;
+      for (const l of lines) if (l.lineType === 'product') productIndexByKey.set(l.key, idx++);
+      const printLines: ManualPrintLine[] = lines.map((l) => ({
+        lineType: l.lineType,
+        name: l.lineType === 'product' ? '' : (l.productName || l.description || ''),
+        description: l.description || '',
+        productIndex: l.lineType === 'product' ? (productIndexByKey.get(l.key) ?? null) : null,
+      }));
       const order = await whatsappOrderService.createOrder(token, {
         customer: { firstName: customer.firstName.trim(), lastName: customer.lastName.trim(), email: customer.email.trim(), phone: customer.phone.trim() },
         shipping: { address: delivery.address.trim(), city: delivery.lga, lga: delivery.lga, state: delivery.state, zipCode: delivery.zipCode, country: delivery.country },
         paymentMethod: 'bank_transfer',
-        items: corrected.map(l => ({ subProductId: l.subProductId, productId: l.productId, sizeId: l.sizeId, quantity: l.quantity, price: l.unitPrice })),
-        subtotal: orderSubtotal, shippingFee: orderShipping, total: orderSubtotal + orderShipping,
-        manualOrder: { originChannel: 'whatsapp' },
+        items: productLines.map((l) => ({ subProductId: l.subProductId!, productId: l.productId, sizeId: l.sizeId!, quantity: l.quantity, price: l.unitPrice! })),
+        subtotal, shippingFee, total,
+        manualOrder: { originChannel: 'whatsapp', printLines },
       }, attemptKey());
       finishAttempt();
-      setCreated({ orderId: order._id, orderNumber: order.orderNumber, totalAmount: order.totalAmount });
+      sessionStorage.removeItem(DRAFT_KEY);
+      setCreated({ orderId: (order as { _id: string })._id, orderNumber: order.orderNumber, totalAmount: order.totalAmount });
+      toast.success(`Order ${order.orderNumber} created`);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not create the order');
+      toast.error(e instanceof Error ? e.message : 'Could not create the order', { duration: 6000 });
     } finally { setSubmitting(false); }
-  };
+  }, [canSubmit, submitting, lines, customer, delivery, subtotal, shippingFee, total, token]);
 
   if (created) {
     return (
-      <div className="mx-auto max-w-3xl rounded-2xl bg-white p-10 text-center shadow-sm ring-1 ring-gray-100">
-        <Icon.PiCheckCircleBold size={56} className="mx-auto text-green-500 mb-4" />
-        <h2 className="text-xl font-black text-gray-900 mb-1">Order {created.orderNumber} created</h2>
-        <p className="text-sm text-gray-500 mb-6">
+      <div className="mx-auto mt-8 max-w-2xl rounded-xl border border-gray-200 bg-white p-8 text-center shadow-sm">
+        <Icon.PiCheckCircleBold size={52} className="mx-auto mb-3 text-green-600" />
+        <h2 className="font-lexend text-xl font-bold text-gray-900">Order {created.orderNumber} created</h2>
+        <p className="mt-1 text-sm text-gray-500">
           {fmtNgn(created.totalAmount)} · tenants have been alerted and can fulfil it.
-          Next: issue the invoice so the customer can pay.
         </p>
-        <div className="flex flex-wrap items-center justify-center gap-3">
+        <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
           <Link href={routes.eCommerce.orderDetails(created.orderId)}
-            className="px-5 py-2.5 border border-gray-200 text-gray-700 font-bold rounded-xl text-sm hover:bg-gray-50">
+            className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
             View order
           </Link>
           <Link href={`${routes.eCommerce.orderDetails(created.orderId)}#whatsapp-invoice`}
-            className="px-5 py-2.5 bg-gradient-to-br from-red-700 to-red-900 text-white font-bold rounded-xl text-sm hover:from-red-800 hover:to-red-950">
+            className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-dark">
             Issue invoice →
           </Link>
-          <button onClick={() => { setCreated(null); setLines([]); setPickerOpen(false); }}
-            className="px-5 py-2.5 text-sm font-bold text-red-700 hover:bg-red-50 rounded-xl">
+          <button onClick={() => printOrderDocuments(created.orderId, token, 'quotation')}
+            className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+            Print quotation
+          </button>
+          <button onClick={() => printOrderDocuments(created.orderId, token, 'invoice')}
+            className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+            Print invoice
+          </button>
+          <button onClick={() => { setCreated(null); setLines([]); setCustomer({ firstName: '', lastName: '', email: '', phone: '' }); setDelivery({ address: '', lga: '', state: '', zipCode: '', country: 'Nigeria' }); setShippingFee(0); }}
+            className="rounded-lg px-4 py-2 text-sm font-semibold text-brand hover:bg-brand/5">
             Create another
           </button>
         </div>
@@ -151,50 +145,30 @@ export default function OrderBuilder() {
     );
   }
 
+  const customerStatus = customerStatusText; // from BuilderCustomerBar lookup state, lifted here
   return (
-    <div className="max-w-3xl space-y-5">
-      {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3">{error}</div>}
-
-      <CustomerCard value={customer} onChange={setCustomer} token={token} />
-
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-          <h3 className="text-sm font-black text-gray-900 flex items-center gap-2"><Icon.PiPackageBold size={16} className="text-red-700" /> Items</h3>
-          <button type="button" onClick={() => setPickerOpen(true)}
-            className="text-xs font-bold text-red-700 bg-red-50 border border-red-100 px-3 py-1.5 rounded-lg hover:bg-red-100">
-            + Add products
-          </button>
-        </div>
-        <div className="p-5 space-y-2">
-          {lines.length === 0 && <p className="text-sm text-gray-400 text-center py-6">No items yet — pick from any tenant&apos;s catalogue.</p>}
-          {lines.map((l, idx) => (
-            <div key={`${l.subProductId}-${l.sizeId}-${idx}`} className="flex items-center gap-3 bg-gray-50 rounded-xl p-3">
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-bold text-gray-900 truncate">{l.productName}{l.sizeName ? ` · ${l.sizeName}` : ''}</p>
-                <p className="text-xs text-gray-400">{l.tenantName} · {fmtNgn(l.unitPrice)} each</p>
-              </div>
-              <div className="flex items-center gap-2">
-                <button type="button" onClick={() => setLines(ls => ls.map((x, i) => i === idx ? { ...x, quantity: Math.max(1, x.quantity - 1) } : x))}
-                  className="w-7 h-7 rounded-lg border border-gray-200 text-gray-600 font-bold">−</button>
-                <span className="w-8 text-center font-bold">{l.quantity}</span>
-                <button type="button" onClick={() => setLines(ls => ls.map((x, i) => i === idx ? { ...x, quantity: x.quantity + 1 } : x))}
-                  className="w-7 h-7 rounded-lg border border-gray-200 text-gray-600 font-bold">+</button>
-              </div>
-              <span className="w-24 text-right font-bold text-gray-900">{fmtNgn(l.unitPrice * l.quantity)}</span>
-              <button type="button" onClick={() => setLines(ls => ls.filter((_, i) => i !== idx))} className="text-gray-300 hover:text-red-600">
-                <Icon.PiXBold size={14} />
-              </button>
-            </div>
-          ))}
-        </div>
+    <div>
+      <BuilderHeader customerStatus={customerStatus} busy={submitting} canSubmit={canSubmit}
+        onSubmit={submit} onOpenCatalog={() => setCatalogOpen(true)} onOpenScan={() => setScanOpen(true)} />
+      <div className="grid min-w-0 grid-cols-1 gap-4 2xl:grid-cols-[minmax(0,1fr)_288px]">
+        <fieldset disabled={submitting} className="min-w-0 space-y-4">
+          <BuilderCustomerBar value={customer} onChange={setCustomer} token={token} onStatus={setCustomerStatusText} />
+          {/* Lines card — placeholder card until Task 5 swaps in the line table */}
+          <div className="rounded-xl border border-gray-200 bg-white">
+            <div className="border-b border-gray-100 px-4 py-3 font-lexend text-sm font-bold text-gray-900">Order lines</div>
+            <div className="p-4 text-sm text-gray-400">Lines editor lands in the next task.</div>
+          </div>
+          <DeliveryCard value={delivery} onChange={setDelivery} subtotal={subtotal} onFee={setShippingFee} token={token} />
+        </fieldset>
+        <aside className="min-w-0 space-y-4 2xl:sticky 2xl:top-4 2xl:self-start">
+          <BuilderReviewPanel customerName={`${customer.firstName} ${customer.lastName}`.trim()}
+            customerPhone={customer.phone} productCount={productLines.length}
+            unitCount={productLines.reduce((s, l) => s + l.quantity, 0)}
+            subtotal={subtotal} shippingFee={shippingFee} total={total}
+            deliverySummary={delivery.state ? `${delivery.address} · ${delivery.lga}, ${delivery.state}` : ''} />
+        </aside>
       </div>
-
-      <DeliveryCard value={delivery} onChange={setDelivery} subtotal={subtotal} onFee={(fee) => setShippingFee(fee)} token={token} />
-
-      <TotalsPanel subtotal={subtotal} shippingFee={shippingFee} total={total} submitting={submitting} disabled={!canSubmit} onSubmit={submit} />
-
-      <ProductPickerModal open={pickerOpen} onClose={() => setPickerOpen(false)} token={token}
-        onAdd={(picked) => { setLines(ls => [...ls, ...picked]); setPickerOpen(false); }} />
+      {/* Catalog + scan overlays mount here in Tasks 6–7 */}
     </div>
   );
 }
