@@ -67,6 +67,7 @@ const EXTRA_CAPABILITIES = [
   'guest_crm',
   'custom_integrations',
   'priority_support',
+  'merchandising_manual',
 ];
 
 const ERM_PLANS = {
@@ -103,7 +104,7 @@ const ERM_PLANS = {
     posLimit: 2,
     commissionRate: 0.11,
     paystackPlanCode: process.env.PAYSTACK_PLAN_GROWTH,
-    features: ['storefront', 'inventory', 'orders', 'pos_single', 'sales_invoicing', 'crm_basic', 'purchase_orders'],
+    features: ['storefront', 'inventory', 'orders', 'pos_single', 'sales_invoicing', 'crm_basic', 'purchase_orders', 'merchandising_manual'],
     addOnsAllowed: false,
   },
   pro: {
@@ -115,7 +116,7 @@ const ERM_PLANS = {
     posLimit: 2,
     commissionRate: 0.10,
     paystackPlanCode: process.env.PAYSTACK_PLAN_PRO,
-    features: ['storefront', 'inventory', 'orders', 'pos_multi', 'sales_invoicing', 'crm_basic', 'purchase_orders', 'multi_location', 'advanced_reports', 'api_access'],
+    features: ['storefront', 'inventory', 'orders', 'pos_multi', 'sales_invoicing', 'crm_basic', 'purchase_orders', 'multi_location', 'advanced_reports', 'api_access', 'merchandising_manual'],
     addOnsAllowed: true,
   },
   enterprise: {
@@ -127,7 +128,7 @@ const ERM_PLANS = {
     posLimit: 3,
     commissionRate: 0.09,
     paystackPlanCode: process.env.PAYSTACK_PLAN_ENTERPRISE,
-    features: ['storefront', 'inventory', 'orders', 'pos_multi', 'sales_invoicing', 'crm_advanced', 'purchase_orders', 'multi_location', 'advanced_reports', 'api_access', 'custom_integrations', 'priority_support'],
+    features: ['storefront', 'inventory', 'orders', 'pos_multi', 'sales_invoicing', 'crm_advanced', 'purchase_orders', 'multi_location', 'advanced_reports', 'api_access', 'custom_integrations', 'priority_support', 'merchandising_manual'],
     addOnsAllowed: true,
   },
   venue: {
@@ -141,7 +142,7 @@ const ERM_PLANS = {
     paystackPlanCode: process.env.PAYSTACK_PLAN_VENUE,
     // pos_multi is required by the comparison table; pos_realtime is the venue
     // extra on top of it. Dropping either breaks a different consumer.
-    features: ['storefront', 'inventory', 'orders', 'pos_multi', 'pos_realtime', 'sales_invoicing', 'crm_advanced', 'purchase_orders', 'multi_location', 'advanced_reports', 'api_access', 'table_management', 'guest_crm', 'event_booking', 'bar_inventory'],
+    features: ['storefront', 'inventory', 'orders', 'pos_multi', 'pos_realtime', 'sales_invoicing', 'crm_advanced', 'purchase_orders', 'multi_location', 'advanced_reports', 'api_access', 'table_management', 'guest_crm', 'event_booking', 'bar_inventory', 'merchandising_manual'],
     addOnsAllowed: true,
   },
 
@@ -166,7 +167,7 @@ const ERM_PLANS = {
     posLimit: Infinity,
     commissionRate: 0.09,
     paystackPlanCode: null,
-    features: ['storefront', 'inventory', 'orders', 'pos_multi', 'sales_invoicing', 'crm_advanced', 'purchase_orders', 'multi_location', 'advanced_reports', 'api_access', 'custom_integrations', 'priority_support'],
+    features: ['storefront', 'inventory', 'orders', 'pos_multi', 'sales_invoicing', 'crm_advanced', 'purchase_orders', 'multi_location', 'advanced_reports', 'api_access', 'custom_integrations', 'priority_support', 'merchandising_manual'],
     addOnsAllowed: true,
   },
 };

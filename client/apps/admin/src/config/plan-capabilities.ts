@@ -41,7 +41,9 @@ export type Capability =
   | 'pos_realtime'
   | 'guest_crm'
   | 'custom_integrations'
-  | 'priority_support';
+  | 'priority_support'
+  // Extra capability added with phase-2 merchandising (manual pairings)
+  | 'merchandising_manual';
 
 export type TenantPlan =
   | 'free_trial'
@@ -100,6 +102,7 @@ export const PLAN_CAPABILITIES: Record<TenantPlan, Capability[]> = {
     'sales_invoicing',
     'crm_basic',
     'purchase_orders',
+    'merchandising_manual',
   ],
   pro: [
     'storefront',
@@ -112,6 +115,7 @@ export const PLAN_CAPABILITIES: Record<TenantPlan, Capability[]> = {
     'multi_location',
     'advanced_reports',
     'api_access',
+    'merchandising_manual',
   ],
   enterprise: [
     'storefront',
@@ -126,6 +130,7 @@ export const PLAN_CAPABILITIES: Record<TenantPlan, Capability[]> = {
     'api_access',
     'custom_integrations',
     'priority_support',
+    'merchandising_manual',
   ],
   venue: [
     'storefront',
@@ -143,6 +148,7 @@ export const PLAN_CAPABILITIES: Record<TenantPlan, Capability[]> = {
     'guest_crm',
     'event_booking',
     'bar_inventory',
+    'merchandising_manual',
   ],
   custom: [
     'storefront',
@@ -157,6 +163,7 @@ export const PLAN_CAPABILITIES: Record<TenantPlan, Capability[]> = {
     'api_access',
     'custom_integrations',
     'priority_support',
+    'merchandising_manual',
   ],
 };
 
