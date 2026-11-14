@@ -87,49 +87,6 @@ it('uses the public read and hides private listing actions for a tenant user', a
   expect(screen.queryByRole('table')).toBeNull();
 });
 
-it('quotes each tenant listing by its size price(s), falling back to base', async () => {
-  readAdmin.mockResolvedValue({
-    data: {
-      product: {
-        ...homeProduct,
-        subProducts: [
-          {
-            _id: 'sized-listing',
-            tenant: { name: 'Sized shop' },
-            sku: 'SIZED-1',
-            status: 'active',
-            isPublished: true,
-            baseSellingPrice: 100000,
-            sizes: [
-              { _id: 's1', size: '35cl', sellingPrice: 2500 },
-              { _id: 's2', size: '75cl', sellingPrice: 5000 },
-            ],
-          },
-          {
-            _id: 'unit-listing',
-            tenant: { name: 'Unit shop' },
-            sku: 'UNIT-1',
-            status: 'active',
-            isPublished: true,
-            baseSellingPrice: 750,
-            sizes: [],
-          },
-        ],
-      },
-    },
-  });
-  render(<ProductDetails />);
-  await screen.findByRole('heading', { name: 'Oak table' });
-
-  const sizedRow = within(screen.getByRole('row', { name: /Sized shop/ }));
-  // Priced sizes win over the base price and render as a min–max range.
-  expect(sizedRow.getByText(/₦2,500\.00 – ₦5,000\.00/)).toBeTruthy();
-  expect(sizedRow.queryByText(/100,000/)).toBeNull();
-
-  const unitRow = within(screen.getByRole('row', { name: /Unit shop/ }));
-  expect(unitRow.getByText('₦750.00')).toBeTruthy();
-});
-
 it('lets the administrator retry a failed read', async () => {
   readAdmin.mockRejectedValueOnce(new Error('Unable to load'));
   render(<ProductDetails />);

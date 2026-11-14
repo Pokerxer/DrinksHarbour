@@ -63,8 +63,11 @@ test('lightweight catalog keeps tenant scope, selects list fields and skips unus
   assert.ok(selections[0].includes('lowStockThreshold'));
   assert.ok(selections[0].includes('descriptionOverride'));
   assert.ok(!selections[0].includes('shipping'));
-  assert.ok(populations.find(field => field.path === 'sizes').select.includes('sellingPrice'));
-  assert.ok(!populations.find(field => field.path === 'sizes').select.includes('images'));
+  const sizeFields = populations.find(field => field.path === 'sizes').select.split(' ');
+  for (const field of ['sellingPrice', 'salePrice', 'isOnSale']) {
+    assert.ok(sizeFields.includes(field), `missing size field: ${field}`);
+  }
+  assert.ok(!sizeFields.includes('images'));
   assert.equal(ordering._id, -1);
   assert.equal(result.pagination.total, 7);
   assert.equal(result.stats, undefined);

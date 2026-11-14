@@ -13055,73 +13055,6 @@ const getAdminProductList = async ({ page = 1, limit = 500, search, status, cate
           { $sum: { $map: { input: '$_statsSubs', as: 'sub', in: { $size: { $ifNull: ['$$sub._sizes', []] } } } } },
         ],
       },
-      // Price = the min–max across the product's SIZE rows (each size prices
-      // itself); listings without priced sizes quote their baseSellingPrice.
-      // Feeds the /product cards (same rule as the /sub-products cards —
-      // docs/memory/toolbar-size-price.md).
-      _sizePrices: {
-        $filter: {
-          input: { $reduce: {
-            input: '$_statsSubs',
-            initialValue: [],
-            in: { $cond: [
-              { $gt: [{ $size: { $ifNull: ['$$this._sizes', []] } }, 0] },
-              { $concatArrays: ['$$value', { $map: { input: '$$this._sizes', as: 'sz', in: { amount: '$$sz.sellingPrice', currency: '$$sz.currency' } } }] },
-              '$$value',
-            ] } },
-          },
-          as: 'row',
-          cond: { $gt: ['$$row.amount', 0] },
-        },
-      },
-      _basePrices: {
-        $filter: {
-          input: { $map: { input: '$_statsSubs', as: 'sub', in: { amount: '$$sub.baseSellingPrice', currency: '$$sub.currency' } } },
-          as: 'row',
-          cond: { $gt: ['$$row.amount', 0] },
-        },
-      },
-    } },
-    { $set: {
-      price: { $cond: [
-        { $gt: [{ $size: '$_sizePrices' }, 0] },
-        { $min: { $map: { input: '$_sizePrices', as: 'r', in: '$$r.amount' } } },
-        { $cond: [
-          { $gt: [{ $size: '$_basePrices' }, 0] },
-          { $min: { $map: { input: '$_basePrices', as: 'r', in: '$$r.amount' } } },
-          null,
-        ] },
-      ] },
-      // priceMax only when a real RANGE exists (the old rule: set only when
-      // max > min — a single price point reports just `price`).
-      priceMax: { $cond: [
-        { $gt: [{ $size: '$_sizePrices' }, 0] },
-        { $cond: [
-          { $lt: [
-            { $min: { $map: { input: '$_sizePrices', as: 'r', in: '$$r.amount' } } },
-            { $max: { $map: { input: '$_sizePrices', as: 'r', in: '$$r.amount' } } },
-          ] },
-          { $max: { $map: { input: '$_sizePrices', as: 'r', in: '$$r.amount' } } },
-          null,
-        ] },
-        { $cond: [
-          { $lt: [
-            { $min: { $map: { input: '$_basePrices', as: 'r', in: '$$r.amount' } } },
-            { $max: { $map: { input: '$_basePrices', as: 'r', in: '$$r.amount' } } },
-          ] },
-          { $max: { $map: { input: '$_basePrices', as: 'r', in: '$$r.amount' } } },
-          null,
-        ] },
-      ] },
-      priceCurrency: { $cond: [
-        { $gt: [{ $size: '$_sizePrices' }, 0] },
-        { $first: { $map: { input: '$_sizePrices', as: 'r', in: '$$r.currency' } } },
-        { $cond: [
-          { $gt: [{ $size: '$_basePrices' }, 0] },
-          { $first: { $map: { input: '$_basePrices', as: 'r', in: '$$r.currency' } } },
-          'NGN',
-        ] },
-      ] },
     } },
     { $project: {
       _id: 1,
@@ -13130,7 +13063,6 @@ const getAdminProductList = async ({ page = 1, limit = 500, search, status, cate
       brand: 1, category: 1, subCategory: 1,
       status: 1, isPublished: 1, publishedAt: 1, publicationScope: 1, owningTenant: 1,
       totalStockAvailable: 1, createdAt: 1, updatedAt: 1,
-      price: 1, priceMax: 1, priceCurrency: 1,
       subProductCount: 1, variantCount: 1,
     } },
   ];
@@ -13148,35 +13080,18 @@ const getAdminProductList = async ({ page = 1, limit = 500, search, status, cate
   ]);
 
   // Count variants per product: sum of size variants across all sub-products,
-  // plus each row's price — both now computed INSIDE the list pipeline above
-  // (single roundtrip instead of three sequential aggregates here). The rule
-  // stays the documented one: variant identity = size rows with fallback to
-  // one-per-subproduct; price = min–max across priced sizes with the
-  // listings' base price range as fallback
-  // (docs/memory/toolbar-size-price.md).
+  // computed INSIDE the list pipeline above (single roundtrip instead of
+  // three sequential aggregates here). Variant identity = size rows with
+  // fallback to one-per-subproduct.
 
   const items = products.map(p => {
     const counts = { subProductCount: p.subProductCount ?? 0, variantCount: p.variantCount ?? 0 };
-    const item = {
+    return {
       ...p,
       isPublished: p.isPublished ?? (p.status === 'approved' && !!p.publishedAt),
       subProductCount: counts.subProductCount,
       variantCount: counts.variantCount,
-      // Field-presence parity with the pre-refactor flow: price/priceMax stay
-      // ABSENT (not null) when the product carries no quote, and priceMax
-      // exists only when min/max form a real range (single-point quotes keep
-      // just `price`). Documented rule: docs/memory/toolbar-size-price.md.
-      price: p.price ?? undefined,
-      priceMax: p.priceMax ?? undefined,
-      priceCurrency: p.priceCurrency ?? undefined,
     };
-    // JSON.stringify drops `undefined` keys, but the object itself would carry
-    // the explicit null from the aggregation stage — delete so deep-equal
-    // assertions see the exact legacy shape.
-    if (item.price === undefined) delete item.price;
-    if (item.priceMax === undefined) delete item.priceMax;
-    if (item.priceCurrency === undefined) delete item.priceCurrency;
-    return item;
   });
 
   return {

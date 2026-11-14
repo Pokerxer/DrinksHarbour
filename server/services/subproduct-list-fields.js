@@ -11,8 +11,8 @@ const SUBPRODUCT_LIST_FIELDS = [
 ].join(' ');
 
 const SIZE_LIST_FIELDS = [
-  '_id', 'size', 'displayName', 'sellingPrice', 'stock', 'availableStock',
-  'availability', 'lowStockThreshold',
+  '_id', 'size', 'displayName', 'sellingPrice', 'salePrice', 'isOnSale',
+  'stock', 'availableStock', 'availability', 'lowStockThreshold',
 ].join(' ');
 
 module.exports = { SUBPRODUCT_LIST_FIELDS, SIZE_LIST_FIELDS };

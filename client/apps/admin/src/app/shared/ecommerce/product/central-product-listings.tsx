@@ -1,7 +1,6 @@
 import Link from 'next/link';
 import { routes } from '@/config/routes';
 import type { BusinessVariant } from '../business-catalog/business-variant-facts';
-import { resolveSizePrices } from '@/utils/sub-product-pricing';
 
 export type CentralProductListing = {
   _id: string;
@@ -24,26 +23,6 @@ function formatPrice(value?: number | null, currency = 'NGN') {
   } catch {
     return `${currency} ${value.toLocaleString('en-NG')}`;
   }
-}
-
-/**
- * The column quotes the listing's SIZE price(s) — each size prices itself, so
- * a listing with 3 sizes reads `₦min – ₦max`; a sizeless listing keeps its
- * base price. Same rule as the /sub-products toolbars and cards
- * (docs/memory/toolbar-size-price.md).
- */
-function listingPrice(listing: CentralProductListing) {
-  const { price, priceMax } = resolveSizePrices(
-    listing.sizes ?? [],
-    listing.baseSellingPrice ?? 0
-  );
-  const currency = listing.currency || 'NGN';
-  const minLabel = formatPrice(price, currency);
-  const maxLabel =
-    priceMax != null && priceMax > price
-      ? formatPrice(priceMax, currency)
-      : null;
-  return maxLabel ? `${minLabel} – ${maxLabel}` : minLabel;
 }
 
 export default function CentralProductListings({
@@ -75,7 +54,7 @@ export default function CentralProductListings({
               <tr>
                 {[
                   'Tenant',
-                  'Price',
+                  'Base price',
                   'Options',
                   'On hand',
                   'Status',
@@ -107,7 +86,7 @@ export default function CentralProductListings({
                       {listing.tenant?.name || 'Tenant unavailable'}
                     </th>
                     <td className="px-3 py-3">
-                      {listingPrice(listing)}
+                      {formatPrice(listing.baseSellingPrice, listing.currency)}
                     </td>
                     <td className="px-3 py-3">
                       {listing.sizes?.filter(Boolean).length ?? 0}

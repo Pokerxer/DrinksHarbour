@@ -192,13 +192,13 @@ export default function ProductGridCard({
         )}
 
         {/* Price + stock */}
-        <div className="mt-auto flex items-center justify-between border-t border-gray-100 pt-1">
+        <div className="mt-auto flex items-center justify-between gap-1 border-t border-gray-100 pt-1">
           <span className="text-sm font-bold tabular-nums text-gray-900">
             {symbol}
             {price.toLocaleString()}
             {priceMax !== undefined && (
               <span className="font-normal text-gray-400">
-                –{priceMax.toLocaleString()}
+                {` – ${symbol}${priceMax.toLocaleString()}`}
               </span>
             )}
           </span>

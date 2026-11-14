@@ -1,9 +1,16 @@
 # Toolbar Price shows the size price(s) for sized listings (2026-11-08)
 
-One shared rule now drives every admin price display — toolbar stats AND the
-/sub-products list cards AND the /product central surfaces (extended
-2026-11-09): **if the listing/product has sizes, the price shown is the size
+One shared rule now drives the admin price displays for the TENANT LISTING
+(/sub-products) surfaces: toolbar stats AND the /sub-products list cards
+(grid + compact). **If the listing has sizes, the price shown is the size
 price(s), never the listing base price.**
+
+Scope note (2026-11-14, user decision): the same rule was briefly extended to
+the central /product cards and the /product/[id] tenant-listings table, and
+was REVERTED — these changes were mainly meant for /subproducts. Central
+/product surfaces are back to their original behavior (admin list carries no
+price fields; the details table's "Base price" column quotes
+`baseSellingPrice`; the /product/[id] pricing test was removed).
 
 ## Shared resolver (`utils/sub-product-pricing.ts`)
 
@@ -16,23 +23,23 @@ price(s), never the listing base price.**
 
 `resolveToolbarPrice(product)` (edit form) delegates to it.
 
-## Central surfaces (2026-11-09)
+## Central surfaces (REVERTED 2026-11-14)
 
-- `getAdminProductList` (server) now computes per-product `price` / `priceMax`
-  / `priceCurrency` from one Sizes aggregate over the product's listings
-  (positive `sellingPrice`), falling back to the min/max of the listings'
-  `baseSellingPrice` when no size is priced — the /product cards had no price
-  at all before this.
-- `product/product-list/components/ProductGridCard.tsx` — central grid card
-  gains a bold price line (`₦2,500 – ₦5,000` style) under brand/type; the
-  central compact card shows the price in place of the plain variant count
-  (variant count remains on the grid card).
-- `product/central-product-listings.tsx` (`/product/[id]` tenant listings
-  table) — the "Base price" column is now "Price" and quotes each listing's
-  size min–max via `resolveSizePrices`, with `baseSellingPrice` as fallback.
-- The server test `__tests__/adminProductListSizePrices.mongo.test.js` pins
-  the payload contract (priced sizes win; base fallback; sale-aware rows
-  covered by the util tests).
+The 2026-11-09 extension to the central /product surfaces (server
+`getAdminProductList` price fields, central card price display, the
+/product/[id] "Price" column) was rolled back on the user's instruction —
+the size-price rule was mainly meant for /subproducts. Removed:
+- server: the price `$addFields`/`$set`/`$project` stages in
+  `getAdminProductList` (variant counts kept) and
+  `__tests__/adminProductListSizePrices.mongo.test.js`;
+- client: `ProductListItem` price fields, the central grid/compact card price
+  rendering, the /product/[id] listings-table price computation (column is
+  "Base price" again), and the added pricing test in
+  `central-product-details.test.tsx`.
+
+`utils/sub-product-pricing.ts`'s `resolveSizePrices` stays (it serves the
+/sub-products surfaces; its loose `ReadonlyArray<unknown>` input remains
+harmless and future-proof).
 
 ## Complaint
 
@@ -73,13 +80,14 @@ unsaved price edits.
   - `ProductGridCard.tsx` — previously showed only the FIRST size's price;
     now min–max across all sized prices with base fallback, rendered
     `₦2,500 – ₦5,000` style (en dash, lighter max).
-  - `ProductGridCardCompact.tsx` — its inline min/max replaced by the same
-    resolver (gain: per-size sale prices now honoured if the endpoint sends
-    them).
+  - `ProductGridCardCompact.tsx` uses the same resolver, with a currency
+    symbol on each end of the range. The private `view=list` size projection
+    supplies `salePrice` and `isOnSale` to both cards.
   - `resolveToolbarPrice` = thin wrapper over `resolveSizePrices` with the
     form's `basePrice` rows.
 - `create-edit/index.tsx` — stats spread `resolveToolbarPrice(watch('subProductData'))`
-  so the toolbar tracks unsaved row prices live.
+  so the toolbar tracks unsaved row prices live. “Sell Without Sizes” uses
+  the base price even while the form retains hidden size rows.
 
 ## Verification
 
@@ -90,20 +98,16 @@ unsaved price edits.
   form-row `basePrice`, empty arrays).
 - `ProductGridCard.test.tsx` — new case (both card variants): sizes' prices
   shown instead of the base price; uniform sizes → one figure; unsized → base.
-- `central-product-details.test.tsx` — new case: the /product/[id] listings
-  table quotes `₦2,500.00 – ₦5,000.00` for a sized listing and the base price
-  for a sizeless one.
-- Server: `__tests__/adminProductListSizePrices.mongo.test.js` — priced sizes
-  define `price`/`priceMax` on the admin list payload; sizeless listings fall
-  back to base; a priced size beats a high base.
-- Suites: server mongo tests green; admin `src/utils` + `src/app/shared/ecommerce`
-  — 730 tests green; `tsc --noEmit` clean for touched files.
+- Suites (after the 2026-11-14 central revert): admin `src/app/shared/ecommerce`
+  + `src/utils` — 120 files / 860 tests green; `tsc --noEmit` clean. The
+  server pricing and lightweight-catalog suites passed all 8 tests. The
+  full server run encountered sandbox errors opening local HTTP ports.
 
 ## Notes
 
 - `forms`: a `pack-12` row prices itself via its own `basePrice` — no change
   needed there; the range simply reflects whatever sizes carry.
 - Unaffected: `resolveSubProductPricing` (API base-price resolution for
-  validation) — separate concern from the display stat. The /product list
-  price is ADMIN OWNER data (all listing statuses), unlike the storefront's
-  eligible-listing-only range.
+  validation) — separate concern from the display stat. Central /product
+  surfaces stay as originally shipped (no admin-list price fields; see the
+  scope note above).

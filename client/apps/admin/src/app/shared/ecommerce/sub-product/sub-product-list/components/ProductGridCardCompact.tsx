@@ -82,12 +82,10 @@ export default function ProductGridCardCompact({
           <span className="text-[11px] font-bold tabular-nums text-gray-900">
             {symbol}
             {lo.toLocaleString()}
-            {hi !== undefined && hi !== lo ? (
+            {hi !== undefined && (
               <span className="font-normal text-gray-400">
-                –{hi.toLocaleString()}
+                {` – ${symbol}${hi.toLocaleString()}`}
               </span>
-            ) : (
-              ''
             )}
           </span>
           <span

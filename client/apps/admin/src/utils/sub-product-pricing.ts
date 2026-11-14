@@ -86,6 +86,8 @@ export function resolveSizePrices(
 export function resolveToolbarPrice(
   product: ProductPricing
 ): { price: number; priceMax?: number } {
-  const fallback = Number(product.baseSellingPrice);
-  return resolveSizePrices(product.sizes ?? [], fallback);
+  return resolveSizePrices(
+    product.sellWithoutSizeVariants ? [] : product.sizes,
+    product.baseSellingPrice
+  );
 }

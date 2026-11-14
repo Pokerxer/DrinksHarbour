@@ -39,7 +39,13 @@ for (const Card of [ProductGridCard, ProductGridCardCompact]) {
           ...product,
           baseSellingPrice: 10000000,
           sizes: [
-            { _id: 'a', size: '35cl', sellingPrice: 2500 },
+            {
+              _id: 'a',
+              size: '35cl',
+              sellingPrice: 3500,
+              salePrice: 2500,
+              isOnSale: true,
+            },
             { _id: 'b', size: '75cl', sellingPrice: 5000 },
           ],
         }}
@@ -48,8 +54,7 @@ for (const Card of [ProductGridCard, ProductGridCardCompact]) {
       />
     );
     const text = sized.container.textContent || '';
-    expect(text).toContain('2,500');
-    expect(text).toContain('5,000');
+    expect(text).toContain('₦2,500 – ₦5,000');
     expect(text).not.toContain('10,000,000');
 
     const uniform = render(

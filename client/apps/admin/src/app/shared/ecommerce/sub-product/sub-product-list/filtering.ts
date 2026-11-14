@@ -18,6 +18,8 @@ export interface SizeVariant {
   size: string;
   displayName?: string;
   sellingPrice?: number;
+  salePrice?: number | null;
+  isOnSale?: boolean;
   stock?: number;
   availability?: string;
   lowStockThreshold?: number;

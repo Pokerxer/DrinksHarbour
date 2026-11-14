@@ -27,12 +27,6 @@ export interface ProductListItem {
   category?: { _id: string; name: string };
   subCategory?: { _id: string; name: string };
   basePrice?: number;
-  // Price = the min–max across the product's SIZE rows (each size prices
-  // itself); base price only when no size is priced. Server-side computed in
-  // getAdminProductList (same rule as the /sub-products cards).
-  price?: number;
-  priceMax?: number;
-  priceCurrency?: string;
   status: string;
   isPublished: boolean;
   // Catalogue publication scope (see server/constants/catalogScope.js). The

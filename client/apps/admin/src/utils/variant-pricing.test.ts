@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   resolveSubProductPricing,
   resolveSizePrices,
+  resolveToolbarPrice,
 } from './sub-product-pricing';
 import { subProductFormSchema } from '@/validators/sub-product.schema';
 import {
@@ -75,6 +76,16 @@ describe('resolveSizePrices — card/toolbar price from the size rows', () => {
   it('returns the fallback for empty or missing size arrays', () => {
     expect(resolveSizePrices([], 900)).toEqual({ price: 900 });
   });
+});
+
+it('shows the base price when single-item mode retains hidden size rows', () => {
+  expect(
+    resolveToolbarPrice({
+      ...variantProduct.subProductData,
+      baseSellingPrice: 750,
+      sellWithoutSizeVariants: true,
+    })
+  ).toEqual({ price: 750 });
 });
 
 describe('variant pricing with optional base defaults', () => {
