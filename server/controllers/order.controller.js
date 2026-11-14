@@ -67,6 +67,24 @@ exports.createOrder = asyncHandler(async (req, res) => {
     return res.status(400).json({ success: false, message: 'Invalid payment method' });
   }
 
+  // ── Manual intake mode (WhatsApp orders created by platform staff) ────────
+  // The admin's JWT is on the request, but the ORDER belongs to the customer.
+  // Everything downstream (pricing, tenant derivation, idempotency) is the
+  // normal checkout path — only ownership/provenance/notifications differ.
+  const manualOrder = req.body.manualOrder || null;
+  const isPlatformStaff = Boolean(
+    req.user && !req.user.tenant && ['super_admin', 'admin'].includes(req.user.role)
+  );
+  if (manualOrder && !isPlatformStaff) {
+    throw new ForbiddenError('Only platform admins can create manual orders');
+  }
+  const isManual = Boolean(manualOrder);
+  if (isManual) {
+    if (manualOrder.originChannel !== 'whatsapp') throw new ValidationError('Unsupported manual order channel');
+    if (canonicalPaymentMethod !== 'bank_transfer') throw new ValidationError('Manual orders are invoiced for bank transfer / card payment');
+    if (couponCode) throw new ValidationError('Coupons are not supported on manual orders');
+  }
+
   // For hosted-gateway payments the browser only knows which button was pressed
   // before hand-off — Korapay's checkout offers card, bank transfer and USSD
   // behind one button — so ask the gateway what actually settled.
@@ -80,7 +98,14 @@ exports.createOrder = asyncHandler(async (req, res) => {
   const userId = req.user?._id || null;
 
   let user = null;
-  if (userId) {
+  if (isManual) {
+    // Match the customer by email first, then phone. No match → guest order;
+    // the shippingAddress snapshot below keeps the customer's details either way.
+    const email = String(customer?.email || '').trim().toLowerCase();
+    const phone = String(customer?.phone || '').trim();
+    if (email) user = await User.findOne({ email });
+    if (!user && phone) user = await User.findOne({ phone });
+  } else if (userId) {
     user = await User.findById(userId);
   }
 
@@ -311,7 +336,7 @@ exports.createOrder = asyncHandler(async (req, res) => {
   }
 
   const perk = await resolveFirstOrderPerk({
-    user:     req.user,
+    user:     isManual ? (user || null) : req.user,
     subtotal: calculatedSubtotal,
     state:    deliveryState,
     baseFee:  quotedBaseFee,
@@ -347,7 +372,12 @@ exports.createOrder = asyncHandler(async (req, res) => {
   // Build order object with payment details if provided
   const orderData = {
     orderNumber,
-    user: userId,
+    user: isManual ? (user?._id || null) : userId,
+    ...(isManual ? {
+      source: 'manual',
+      originChannel: manualOrder.originChannel,
+      placedBy: req.user._id,
+    } : {}),
     items: orderItems,
     subtotal: calculatedSubtotal,
     discountTotal,
@@ -457,24 +487,29 @@ exports.createOrder = asyncHandler(async (req, res) => {
   // ── Fire-and-forget: email + SMS + WhatsApp (never blocks the order response) ──
   (async () => {
     try {
-      // 1. Customer — email + SMS + WhatsApp (in parallel)
-      await Promise.allSettled([
-        // Check the result, don't just check that the promise resolved:
-        // sendEmail resolves with { success:false } when the transport is down.
-        sendOrderConfirmationToCustomer(order, customer)
-          .then(r  => r?.success
-            ? console.log('✅ Order confirmation email → customer')
-            : console.error('❌ Order confirmation email NOT sent → customer:', r?.error || 'unknown error'))
-          .catch(e  => console.error('❌ Email to customer failed:', e.message)),
+      // Manual orders: the customer has not paid yet — the "order confirmed"
+      // receipt fires when the invoice settles (whatsappOrderInvoice.notifyPaid).
+      // Tenant + admin alerts still fire now.
+      if (!isManual) {
+        // 1. Customer — email + SMS + WhatsApp (in parallel)
+        await Promise.allSettled([
+          // Check the result, don't just check that the promise resolved:
+          // sendEmail resolves with { success:false } when the transport is down.
+          sendOrderConfirmationToCustomer(order, customer)
+            .then(r  => r?.success
+              ? console.log('✅ Order confirmation email → customer')
+              : console.error('❌ Order confirmation email NOT sent → customer:', r?.error || 'unknown error'))
+            .catch(e  => console.error('❌ Email to customer failed:', e.message)),
 
-        sendOrderConfirmationSMS(order, customer)
-          .then(r  => r?.success && console.log('✅ Order confirmation SMS → customer'))
-          .catch(e  => console.error('❌ SMS to customer failed:', e.message)),
+          sendOrderConfirmationSMS(order, customer)
+            .then(r  => r?.success && console.log('✅ Order confirmation SMS → customer'))
+            .catch(e  => console.error('❌ SMS to customer failed:', e.message)),
 
-        sendOrderConfirmationWhatsApp(order, customer)
-          .then(r  => r?.success && console.log('✅ Order confirmation WhatsApp → customer'))
-          .catch(e  => console.error('❌ WhatsApp to customer failed:', e.message)),
-      ]);
+          sendOrderConfirmationWhatsApp(order, customer)
+            .then(r  => r?.success && console.log('✅ Order confirmation WhatsApp → customer'))
+            .catch(e  => console.error('❌ WhatsApp to customer failed:', e.message)),
+        ]);
+      }
 
       // 2. Tenants — email + WhatsApp alert (use server-resolved tenant IDs, not client-supplied)
       for (const tenantId of resolvedTenantIds) {
@@ -611,6 +646,7 @@ exports.createOrder = asyncHandler(async (req, res) => {
         totalAmount: order.totalAmount,
         placedAt: order.placedAt,
         coupon: order.coupon,
+        originChannel: order.originChannel || undefined,
       },
     },
   });
