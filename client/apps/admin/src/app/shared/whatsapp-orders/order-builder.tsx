@@ -95,7 +95,12 @@ export default function OrderBuilder() {
   }, [token, scanLookup]);
   useBarcodeScanner(handleBarcode);
 
-  // ── sessionStorage draft (restore once on mount; save on change) ──
+  // ── sessionStorage draft (restore once on mount; save only after hydration) ──
+  // The save effect must NOT run before the restore commits: on mount it would
+  // write the initial empty state over the stored draft, and any remount (the
+  // admin shell re-renders when the auth session loads) would then restore the
+  // clobbered value. `hydrated` gates saving until the restore has committed.
+  const [hydrated, setHydrated] = useState(false);
   useEffect(() => {
     try {
       const raw = sessionStorage.getItem(DRAFT_KEY);
@@ -104,11 +109,12 @@ export default function OrderBuilder() {
         setCustomer(d.customer); setDelivery(d.delivery); setLines(d.lines || []);
       }
     } catch { /* ignore */ }
+    setHydrated(true);
   }, []);
   useEffect(() => {
-    if (created) return;
+    if (!hydrated || created) return;
     try { sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ customer, delivery, lines })); } catch { /* ignore */ }
-  }, [customer, delivery, lines, created]);
+  }, [hydrated, customer, delivery, lines, created]);
 
   const productLines = lines.filter((l) => l.lineType === 'product');
   const subtotal = productLines.reduce((s, l) => s + (l.unitPrice || 0) * l.quantity, 0);
