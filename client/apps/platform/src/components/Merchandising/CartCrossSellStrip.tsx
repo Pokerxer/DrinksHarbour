@@ -6,7 +6,8 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { gtagEvent, viewItemListEvent, type GTagItem } from '@/lib/gtag';
 import { useCart, getEffectiveUnitPrice, type CartItem } from '@/context/CartContext';
-import { cardPrice, useMerchandising, type MerchandisingProduct } from './useMerchandising';
+import { cardPrice, fireSponsoredClick, useMerchandising, type MerchandisingProduct } from './useMerchandising';
+import SponsoredBadge from './SponsoredBadge';
 import type { ProductType } from '@/types/product.types';
 
 interface CartLine {
@@ -84,6 +85,7 @@ const CartCrossSellStrip: React.FC = () => {
       <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
         {suggestions.map((p) => (
           <div key={p._id} className="flex flex-col items-start gap-2 rounded-xl bg-gray-50 p-3">
+            {p.source === 'sponsored' && <SponsoredBadge />}
             <Image
               src={p.images?.[0]?.url ?? '/placeholder.svg'}
               alt={p.name}
@@ -98,6 +100,9 @@ const CartCrossSellStrip: React.FC = () => {
             <button
               type="button"
               onClick={() => {
+                // Paid placement: the CPC click is attributed before the
+                // add — a failed call never blocks the cart action.
+                if (p.source === 'sponsored') fireSponsoredClick(p.adCampaignId);
                 addToCart(p as unknown as ProductType);
                 gtagEvent('add_to_cart_merchandising', {
                   item_list_id: 'cart_cross_sell',

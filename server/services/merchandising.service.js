@@ -13,11 +13,15 @@ const Product = require('../models/Product');
 const Order = require('../models/Order');
 const SubProduct = require('../models/SubProduct');
 const Tenant = require('../models/Tenant');
+const AdCampaign = require('../models/AdCampaign');
 const { ValidationError, NotFoundError } = require('../utils/errors');
 const catalogKind = require('../constants/catalogKind');
 const { complementFamilies, typesForFamilies, familyForType } = require('../config/merchandising');
+const { CPC_TARIFF_NGN } = require('../config/ads');
 const productService = require('./product.service');
 const pairingService = require('./merchandisingPairing.service');
+const adClickService = require('./adClick.service');
+const adWalletService = require('./adWallet.service');
 const { getProductRecommendations } = require('../utils/embeddings');
 
 // Marketplace candidates are beverage-only (DRI-5), matching the related strip.
@@ -305,6 +309,68 @@ const manualPairingCards = async (tenantId, productId, cap) => {
   }
 };
 
+// ─── Sponsored placements (paid tier, phase 2 merchandising Part B) ─────────
+// A paid slot is served ONLY while the campaign is active, within its daily
+// budget after the SAME 4-step sweep the CPC click pipeline runs
+// (adClick.service.recordClick: expiry → status → rollover → daily cap), and
+// only while the prepaid wallet covers one more click. adClick's sweep is not
+// a standalone export, so it is mirrored inline and kept READ-ONLY —
+// persisting rollover/exhaustion states remains recordClick's job.
+//
+// Disclosure is MANDATORY: every served card carries source:'sponsored' +
+// adCampaignId so the UI renders SponsoredBadge and the client can fire the
+// CPC click endpoint before quick-add/navigation.
+
+const AD_SURFACES = new Set(['pdp', 'cart']);
+const adsTodayKey = () => new Date().toISOString().slice(0, 10); // 'YYYY-MM-DD' (UTC)
+
+const sponsoredForSurface = async (productId, surface, { tenantId } = {}) => {
+  if (!AD_SURFACES.has(surface)) return [];
+  try {
+    const rows = (await AdCampaign.find({
+      surfaces: surface,
+      status: 'active',
+      product: { $ne: productId },
+    }).lean()) || [];
+    const today = adsTodayKey();
+
+    // Oldest campaign first — a stable, fair rotation for the single slot.
+    for (const campaign of rows.sort((a, b) =>
+      new Date(a.createdAt || 0) - new Date(b.createdAt || 0)
+    )) {
+      // 1. Expiry — an ended campaign is expired even if the row still says
+      //    'active' (same precedence as recordClick).
+      if (campaign.endsAt && new Date(campaign.endsAt).getTime() <= Date.now()) continue;
+      // 2. Status — 'active' is also enforced by the query; belt-and-braces.
+      if (campaign.status !== 'active') continue;
+      // 3. Rollover (read-only) — a stale counter belongs to yesterday, so
+      //    today's spend is zero for budget purposes.
+      const spentToday = campaign.spentDay === today ? campaign.spentToday ?? 0 : 0;
+      // 4. Daily cap — never surface a campaign without room for one click.
+      if ((campaign.dailyBudget ?? 0) - spentToday < CPC_TARIFF_NGN) continue;
+
+      // Prepaid-only agreement: the wallet must cover one more click. getWallet
+      // is a plain read here — the authoritative atomic debit guard lives in
+      // the click path (adWallet.service.debitForClick).
+      const { balance } = await module.exports.sponsoredWalletOkSafe(campaign.tenant);
+      if (balance < CPC_TARIFF_NGN) continue;
+
+      // hydrateCards re-verifies publication/approval (and the tenant's own
+      // sellability on the storefront) — the paid card obeys the same gate as
+      // every organic card. Cap: at most ONE sponsored card per response.
+      const [card] = await module.exports.hydrateCards(
+        [String(campaign.product)],
+        { tenantId }
+      );
+      if (!card) continue;
+      return [{ ...card, source: 'sponsored', adCampaignId: String(campaign._id) }];
+    }
+    return [];
+  } catch {
+    return []; // the paid tier must never take down recommendations (§degradation)
+  }
+};
+
 const getRecommendations = async (productId, { context = 'pdp', tenantId, limit } = {}) => {
   if (!isMongoId(productId)) throw new ValidationError('Invalid product ID');
 
@@ -337,22 +403,62 @@ const getRecommendations = async (productId, { context = 'pdp', tenantId, limit 
       module.exports.manualPairingCards(tenantId, productId, cap),
     ]);
   }
-  const mergeManual = (auto, manual) => {
-    const seen = new Set(manual.map((p) => p._id.toString()));
-    return [...manual, ...auto.filter((p) => !seen.has(p._id.toString()))].slice(
-      0, limit ?? 4
-    );
+
+  // Sponsored tier (Task 10): at most ONE paid card per response. The lookup
+  // is a full sweep of eligibility (budget, wallet, publication) and never
+  // throws — failures degrade to no paid slot (§degradation).
+  let sponsoredCard = null;
+  try {
+    sponsoredCard =
+      (await module.exports.sponsoredForSurface(productId, context, { tenantId }))[0] || null;
+  } catch {
+    sponsoredCard = null;
+  }
+  const sponsoredId = sponsoredCard ? String(sponsoredCard._id) : null;
+
+  const mergeManual = (auto, manual, { sponsored = false } = {}) => {
+    const seen = new Set(manual.map((p) => String(p._id)));
+    // Organic always wins the slot: when the sponsored product is already
+    // surfaced in this array (manual pairing or an automatic tier), the paid
+    // card is dropped entirely — the organic item stands and no impression is
+    // counted. Otherwise the paid card sits AFTER manual pairings but BEFORE
+    // the automatic tiers — FIRST on the marketplace, where manual is always
+    // empty.
+    const head = sponsored && sponsoredId && !seen.has(sponsoredId)
+      && !auto.some((p) => String(p._id) === sponsoredId)
+      ? [{ ...sponsoredCard, source: 'sponsored' }]
+      : [];
+    if (head.length) seen.add(sponsoredId);
+    return [...manual, ...head, ...auto.filter((p) => !seen.has(String(p._id)))]
+      .slice(0, limit ?? 4);
   };
+
+  const crossSells = mergeManual(pick(settled[1]), manualCross, { sponsored: true });
+  // Sourced from the tag, not just the product id: the organic card for the
+  // same product must not be mistaken for the paid placement.
+  const sponsoredIncluded = crossSells.some((p) => p.source === 'sponsored');
+
+  // A paid placement surfaces exactly ONCE: when the sponsored card is served
+  // in crossSells, the same product is deduped out of the other arrays (the
+  // same mechanism mergeManual uses for manual vs automatic items).
+  const stripSponsored = (items) =>
+    sponsoredIncluded ? items.filter((p) => String(p._id) !== sponsoredId) : items;
 
   const value = {
     productId,
     context,
-    boughtTogether: mergeManual(pick(settled[0]), manualTogether),
-    crossSells: mergeManual(pick(settled[1]), manualCross),
-    // Manual pairings do not touch upSells — an upsell is a premium
-    // alternative, not a pairing.
-    upSells: pick(settled[2]),
+    boughtTogether: stripSponsored(mergeManual(pick(settled[0]), manualTogether)),
+    crossSells,
+    // Manual pairings and the paid slot do not compete for upSells — an
+    // upsell is a premium alternative, not a pairing.
+    upSells: stripSponsored(pick(settled[2])),
   };
+  // Impression is counted on the serve path only, right before the cache set:
+  // cached serves within the TTL window keep the sponsored card in the payload
+  // but do not re-count (accepted design — count impressions on first serve).
+  if (sponsoredIncluded) {
+    module.exports.recordImpressionSafe(sponsoredCard.adCampaignId);
+  }
   recommendationsCache.set(cacheKey, { at: Date.now(), value });
   return value;
 };
@@ -371,7 +477,13 @@ module.exports = {
   getRecommendations,
   clearRecommendationsCache,
   manualPairingCards,
+  sponsoredForSurface,
   getActivePairingSafe: (tenantId, productId) =>
     pairingService.getActivePairing(tenantId, productId),
+  // Wrapper seams (Task 10) — the money lives in adWallet/adClick services;
+  // these exist so tests can mock either layer (established pattern) and so
+  // the merchandising engine stays uncoupled from the billing internals.
+  sponsoredWalletOkSafe: (tenantId) => adWalletService.getWallet(tenantId),
+  recordImpressionSafe: (campaignId) => adClickService.recordImpression(campaignId),
   familyForType, // re-exported for the Task 4 test convenience
 };

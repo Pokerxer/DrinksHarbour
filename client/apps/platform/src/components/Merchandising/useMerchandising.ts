@@ -18,6 +18,8 @@ export interface MerchandisingProduct {
   averageSellingPrice?: number;
   tenantCount?: number;
   source?: string;
+  /** Present on paid placements (source === 'sponsored') — drives the CPC click. */
+  adCampaignId?: string;
 }
 
 export interface MerchandisingData {
@@ -29,6 +31,47 @@ export interface MerchandisingData {
 }
 
 export type MerchandisingContext = 'pdp' | 'cart';
+
+// ─── Sponsored-placement click attribution (Task 10) ─────────────────────────
+// Clicks go through the dedicated ads endpoint (Task 9), never a generic
+// handler. The visitor key is a stable localStorage uuid — not identity, just
+// the dedupe key the click pipeline expects (docs: adClick.service.js).
+
+const AD_VISITOR_KEY = 'dh_ad_visitor';
+
+const adVisitorKey = (): string => {
+  try {
+    const existing = window.localStorage.getItem(AD_VISITOR_KEY);
+    if (existing) return existing;
+    const uuid =
+      typeof crypto !== 'undefined' && 'randomUUID' in crypto
+        ? crypto.randomUUID()
+        : `vh-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    window.localStorage.setItem(AD_VISITOR_KEY, uuid);
+    return uuid;
+  } catch {
+    return ''; // storage blocked — attribution is best-effort, never required
+  }
+};
+
+/**
+ * Fires the CPC click endpoint for a sponsored card. Fire-and-forget: a
+ * failed attribution call must never break quick-add or navigation.
+ */
+export function fireSponsoredClick(campaignId?: string | null): void {
+  if (!campaignId) return;
+  const visitorKey = adVisitorKey();
+  if (!visitorKey) return;
+  try {
+    void fetch(`${API_BASE}/api/ads/clicks/${campaignId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ visitorKey }),
+    }).catch(() => {}); // ignore failures — billing happens server-side anyway
+  } catch {
+    /* attribution must never break the UI */
+  }
+}
 
 /** Display price precedence: tenant retail → range floor → platform average. */
 export const cardPrice = (p: MerchandisingProduct): number | null => {

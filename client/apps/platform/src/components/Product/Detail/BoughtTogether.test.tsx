@@ -9,6 +9,7 @@ import type { ProductType } from '@/types/product.types';
 vi.mock('@/components/Merchandising/useMerchandising', () => ({
   cardPrice: (p: { price?: number; priceRange?: { min: number } }) =>
     p.price ?? p.priceRange?.min ?? null,
+  fireSponsoredClick: vi.fn(),
   useMerchandising: vi.fn(),
 }));
 vi.mock('@/context/CartContext', () => ({ useCart: vi.fn() }));

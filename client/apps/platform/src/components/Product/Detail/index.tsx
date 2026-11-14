@@ -11,7 +11,8 @@ import {purchaseLimits,clampPurchaseQuantity} from './purchase-quantity';
 import { resolveSellerChoice } from '@/utils/representativeOffer';
 import { resolveCatalogueHref } from '@/lib/catalogueLinks';
 import { useOfferImpression } from '@/components/Merchandising/useOfferImpression';
-import { useMerchandising } from '@/components/Merchandising/useMerchandising';
+import { cardPrice, useMerchandising, type MerchandisingProduct } from '@/components/Merchandising/useMerchandising';
+import SponsoredBadge from '@/components/Merchandising/SponsoredBadge';
 import { purchasableOffers } from '@/components/Merchandising/offers';
 import { GiftOffer, PremiumOffer, SizeUpgrade } from '@/components/Merchandising/ProductOffers';
 import { gtagEvent } from '@/lib/gtag';
@@ -122,6 +123,18 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
 
   // Premium upsell data for the "Step Up Your Pick" rail (hides itself when empty).
   const { data: merch } = useMerchandising(productData?._id, 'pdp');
+
+  // Sponsored disclosure (Task 10): RelatedProducts → ProductCard has no safe
+  // badge slot (its internal badge ranking suppresses product badges during
+  // sales, so the mandatory chip would not be guaranteed visible). Sponsored
+  // up-sell items are therefore pulled OUT of the rail and rendered as a small
+  // disclosed list directly above it — the least invasive wiring that keeps
+  // the chip always visible; organic items fill the rail unchanged.
+  const upSellItems = (merch?.upSells ?? []) as MerchandisingProduct[];
+  const sponsoredUpSells = upSellItems.filter((p) => p.source === 'sponsored');
+  const organicUpSells = upSellItems.filter(
+    (p) => p.source !== 'sponsored'
+  ) as unknown as ProductType[];
 
   const vendors = useMemo(() => productData?.availableAt || [], [productData]);
 
@@ -890,9 +903,46 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
         }
       />
 
+      {/* Paid placements disclosed above the Step-Up rail (Task 10) — the
+          rail itself stays 100% organic. Hides itself when empty. */}
+      {sponsoredUpSells.length > 0 && (
+        <section
+          aria-label="Sponsored picks"
+          className="bg-white border-t border-gray-100 py-6"
+        >
+          <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+            <ul className="space-y-3">
+              {sponsoredUpSells.map((p) => (
+                <li key={p._id} className="flex items-center gap-3">
+                  <SponsoredBadge />
+                  <Image
+                    src={p.images?.[0]?.url ?? '/placeholder.svg'}
+                    alt={p.name}
+                    width={48}
+                    height={48}
+                    className="h-12 w-12 rounded-lg object-cover"
+                  />
+                  <Link
+                    href={`/product/${p.slug}`}
+                    className="text-sm font-medium text-gray-900 hover:underline"
+                  >
+                    {p.name}
+                  </Link>
+                  <span className="ml-auto text-sm font-semibold text-gray-900">
+                    {cardPrice(p) !== null
+                      ? `₦${(cardPrice(p) as number).toLocaleString('en-NG', { maximumFractionDigits: 0 })}`
+                      : ''}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
+      )}
+
       {/* Premium upsell rail — same section component, hides itself when empty. */}
       <RelatedProducts
-        products={(merch?.upSells ?? []) as ProductType[]}
+        products={organicUpSells}
         title="Step Up Your Pick"
       />
 

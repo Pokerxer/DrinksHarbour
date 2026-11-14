@@ -7,6 +7,7 @@ import { useCart, getEffectiveUnitPrice } from '@/context/CartContext';
 
 vi.mock('./useMerchandising', () => ({
   cardPrice: (p: { price?: number }) => p.price ?? null,
+  fireSponsoredClick: vi.fn(),
   useMerchandising: vi.fn(),
 }));
 vi.mock('@/context/CartContext', () => ({

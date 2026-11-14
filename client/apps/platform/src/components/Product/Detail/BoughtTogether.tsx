@@ -6,7 +6,8 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { gtagEvent, viewItemListEvent, type GTagItem } from '@/lib/gtag';
 import { useCart } from '@/context/CartContext';
-import { cardPrice, useMerchandising, type MerchandisingProduct } from '@/components/Merchandising/useMerchandising';
+import { cardPrice, fireSponsoredClick, useMerchandising, type MerchandisingProduct } from '@/components/Merchandising/useMerchandising';
+import SponsoredBadge from '@/components/Merchandising/SponsoredBadge';
 import type { ProductType } from '@/types/product.types';
 
 interface BoughtTogetherProps {
@@ -66,7 +67,12 @@ const BoughtTogether: React.FC<BoughtTogetherProps> = ({ product }) => {
 
   const addSelected = () => {
     addToCart(product as ProductType);
-    for (const item of selected) addToCart(item as unknown as ProductType);
+    for (const item of selected) {
+      // Paid placement: attribute the CPC click before the add — a failed
+      // call never blocks the cart action.
+      if (item.source === 'sponsored') fireSponsoredClick(item.adCampaignId);
+      addToCart(item as unknown as ProductType);
+    }
     gtagEvent('add_to_cart_merchandising', {
       item_list_id: 'bought_together',
       sources: [...complements.map((c) => c.source ?? 'unknown'), 'pdp_product'],
@@ -117,6 +123,8 @@ const BoughtTogether: React.FC<BoughtTogetherProps> = ({ product }) => {
               className="h-12 w-12 rounded-lg object-cover"
             />
             <Link href={`/product/${c.slug}`} className="text-sm font-medium text-gray-900 hover:underline">
+              {/* Mandatory disclosure on paid placements. */}
+              {c.source === 'sponsored' && <SponsoredBadge />}{' '}
               {c.name}
             </Link>
             <span className="ml-auto text-sm font-semibold text-gray-900">
