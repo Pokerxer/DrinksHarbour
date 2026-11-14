@@ -11,7 +11,7 @@ import {purchaseLimits,clampPurchaseQuantity} from './purchase-quantity';
 import { resolveSellerChoice } from '@/utils/representativeOffer';
 import { resolveCatalogueHref } from '@/lib/catalogueLinks';
 import { useOfferImpression } from '@/components/Merchandising/useOfferImpression';
-import { cardPrice, useMerchandising, type MerchandisingProduct } from '@/components/Merchandising/useMerchandising';
+import { cardPrice, fireSponsoredClick, useMerchandising, type MerchandisingProduct } from '@/components/Merchandising/useMerchandising';
 import SponsoredBadge from '@/components/Merchandising/SponsoredBadge';
 import { purchasableOffers } from '@/components/Merchandising/offers';
 import { GiftOffer, PremiumOffer, SizeUpgrade } from '@/components/Merchandising/ProductOffers';
@@ -926,6 +926,11 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
                   />
                   <Link
                     href={`/product/${p.slug}`}
+                    onClick={() =>
+                      // Paid placement: the CPC click is attributed before
+                      // navigation — a failed call never blocks the click.
+                      p.source === 'sponsored' && fireSponsoredClick(p.adCampaignId)
+                    }
                     className="text-sm font-medium text-gray-900 hover:underline"
                   >
                     {p.name}

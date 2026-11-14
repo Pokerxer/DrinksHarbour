@@ -100,9 +100,17 @@ const initializePaystackPayment = asyncHandler(async (req, res) => {
   // Ad wallet top-ups are tenant-only prepaid ad spend. Workstream A: the
   // tenant identity comes from the JWT, never the body, and is stamped into
   // the charge metadata so verify/webhook settlement credits the right wallet.
+  // Whole-naira only: the ledger credits integer naira — a fractional charge
+  // would leave the tenant's money taken but never credited.
   const adWalletTopUp = metadata?.purpose === 'ad_wallet';
   if (adWalletTopUp && !req.user?.tenant) {
     throw new ForbiddenError('Ad wallet top-up requires a tenant account');
+  }
+  if (adWalletTopUp && (!Number.isInteger(Number(amount)) || Number(amount) < 1)) {
+    return res.status(400).json({
+      success: false,
+      message: 'Ad wallet top-up amount must be a whole number of naira',
+    });
   }
 
   const paymentData = await require('../services/marketplacePaymentTrust').initialize('paystack', req.user, amount, 'NGN', email,

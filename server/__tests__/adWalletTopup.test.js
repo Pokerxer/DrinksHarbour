@@ -96,3 +96,78 @@ test('settle failure never throws and never credits', async (t) => {
   await assert.doesNotReject(() => settleAdWalletCredit('PS-REF-3'));
   assert.equal(credits.length, 0);
 });
+
+// ─── initialize guard (money path: charge and credit must stay in step) ──────
+
+const paymentController = require('../controllers/payment.controller');
+const trust = require('../services/marketplacePaymentTrust');
+
+const initRes = () => {
+  const r = { status: () => r, json: () => r };
+  return r;
+};
+
+test('ad_wallet initialize rejects a fractional naira amount without initializing a charge', async (t) => {
+  const spy = t.mock.method(trust, 'initialize', async () => ({ authorizationUrl: 'x' }));
+
+  let response;
+  const r = {
+    status(code) { response = { status: code }; return this; },
+    json(body) { response = { ...response, body }; return this; },
+  };
+  const call = (amount) =>
+    paymentController.initializePaystackPayment(
+      {
+        body: { amount, email: 'a@b.c', metadata: { purpose: 'ad_wallet' } },
+        user: { tenant: '64b0000000000000000000aa' },
+        get: () => 'idem-key',
+      },
+      r,
+      (err) => { if (err) throw err; }
+    );
+
+  await call(2500.5);
+
+  assert.equal(spy.mock.callCount(), 0); // no charge created
+  assert.equal(response?.status, 400);
+  assert.match(response?.body?.message, /whole number of naira/);
+
+  // A whole amount passes the guard and reaches the trust seam.
+  await call(5000);
+  assert.equal(spy.mock.callCount(), 1);
+});
+
+test('ad_wallet initialize stamps the JWT tenant and requires one', async (t) => {
+  let stampedMetadata;
+  t.mock.method(trust, 'initialize', async (_gateway, user, _amount, _cur, _email, metadata) => {
+    stampedMetadata = metadata;
+    return { authorizationUrl: 'x' };
+  });
+
+  const r = initRes();
+  await paymentController.initializePaystackPayment(
+    {
+      body: { amount: 5000, email: 'a@b.c', metadata: { purpose: 'ad_wallet' } },
+      user: { tenant: '64b0000000000000000000aa', _id: '507f1f77bcf86cd799439099' },
+      get: () => 'idem-key',
+    },
+    r,
+    (err) => { if (err) throw err; }
+  );
+  assert.equal(stampedMetadata.tenantId, '64b0000000000000000000aa');
+  assert.equal(stampedMetadata.purpose, 'ad_wallet');
+
+  // No tenant in the JWT → refused before any charge.
+  await assert.rejects(
+    () => paymentController.initializePaystackPayment(
+      {
+        body: { amount: 5000, email: 'a@b.c', metadata: { purpose: 'ad_wallet' } },
+        user: {},
+        get: () => 'idem-key',
+      },
+      initRes(),
+      (err) => { throw err; }
+    ),
+    /tenant account/
+  );
+});

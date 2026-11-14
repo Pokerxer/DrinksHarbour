@@ -50,7 +50,9 @@ const CartCrossSellStrip: React.FC = () => {
   // returns below, so `suggestions` lives in a memo over the same inputs.
   const suggestions = useMemo(() => {
     if (!cartArray.length || !data) return [] as MerchandisingProduct[];
-    const cartIds = cartArray.map((i) => (i as { _id?: string })._id).filter(Boolean) as string[];
+    const cartIds = cartArray
+      .map((i) => (i as { _id?: string; id?: string })._id ?? (i as { id?: string }).id)
+      .filter(Boolean) as string[];
     return excludable(
       data.crossSells.map((p) => p._id),
       cartIds

@@ -129,9 +129,15 @@ const pairingCandidates = async (product, { limit, tenantId } = {}) => {
 
   // Tag overlap boosts genuine affinity (e.g. both tagged "gift-set").
   const tagSlugs = (product.tags || []).map((t) => (t?.slug ?? t));
+  // Bounded window: a complement family can span hundreds of catalog rows on
+  // a mature marketplace. The DB narrows to the most-offered candidates first
+  // (deterministic); the in-memory tag boost then re-ranks within that window.
+  const window = Math.max(limit * 8, 40);
   const docs = await Product.find(query)
     .select('-embedding')
     .populate(CARD_POPULATE)
+    .sort({ tenantCount: -1, averageSellingPrice: 1 })
+    .limit(window)
     .lean();
 
   const score = (doc) => {
