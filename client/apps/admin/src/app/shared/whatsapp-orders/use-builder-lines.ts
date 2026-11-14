@@ -59,6 +59,13 @@ export function useBuilderLines(initial: BuilderLine[]) {
     [],
   );
 
+  /** Append many pre-composed lines (catalogue modal / scan drawer) — each
+   *  gets a fresh key; existing key-unique semantics are preserved since the
+   *  key is always generated here, never trusted from the caller. */
+  const addLines = useCallback((ls: Array<Omit<BuilderLine, 'key'>>) => {
+    setLines((prev) => [...prev, ...ls.map((l) => ({ ...l, key: crypto.randomUUID() }))]);
+  }, []);
+
   const addSection = useCallback(() => {
     setLines((prev) => [...prev, { key: crypto.randomUUID(), lineType: 'section', quantity: 0 }]);
   }, []);
@@ -182,6 +189,7 @@ export function useBuilderLines(initial: BuilderLine[]) {
     lines,
     setLines,
     addProductLine,
+    addLines,
     addSection,
     addNote,
     remove,

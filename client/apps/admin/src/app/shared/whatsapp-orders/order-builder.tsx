@@ -11,6 +11,7 @@ import BuilderCustomerBar from './builder-customer-bar';
 import BuilderReviewPanel from './builder-review-panel';
 import BuilderTotalsCard from './builder-totals-card';
 import BuilderLineTable from './builder-line-table';
+import BuilderCatalogModal from './builder-catalog-modal';
 import useBuilderLines from './use-builder-lines';
 import DeliveryCard, { type DeliveryDraft } from './delivery-card';
 import { printOrderDocuments } from '@/utils/print/whatsapp-order-print';
@@ -50,7 +51,7 @@ export default function OrderBuilder() {
   // Lines are owned by useBuilderLines (line mutators + live server-priced
   // preview). The draft below restores/saves through its setLines/lines.
   const {
-    lines, setLines, addProductLine, addSection, addNote, remove, update, setQuantity, previewing,
+    lines, setLines, addProductLine, addLines, addSection, addNote, remove, update, setQuantity, previewing,
   } = useBuilderLines([]);
   const [shippingFee, setShippingFee] = useState(0);
   const [submitting, setSubmitting] = useState(false);
@@ -178,7 +179,10 @@ export default function OrderBuilder() {
             deliverySummary={delivery.state ? `${delivery.address} · ${delivery.lga}, ${delivery.state}` : ''} />
         </aside>
       </div>
-      {/* Catalog + scan overlays mount here in Tasks 6–7 */}
+      {/* Catalog overlay (Task 6); scan drawer mounts here in Task 7 */}
+      <BuilderCatalogModal open={catalogOpen} onClose={() => setCatalogOpen(false)} token={token}
+        lines={lines}
+        onAdd={(ls) => { addLines(ls); setCatalogOpen(false); }} />
     </div>
   );
 }
