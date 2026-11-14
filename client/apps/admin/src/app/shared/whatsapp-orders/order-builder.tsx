@@ -12,6 +12,9 @@ import BuilderReviewPanel from './builder-review-panel';
 import BuilderTotalsCard from './builder-totals-card';
 import BuilderLineTable from './builder-line-table';
 import BuilderCatalogModal from './builder-catalog-modal';
+import BuilderScanDrawer from './builder-scan-drawer';
+import BuilderTenantPicker from './builder-tenant-picker';
+import { useBarcodeScanner } from '@/app/shared/point-of-sale/hooks/useBarcodeScanner';
 import useBuilderLines from './use-builder-lines';
 import DeliveryCard, { type DeliveryDraft } from './delivery-card';
 import { printOrderDocuments } from '@/utils/print/whatsapp-order-print';
@@ -61,6 +64,36 @@ export default function OrderBuilder() {
   // Overlays mounted by Tasks 6–7 (catalogue modal, scan drawer).
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [scanOpen, setScanOpen] = useState(false);
+  // Barcode wedge offer target — a scan opens the shared tenant picker for the
+  // matched product (per-tenant offers resolve inside it).
+  const [barcodeTarget, setBarcodeTarget] = useState<{ productId: string; productName: string } | null>(null);
+  const [scanLookup, setScanLookup] = useState<string | null>(null);
+
+  // ── Barcode wedge: hardware scanners type the code + Enter anywhere on the
+  // page; the platform barcode endpoint returns data.product (verified in
+  // server/controllers/product.controller.js getProductByBarcode). ──
+  const handleBarcode = useCallback(async (code: string) => {
+    if (!token || scanLookup) return;
+    setScanLookup(code);
+    try {
+      const res = await fetch(`${API_URL}/api/products/barcode/${encodeURIComponent(code)}`, {
+        headers: { Authorization: `Bearer ${token}` }, cache: 'no-store',
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        success?: boolean; message?: string;
+        data?: { product?: { _id?: string; name?: string } };
+      };
+      const product = body.data?.product;
+      if (!body.success || !product?._id) {
+        toast.error(body.message || `No product for barcode ${code}`, { duration: 5000 });
+        return;
+      }
+      setBarcodeTarget({ productId: product._id, productName: product.name || '' });
+    } catch {
+      toast.error(`Barcode lookup failed for ${code}`, { duration: 5000 });
+    } finally { setScanLookup(null); }
+  }, [token, scanLookup]);
+  useBarcodeScanner(handleBarcode);
 
   // ── sessionStorage draft (restore once on mount; save on change) ──
   useEffect(() => {
@@ -179,10 +212,21 @@ export default function OrderBuilder() {
             deliverySummary={delivery.state ? `${delivery.address} · ${delivery.lga}, ${delivery.state}` : ''} />
         </aside>
       </div>
-      {/* Catalog overlay (Task 6); scan drawer mounts here in Task 7 */}
+      {/* Catalog (Task 6) + scan drawer / barcode wedge (Task 7) overlays */}
       <BuilderCatalogModal open={catalogOpen} onClose={() => setCatalogOpen(false)} token={token}
         lines={lines}
         onAdd={(ls) => { addLines(ls); setCatalogOpen(false); }} />
+      <BuilderScanDrawer open={scanOpen} onClose={() => setScanOpen(false)} token={token}
+        onAdd={(ls) => { addLines(ls); setScanOpen(false); }} />
+      <BuilderTenantPicker open={Boolean(barcodeTarget)} onClose={() => setBarcodeTarget(null)} token={token}
+        productId={barcodeTarget?.productId ?? null} productName={barcodeTarget?.productName ?? ''}
+        onAdd={(ls) => { addLines(ls); setBarcodeTarget(null); }} />
+      {scanLookup && (
+        <div className="fixed bottom-6 right-6 z-[110] flex items-center gap-2 rounded-lg bg-gray-900 px-4 py-2.5 text-sm text-white shadow-lg">
+          <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+          Looking up barcode <span className="font-mono">{scanLookup}</span>…
+        </div>
+      )}
     </div>
   );
 }

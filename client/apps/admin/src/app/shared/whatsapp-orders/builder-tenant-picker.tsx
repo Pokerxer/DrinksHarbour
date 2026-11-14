@@ -35,6 +35,7 @@ export default function BuilderTenantPicker({
   token,
   productId,
   productName,
+  initialQty,
   onAdd,
 }: {
   open: boolean;
@@ -42,6 +43,9 @@ export default function BuilderTenantPicker({
   token: string;
   productId: string | null;
   productName: string;
+  /** Default quantity when the caller knows one (scan drawer seeds the AI-
+   *  extracted qty); user edits always override. Defaults to 1. */
+  initialQty?: number;
   onAdd: (lines: Array<Omit<BuilderLine, 'key'>>) => void;
 }) {
   const [offers, setOffers] = useState<TenantOffer[] | null>(null);
@@ -85,7 +89,7 @@ export default function BuilderTenantPicker({
   );
 
   const addSize = (offer: TenantOffer, size: TenantOffer['sizes'][number]) => {
-    const quantity = Math.max(1, Math.floor(qty[size.sizeId] || 1));
+    const quantity = Math.max(1, Math.floor(qty[size.sizeId] ?? initialQty ?? 1));
     onAdd([
       {
         lineType: 'product',
@@ -196,7 +200,7 @@ export default function BuilderTenantPicker({
                       {isSel && (
                         <div className="space-y-3 border-t border-gray-100 px-3 py-3">
                           {offer.sizes.map((size) => {
-                            const q = Math.max(1, Math.floor(qty[size.sizeId] || 1));
+                            const q = Math.max(1, Math.floor(qty[size.sizeId] ?? initialQty ?? 1));
                             return (
                               <div key={size.sizeId} className="rounded-lg border border-gray-100 p-2.5">
                                 <div className="flex flex-wrap items-start justify-between gap-1 text-xs">
