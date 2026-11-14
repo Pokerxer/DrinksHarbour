@@ -16,7 +16,9 @@ const { normalizeUrl, frontendUrl } = require('../utils/frontendUrl');
 const { normalizePaymentMethod } = require('../utils/paymentMethods');
 
 const PAYSTACK_BASE_URL = 'https://api.paystack.co';
-const KORAPAY_BASE_URL = 'https://api.korapay.com/merchant/api/v1';
+// Env-overridable so staging/dev can point at a local mock gateway; the
+// default is the production API. Nothing else reads this.
+const KORAPAY_BASE_URL = process.env.KORAPAY_BASE_URL || 'https://api.korapay.com/merchant/api/v1';
 
 // Which gateway customer-facing payments (checkout, wallet fund, gift cards) go
 // through. Paystack stays available behind this flag for when it's re-enabled.
