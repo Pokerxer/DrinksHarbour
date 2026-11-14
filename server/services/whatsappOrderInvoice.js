@@ -104,7 +104,21 @@ async function issueInvoice(orderId, actor, { force = false } = {}) {
     }
   }
 
-  const attempt = force ? (order.invoice.attempt || 0) + 1 : (order.invoice.attempt || 0) || 1;
+  // The attempt counter MUST be persisted BEFORE the gateway call: a failed
+  // initialization (mock down, network error, provider 500) leaves the claim
+  // uncertain, and trust.initialize refuses the same requestKey forever. If
+  // the attempt only survived a successful save, every retry — including
+  // force — would rebuild the same requestKey and hit that stale claim.
+  const previousAttempt = order.invoice.attempt || 0;
+  const attempt = force ? previousAttempt + 1 : previousAttempt || 1;
+  order.invoice = {
+    ...order.invoice,
+    attempt,
+    provider,
+    ...(order.invoice.issuedAt ? {} : { issuedAt: new Date(), issuedBy: actor._id }),
+  };
+  await order.save();
+
   const requestKey = `dhwo-${order._id}-v${attempt}`;
   const result = await require('./marketplacePaymentTrust').initialize(
     provider, actor, order.totalAmount, order.currency,
@@ -128,12 +142,9 @@ async function issueInvoice(orderId, actor, { force = false } = {}) {
 
   order.invoice = {
     ...order.invoice,
-    token: order.invoice.token,
     issuedAt: new Date(),
     issuedBy: actor._id,
-    provider,
     paymentReference: result.reference,
-    attempt,
   };
   await order.save();
   const url = invoiceUrl(order);

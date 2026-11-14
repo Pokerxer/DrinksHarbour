@@ -53,6 +53,11 @@ export default function OrderBuilder() {
       // Server-priced preview first — the same validation checkout uses — so
       // stale price/stock problems surface before the order is created. The
       // endpoint is public and prices items itself from subProductId/sizeId.
+      // NOTE: the marketplace price routinely differs from the tenant retail
+      // price the picker displays, so `price_changed` is EXPECTED for most
+      // lines — we adopt the server-corrected price/quantity (mirroring
+      // checkout's "Accept & Continue" modal) and only block on lines that
+      // are truly unbuyable.
       const preview = await fetch(`${API_URL}/api/cart/validate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -62,20 +67,54 @@ export default function OrderBuilder() {
       });
       const previewBody = (await preview.json()) as {
         success?: boolean;
-        data?: { items?: Array<{ status: string; name?: string }> };
+        data?: { items?: Array<{ subProductId?: string; sizeId?: string | null; status: string; name?: string; currentPrice?: number | null; maxQuantity?: number | null }> };
       };
+      let corrected = lines;
+      let shippingFeeForOrder = shippingFee;
       if (previewBody.success) {
-        const issues = (previewBody.data?.items as Array<{ status: string; name?: string }> | undefined)?.filter(v => v.status !== 'ok') || [];
-        if (issues.length) {
-          throw new Error(`Some items changed: ${issues.map(v => `${v.name || 'Item'} (${v.status})`).join(', ')}. Please refresh your selection.`);
+        const results = previewBody.data?.items || [];
+        const blocked: string[] = [];
+        let adjusted = false;
+        corrected = lines.map((l) => {
+          const v = results.find(r =>
+            r.subProductId === l.subProductId && (r.sizeId || null) === (l.sizeId || null));
+          if (!v || v.status === 'ok') return l;
+          if (v.status === 'out_of_stock' || v.status === 'unavailable') {
+            blocked.push(`${l.productName}${l.sizeName ? ` (${l.sizeName})` : ''} — unavailable`);
+            return l;
+          }
+          const next = { ...l };
+          if (v.status === 'price_changed' && v.currentPrice != null && v.currentPrice > 0) next.unitPrice = v.currentPrice;
+          if (v.status === 'quantity_reduced' && v.maxQuantity != null) next.quantity = Math.max(1, v.maxQuantity);
+          if (next.unitPrice !== l.unitPrice || next.quantity !== l.quantity) adjusted = true;
+          return next;
+        });
+        if (blocked.length) {
+          throw new Error(`Some items cannot be ordered: ${blocked.join(', ')}. Please remove or replace them.`);
+        }
+        if (adjusted) {
+          setLines(corrected);
+          // The delivery fee was quoted against the pre-correction subtotal —
+          // re-quote so the order never posts a stale fee below the zone floor.
+          const cSubtotal = corrected.reduce((s, l) => s + l.unitPrice * l.quantity, 0);
+          const requote = await fetch(`${API_URL}/api/shipping/calculate?${new URLSearchParams({
+            state: delivery.state, lga: delivery.lga, subtotal: String(cSubtotal),
+          })}`);
+          const requoteBody = (await requote.json()) as { success?: boolean; data?: { fee?: number } };
+          if (requoteBody.success && typeof requoteBody.data?.fee === 'number') {
+            setShippingFee(requoteBody.data.fee);
+            shippingFeeForOrder = requoteBody.data.fee;
+          }
         }
       }
+      const orderSubtotal = corrected.reduce((s, l) => s + l.unitPrice * l.quantity, 0);
+      const orderShipping = shippingFeeForOrder;
       const order = await whatsappOrderService.createOrder(token, {
         customer: { firstName: customer.firstName.trim(), lastName: customer.lastName.trim(), email: customer.email.trim(), phone: customer.phone.trim() },
         shipping: { address: delivery.address.trim(), city: delivery.lga, lga: delivery.lga, state: delivery.state, zipCode: delivery.zipCode, country: delivery.country },
         paymentMethod: 'bank_transfer',
-        items: lines.map(l => ({ subProductId: l.subProductId, productId: l.productId, sizeId: l.sizeId, quantity: l.quantity, price: l.unitPrice })),
-        subtotal, shippingFee, total,
+        items: corrected.map(l => ({ subProductId: l.subProductId, productId: l.productId, sizeId: l.sizeId, quantity: l.quantity, price: l.unitPrice })),
+        subtotal: orderSubtotal, shippingFee: orderShipping, total: orderSubtotal + orderShipping,
         manualOrder: { originChannel: 'whatsapp' },
       }, attemptKey());
       finishAttempt();
