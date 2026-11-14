@@ -437,7 +437,7 @@ export default function AppraisalManagerView({
               label="Add a replacement"
               options={backfillOptions}
               value={backfillSelected}
-              onChange={setBackfillSelected}
+              onChange={(value) => setBackfillSelected(value as string[])}
               searchable
               clearable
               placeholder="Search for colleagues…"

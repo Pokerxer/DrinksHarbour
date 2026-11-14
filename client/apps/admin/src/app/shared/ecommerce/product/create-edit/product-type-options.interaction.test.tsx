@@ -50,7 +50,7 @@ function TypePickerHarness({
           ? { value, label: `${value} (Selected)` }
           : ''
       }
-      onChange={(opt: SelectOption) => onChange(opt.value as string)}
+      onChange={(opt) => onChange((opt as SelectOption).value as string)}
     />
   );
 }

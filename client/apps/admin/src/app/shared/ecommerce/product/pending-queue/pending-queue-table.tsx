@@ -139,7 +139,7 @@ export function PendingQueuePagination({
           className="w-16"
           options={PAGE_SIZE_OPTIONS.map((n) => ({ value: n, label: String(n) }))}
           value={limit}
-          onChange={(v: SelectOption) => onLimitChange(Number(v.value))}
+          onChange={(v) => onLimitChange(Number((v as SelectOption).value))}
           suffixClassName="[&>svg]:size-3"
           selectClassName="font-semibold text-xs ring-0 shadow-sm h-7"
         />

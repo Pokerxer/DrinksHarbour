@@ -340,9 +340,7 @@ export default function TeamAppraisals() {
                 cycleOptions.find((o) => o.value === cycleId) ?? ALL_CYCLES
               }
               options={cycleOptions}
-              onChange={(o: { value: string; label: string }) =>
-                setCycleId(o.value)
-              }
+              onChange={(o) => setCycleId((o as { value: string; label: string }).value)}
               className="w-full sm:w-52"
               selectClassName="rounded-xl"
               aria-label="Filter by cycle"
@@ -353,9 +351,7 @@ export default function TeamAppraisals() {
             // Spread, not cast: the constant is a ReadonlyArray and rizzui
             // wants a mutable one.
             options={[...TEAM_SORTS]}
-            onChange={(o: { value: TeamSort; label: string }) =>
-              setSort(o.value)
-            }
+            onChange={(o) => setSort((o as { value: TeamSort; label: string }).value)}
             prefix={<span className="text-xs text-gray-400">Sort</span>}
             className="w-full sm:w-56"
             selectClassName="rounded-xl"

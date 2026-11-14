@@ -101,9 +101,7 @@ export function OperationsFields({ meta }: { meta?: TenantFormMeta }) {
                           CURRENCY_OPTIONS.find((o) => o.value === value) ??
                           null
                         }
-                        onChange={(opt: SelectOption) =>
-                          onChange(opt.value)
-                        }
+                        onChange={(opt) => onChange((opt as SelectOption).value)}
                         label="Default Currency"
                         placeholder="Select currency"
                         error={errors.defaultCurrency?.message}
@@ -139,9 +137,7 @@ export function OperationsFields({ meta }: { meta?: TenantFormMeta }) {
                           BILL_CONTROL_OPTIONS.find((o) => o.value === value) ??
                           null
                         }
-                        onChange={(opt: SelectOption) =>
-                          onChange(opt.value)
-                        }
+                        onChange={(opt) => onChange((opt as SelectOption).value)}
                         label="Bill Control Policy"
                         placeholder="Select policy"
                         error={errors.psDefaultBillControlPolicy?.message}

@@ -71,7 +71,7 @@ export default function UnassignedOrders({
             size="sm"
             options={zoneOptions}
             value={zone}
-            onChange={(value: string) => onZoneChange(value)}
+            onChange={(value) => onZoneChange(value as string)}
             getOptionValue={(o) => (o as { value: string }).value}
             displayValue={(value) =>
               zoneOptions.find((o) => o.value === value)?.label ?? 'All zones'

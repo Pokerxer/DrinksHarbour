@@ -116,7 +116,7 @@ export default function CreateTripModal({
             label="Driver"
             options={driverOptions}
             value={driverId}
-            onChange={(value: string) => setDriverId(value)}
+            onChange={(value) => setDriverId(value as string)}
             getOptionValue={(o) => (o as { value: string }).value}
             displayValue={(value) =>
               driverOptions.find((o) => o.value === value)?.label ??

@@ -276,7 +276,7 @@ export default function AppraisalNominateForm({
         label="Peer reviewers"
         options={options}
         value={selected}
-        onChange={setSelected}
+        onChange={(value) => setSelected(value as string[])}
         searchable
         clearable
         placeholder="Search for colleagues…"

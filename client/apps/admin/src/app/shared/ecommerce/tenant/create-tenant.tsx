@@ -184,9 +184,7 @@ export default function CreateTenant({
                       value={
                         STATUS_OPTIONS.find((o) => o.value === value) ?? null
                       }
-                      onChange={(opt: SelectOption) =>
-                        onChange(opt.value)
-                      }
+                      onChange={(opt) => onChange((opt as SelectOption).value)}
                       label="Status"
                       placeholder="Select status"
                       error={errors.status?.message}

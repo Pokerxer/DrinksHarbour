@@ -136,7 +136,7 @@ export function makeUsersColumns({
             placeholder="None"
             disabled={pendingId === person._id}
             value={current}
-            onChange={(value: string) => onSelectRole(person, value || null)}
+            onChange={(value) => onSelectRole(person, value as string || null)}
             options={[
               { label: 'No custom role', value: '' },
               ...roles.map((r) => ({ label: r.name, value: r._id })),

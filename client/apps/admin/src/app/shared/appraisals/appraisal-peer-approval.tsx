@@ -202,7 +202,7 @@ export default function AppraisalPeerApproval({
           label="Add someone else"
           options={addOptions}
           value={addSelected}
-          onChange={setAddSelected}
+          onChange={(value) => setAddSelected(value as string[])}
           searchable
           clearable
           placeholder="Search for colleagues…"

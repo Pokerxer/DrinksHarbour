@@ -40,9 +40,7 @@ export function TenantModalSelect({
       label={label}
       options={options}
       value={value ?? ''}
-      onChange={(selected: string | TenantModalSelectOption) =>
-        onChange(typeof selected === 'string' ? selected : selected.value)
-      }
+      onChange={(selected) => { const selectedNarrowed = selected as string | TenantModalSelectOption; onChange(typeof selectedNarrowed === 'string' ? selectedNarrowed : selectedNarrowed.value) }}
       getOptionValue={(option) => option.value}
       displayValue={(selected) =>
         options.find((option) => option.value === selected)?.label ?? ''

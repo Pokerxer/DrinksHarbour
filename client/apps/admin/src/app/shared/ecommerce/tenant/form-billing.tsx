@@ -29,9 +29,7 @@ export function BillingFields() {
                         value={
                           PLAN_OPTIONS.find((o) => o.value === value) ?? null
                         }
-                        onChange={(opt: SelectOption) =>
-                          onChange(opt.value)
-                        }
+                        onChange={(opt) => onChange((opt as SelectOption).value)}
                         label="Plan"
                         placeholder="Select plan"
                         error={errors.plan?.message}
@@ -49,9 +47,7 @@ export function BillingFields() {
                             (o) => o.value === value
                           ) ?? null
                         }
-                        onChange={(opt: SelectOption) =>
-                          onChange(opt.value)
-                        }
+                        onChange={(opt) => onChange((opt as SelectOption).value)}
                         label="Subscription Status"
                         placeholder="Select status"
                         error={errors.subscriptionStatus?.message}

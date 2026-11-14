@@ -48,7 +48,7 @@ export function RevenueFields() {
                   value={
                     REVENUE_MODEL_OPTIONS.find((o) => o.value === value) ?? null
                   }
-                  onChange={(opt: SelectOption) => onChange(opt.value)}
+                  onChange={(opt) => onChange((opt as SelectOption).value)}
                   label="Revenue Model"
                   placeholder="Select model"
                   error={errors.revenueModel?.message}

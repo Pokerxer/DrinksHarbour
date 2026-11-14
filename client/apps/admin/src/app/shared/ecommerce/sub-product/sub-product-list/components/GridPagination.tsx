@@ -44,9 +44,7 @@ export default function GridPagination({
             label: String(n),
           }))}
           value={pageSize}
-          onChange={(v: { value: number; label: string }) =>
-            onPageSizeChange(Number(v.value))
-          }
+          onChange={(v) => onPageSizeChange(Number((v as { value: number; label: string }).value))}
           aria-label="Rows per page"
           className="w-20"
           suffixClassName="[&>svg]:size-3"

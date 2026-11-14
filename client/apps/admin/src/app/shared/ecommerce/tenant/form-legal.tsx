@@ -42,9 +42,7 @@ export function LegalFields({ meta, isEdit = false }: { meta?: TenantFormMeta; i
                             (o) => o.value === value
                           ) ?? null
                         }
-                        onChange={(opt: SelectOption) =>
-                          onChange(opt.value)
-                        }
+                        onChange={(opt) => onChange((opt as SelectOption).value)}
                         label="Business Type"
                         placeholder="Select type"
                         clearable
@@ -74,9 +72,7 @@ export function LegalFields({ meta, isEdit = false }: { meta?: TenantFormMeta; i
                         value={
                           ID_TYPE_OPTIONS.find((o) => o.value === value) ?? null
                         }
-                        onChange={(opt: SelectOption) =>
-                          onChange(opt.value)
-                        }
+                        onChange={(opt) => onChange((opt as SelectOption).value)}
                         label="ID Type"
                         placeholder="Select ID type"
                         clearable

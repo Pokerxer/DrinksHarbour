@@ -299,9 +299,7 @@ function NewCycleForm({
             }
             options={templateOptions}
             placeholder="Choose a form…"
-            onChange={(o: { value: string; label: string }) =>
-              setTemplateFamily(o.value)
-            }
+            onChange={(o) => setTemplateFamily((o as { value: string; label: string }).value)}
             disabled={submitting}
           />
           {touched && templateError ? (
@@ -720,9 +718,7 @@ export default function CyclesList() {
           // Spread, not cast: the constant is a ReadonlyArray and rizzui wants
           // a mutable one.
           options={[...CYCLE_STATUS_FILTERS]}
-          onChange={(o: { value: CycleStatusFilter; label: string }) =>
-            setStatus(o.value)
-          }
+          onChange={(o) => setStatus((o as { value: CycleStatusFilter; label: string }).value)}
           className="w-full sm:w-44"
           selectClassName="rounded-xl"
         />

@@ -129,9 +129,7 @@ export default function TripCard({
                 labelClassName="text-xs"
                 options={driverOptions}
                 value={currentDriverId ?? ''}
-                onChange={(value: string) =>
-                  onAssignDriver(delivery._id, value || null)
-                }
+                onChange={(value) => onAssignDriver(delivery._id, value as string || null)}
                 getOptionValue={(o) => (o as { value: string }).value}
                 displayValue={(value) =>
                   driverOptions.find((o) => o.value === value)?.label ??

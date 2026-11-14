@@ -53,7 +53,7 @@ export default function UsersTableFilters({
         variant="flat"
         options={STATUS_OPTIONS}
         value={statusFilter}
-        onChange={(value: string) => onStatusChange(value)}
+        onChange={(value) => onStatusChange(value as string)}
         getOptionValue={(option: SelectOption) => option.value}
         displayValue={(selected: string) =>
           STATUS_OPTIONS.find((o) => o.value === selected)?.label ??

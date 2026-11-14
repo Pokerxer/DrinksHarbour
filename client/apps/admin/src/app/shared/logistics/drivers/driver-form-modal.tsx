@@ -98,7 +98,7 @@ export default function DriverFormModal({
             label="Vehicle"
             options={VEHICLE_OPTIONS}
             value={vehicleType}
-            onChange={(value: VehicleType) => setVehicleType(value)}
+            onChange={(value) => setVehicleType(value as VehicleType)}
             getOptionValue={(o) => (o as { value: VehicleType }).value}
             displayValue={(value) =>
               VEHICLE_OPTIONS.find((o) => o.value === value)?.label ?? 'Bike'
@@ -118,7 +118,7 @@ export default function DriverFormModal({
             label="Status"
             options={STATUS_OPTIONS}
             value={status}
-            onChange={(value: DriverStatus) => setStatus(value)}
+            onChange={(value) => setStatus(value as DriverStatus)}
             getOptionValue={(o) => (o as { value: DriverStatus }).value}
             displayValue={(value) =>
               STATUS_OPTIONS.find((o) => o.value === value)?.label ??

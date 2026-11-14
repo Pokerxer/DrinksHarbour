@@ -701,14 +701,14 @@ export function CreateNewProductForm({
                   }
                 : ''
             }
-            onChange={(option: SelectOption) => {
+            onChange={(option) => {
               // Clear sub-category together with the category in a single update so
               // a user-initiated category change resets the now-stale sub-category.
               // (Auto-fill sets both at once and must not be clobbered — which is
               // why this lives here instead of a category-change effect.)
               onChange({
                 ...formData,
-                category: (option?.value as string) || '',
+                category: ((option as SelectOption)?.value as string) || '',
                 subCategory: '',
               });
             }}
@@ -765,8 +765,8 @@ export function CreateNewProductForm({
                     }
                   : ''
               }
-              onChange={(option: SelectOption) => {
-                handleChange('subCategory', (option?.value as string) || '');
+              onChange={(option) => {
+                handleChange('subCategory', ((option as SelectOption)?.value as string) || '');
               }}
               disabled={!formData.category || isLoadingSubCategories}
               className="w-full"
