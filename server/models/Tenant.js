@@ -285,6 +285,13 @@ const tenantSchema = new Schema(
     marketplaceSalesTotal: { type: Number, default: 0, min: 0 },
     marketplaceSalesOrders: { type: Number, default: 0, min: 0 },
 
+    // Prepaid advertising wallet (sponsored placements, CPC). Authoritative
+    // running balance; every change appends an immutable AdWalletTransaction
+    // ledger row and mutates this atomically with it. Prepaid-only: debits
+    // cannot overdraw (the balance guard in the update filter is the
+    // concurrency control). See services/adWallet.service.js.
+    adWalletBalance: { type: Number, default: 0, min: 0 },
+
     // Primary tenant owner/admin — the User with full control of this tenant.
     // Referenced by auth ownership checks (e.g., subproduct transfer, bulk ops).
     admin: {
