@@ -72,8 +72,11 @@ exports.createOrder = asyncHandler(async (req, res) => {
   // Everything downstream (pricing, tenant derivation, idempotency) is the
   // normal checkout path — only ownership/provenance/notifications differ.
   const manualOrder = req.body.manualOrder || null;
+  // Platform staff is a ROLE test, mirroring orderAccess.platform — a platform
+  // admin's JWT may legitimately carry a tenant snapshot (e.g. the seeded
+  // super_admin also belongs to Wyn City); tenant staff roles never match.
   const isPlatformStaff = Boolean(
-    req.user && !req.user.tenant && ['super_admin', 'admin'].includes(req.user.role)
+    req.user && ['super_admin', 'admin'].includes(req.user.role)
   );
   if (manualOrder && !isPlatformStaff) {
     throw new ForbiddenError('Only platform admins can create manual orders');
@@ -119,13 +122,13 @@ exports.createOrder = asyncHandler(async (req, res) => {
 
   const [subProducts, sizes] = await Promise.all([
     subProductIds.length
-      ? SubProduct.find({ _id: { $in: subProductIds }, isPublished: true, status: 'active', visibleInOnlineStore: { $ne: false } })
-          .select('_id costPrice baseSellingPrice sellingPriceMarkupOverridePct commissionPriceOverride platformMarkupOverridePct tenant product sellWithoutSizeVariants isOnSale saleDiscountValue saleType saleStartDate saleEndDate')
+      ? SubProduct.find({ _id: { $in: subProductIds }, isPublished: true, status: { $in: ['active', 'low_stock', 'out_of_stock'] }, visibleInOnlineStore: { $ne: false } })
+          .select('_id status costPrice baseSellingPrice sellingPriceMarkupOverridePct commissionPriceOverride platformMarkupOverridePct tenant product sellWithoutSizeVariants isOnSale saleDiscountValue saleType saleStartDate saleEndDate')
           .lean()
       : Promise.resolve([]),
     sizeIds.length
       ? Size.find({ ...require('../constants/sizeChannels').retailSizeWhereClause(), _id: { $in: sizeIds } })
-          .select('_id subproduct costPrice sellingPrice wholesalePrice packPlatformMarkupOverridePct tenant unitsPerPack maxOrderQuantity sellingPriceMarkupOverridePct commissionPriceOverride packCommissionPriceOverride platformMarkupOverridePct discountValue discountType discountStart discountEnd')
+          .select('_id subproduct status costPrice sellingPrice wholesalePrice packPlatformMarkupOverridePct tenant unitsPerPack maxOrderQuantity sellingPriceMarkupOverridePct commissionPriceOverride packCommissionPriceOverride platformMarkupOverridePct discountValue discountType discountStart discountEnd')
           .lean()
       : Promise.resolve([]),
   ]);
@@ -139,7 +142,7 @@ exports.createOrder = asyncHandler(async (req, res) => {
     if (!listing) return true;
     if (!item.sizeId) return false;
     const size = sizeMap.get(item.sizeId.toString());
-    return !size || String(size.subproduct) !== String(listing._id) || String(size.tenant) !== String(listing.tenant);
+    return !size || (size.status && size.status !== 'active') || String(size.subproduct) !== String(listing._id) || String(size.tenant) !== String(listing.tenant);
   });
   if (invalidItems.length) {
     return res.status(400).json({
@@ -156,7 +159,7 @@ exports.createOrder = asyncHandler(async (req, res) => {
     subProducts.map(sp => sp.tenant?.toString()).filter(Boolean)
   )];
   const tenants = await Tenant.find({ _id: { $in: resolvedTenantIds } })
-    .select('_id name revenueModel sellingPriceMarkupPercentage markupPercentage commissionPercentage platformMarkupPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits storefrontIntegrationEnabled')
+    .select('_id name revenueModel sellingPriceMarkupPercentage markupPercentage commissionPercentage platformMarkupPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits storefrontIntegrationEnabled warehouseSettings.marketplaceWarehouses warehouseSettings.marketplaceWarehouse')
     .lean();
   const tenantMap = new Map(tenants.map(t => [t._id.toString(), t]));
 
@@ -184,6 +187,9 @@ exports.createOrder = asyncHandler(async (req, res) => {
     const tenantId      = sp?.tenant?.toString() || item.tenantId || null;
     const tenant        = tenantMap.get(tenantId);
     if (!tenant) throw new ValidationError('Tenant revenue agreement is unavailable');
+    if (sp.status && sp.status !== 'active' && !require('../services/marketplaceWarehouseStock').selection(tenant).length) {
+      throw new ValidationError('One or more items are unavailable or no longer in stock');
+    }
     const revenueModel  = tenant.revenueModel ?? 'markup';
     const qty = item.quantity;
     // Server-authoritative unit price — the SAME two steps, in the same order,
@@ -419,7 +425,7 @@ exports.createOrder = asyncHandler(async (req, res) => {
     kind: 'marketplace', currency: orderData.currency,
     provider: paymentDetails?.method || canonicalPaymentMethod, account: 'platform',
   });
-  const order = await require('../services/marketplacePaymentTrust').createOrder(orderData, tenants, paymentDetails, req.user, req.get('Idempotency-Key'), recovery.requestFingerprint(req.body));
+  const order = await require('../services/marketplacePaymentTrust').createOrder(orderData, tenants, paymentDetails, req.user, req.get('Idempotency-Key'), recovery.requestFingerprint(req.body), { requireDefaultWarehouse: !isManual });
 
   if (order.$locals.checkoutReplayed) return res.status(200).json({ success: true, data: { guestAccessToken: require('../services/guestOrderProof').issue(order), order: {
     _id: order._id, orderNumber: order.orderNumber, status: order.status, paymentStatus: order.paymentStatus,

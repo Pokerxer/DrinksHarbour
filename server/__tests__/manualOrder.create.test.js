@@ -159,6 +159,22 @@ test('manual order rejected for tenant-scoped actors and non-admin roles', async
   );
 });
 
+test('a super_admin whose JWT carries a tenant snapshot can still create manual orders', async (t) => {
+  // Regression: the seeded platform admin (admin@drinksharbour.com) belongs to
+  // Wyn City, so its JWT embeds a tenant object. Platform-ness is role-based
+  // (mirrors orderAccess.platform), NOT tenant absence.
+  const m = setupMocks(t, { matchedUser: null });
+  const { createOrder } = require('../controllers/order.controller');
+  const adminWithTenant = { _id: oid(), role: 'super_admin', tenant: { _id: oid(), slug: 'wyncity' } };
+  const req = { body: reqBody({ subProductId: String(m.ids.subId), sizeId: String(m.ids.sizeId) }), user: adminWithTenant, get: () => 'idem-key-tenant-admin' };
+  let code;
+  const res = { status(c) { code = c; return { json: (b) => {} }; }, json: () => {} };
+  await createOrder(req, res, (e) => { throw e; });
+  assert.strictEqual(code, 201);
+  assert.strictEqual(m.captured().user, null); // guest — the tenant snapshot is not the customer
+  assert.strictEqual(m.captured().source, 'manual');
+});
+
 test('manual order must use the invoice payment method and no coupons', async (t) => {
   const m = setupMocks(t, { matchedUser: CUSTOMER_USER });
   const { createOrder } = require('../controllers/order.controller');
