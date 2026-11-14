@@ -63,3 +63,37 @@ test('getBoughtTogether: falls back to related products when pairing is empty to
   assert.equal(items.length, 1);
   assert.equal(items[0].source, 'related_fallback');
 });
+
+test('getCrossSells: pairing tier wins for a spirit (mixers/soft-drinks complements)', async (t) => {
+  t.mock.method(merchandising, 'pairingCandidates', async () => [card('b'), card('c')]);
+  t.mock.method(merchandising, 'semanticFallback', async () => {
+    throw new Error('semantic tier must not run when pairings exist');
+  });
+
+  const items = await merchandising.getCrossSells(VIEWED._id, VIEWED, { limit: 4 });
+
+  assert.equal(items.length, 2);
+  assert.ok(items.every((p) => p.source === 'pairing_rules'));
+});
+
+test('getCrossSells: falls back to semantic when pairing is empty', async (t) => {
+  t.mock.method(merchandising, 'pairingCandidates', async () => []);
+  t.mock.method(merchandising, 'semanticFallback', async () => [card('e')]);
+
+  const items = await merchandising.getCrossSells(VIEWED._id, VIEWED, { limit: 4 });
+
+  assert.equal(items.length, 1);
+  assert.equal(items[0].source, 'semantic');
+});
+
+test('getCrossSells: OTHER-family type never queries pairings, goes straight to semantic', async (t) => {
+  const fashion = { ...VIEWED, type: 'electronics_phone' };
+  t.mock.method(merchandising, 'pairingCandidates', async () => {
+    throw new Error('pairing tier must not run for OTHER');
+  });
+  t.mock.method(merchandising, 'semanticFallback', async () => [card('e')]);
+
+  const items = await merchandising.getCrossSells(fashion._id, fashion, { limit: 4 });
+
+  assert.equal(items[0].source, 'semantic');
+});

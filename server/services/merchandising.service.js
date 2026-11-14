@@ -166,11 +166,53 @@ const getBoughtTogether = async (productId, product, { limit = 5, tenantId } = {
   return (products || []).map((p) => ({ ...p, source: 'related_fallback' }));
 };
 
+// ─── Cross-sells ────────────────────────────────────────────────────────────
+
+// Semantic similarity fallback. Runs against a candidate window (no family
+// restriction); products without embeddings simply never score.
+const semanticFallback = async (product, { limit, tenantId } = {}) => {
+  const query = {
+    _id: { $ne: product._id },
+    status: 'approved',
+    isPublished: true,
+    embedding: { $exists: true, $ne: null },
+  };
+  if (!tenantId) Object.assign(query, marketplaceGate());
+
+  const candidates = await Product.find(query)
+    .select('name slug type images abv averageSellingPrice tenantCount priceRange embedding')
+    .limit(200)
+    .lean();
+
+  const scored = getProductRecommendations(product, candidates, { limit });
+  // scored are candidate docs with similarity metadata; strip the heavy
+  // embedding field before returning and hydrate missing card fields.
+  return scored.map(({ embedding, ...rest }) => ({ ...rest, _id: rest._id ?? rest.id }));
+};
+
+const getCrossSells = async (productId, product, { limit = 4, tenantId } = {}) => {
+  if (!isMongoId(productId)) throw new ValidationError('Invalid product ID');
+
+  // Tier 1: curated pairing rules (skipped entirely for OTHER-family types).
+  if (complementFamilies(product.type).length > 0) {
+    const paired = await module.exports.pairingCandidates(product, { limit, tenantId });
+    if (paired.length > 0) return paired.map((p) => ({ ...p, source: 'pairing_rules' }));
+  }
+
+  // Tier 2: semantic similarity.
+  return (await module.exports.semanticFallback(product, { limit, tenantId })).map((p) => ({
+    ...p,
+    source: 'semantic',
+  }));
+};
+
 module.exports = {
   hydrateCards,
   sellableForTenant,
   coPurchaseAggregates,
   pairingCandidates,
   getBoughtTogether,
+  getCrossSells,
+  semanticFallback,
   familyForType, // re-exported for the Task 4 test convenience
 };
