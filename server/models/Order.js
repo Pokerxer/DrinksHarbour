@@ -488,6 +488,43 @@ const orderSchema = new Schema(
       index: true,
     },
 
+    // ── Manual intake (platform staff transcribing an order, e.g. WhatsApp) ──
+    // 'manual' was already a legal value of `source`; these fields carry the
+    // provenance the source enum cannot. Both are written ONLY by the manual
+    // branch of order.controller.createOrder (see that file).
+    originChannel: {
+      type: String,
+      enum: ['whatsapp'],
+      default: null,
+      index: true,
+    },
+    placedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
+    // Token-gated invoice issued to the customer. The token gates the public
+    // /invoice/[orderId] page; paymentReference is the gateway charge that
+    // settles the invoice (see services/whatsappOrderInvoice.js).
+    // Declared as an embedded subdocument (not a bare nested object) so a
+    // fresh Order has `invoice === undefined` — Mongoose 9 auto-instantiates
+    // bare nested paths, which would persist `invoice: { attempt: 0 }` on
+    // every order. Strict casting drops any spread-in internal keys.
+    invoice: {
+      type: new mongoose.Schema(
+        {
+          token: { type: String },
+          issuedAt: { type: Date },
+          issuedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+          provider: { type: String }, // ACTIVE_GATEWAY at issuance ('korapay'|'paystack')
+          paymentReference: { type: String },
+          attempt: { type: Number, default: 0 },
+        },
+        { _id: false },
+      ),
+      default: undefined,
+    },
+
     receiptNumber: {
       type: String,
       index: true,
