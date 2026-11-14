@@ -68,3 +68,53 @@ test('merchandising_manual capability exists on Growth+ and passes the drift che
     );
   }
 });
+
+// ─── Task 2: pairing service ─────────────────────────────────────────────────
+
+const service = require('../services/merchandisingPairing.service');
+const Product = require('../models/Product');
+
+const TENANT = '64b0000000000000000000aa';
+const SRC = '507f1f77bcf86cd799439012';
+const A = '507f1f77bcf86cd799439013';
+const B = '507f1f77bcf86cd799439014';
+
+test('upsertPairing validates ids and rejects source in suggestions', async () => {
+  await assert.rejects(
+    () => service.upsertPairing(TENANT, null, { sourceProduct: 'bad', suggestedProducts: [A] }),
+    /Invalid source product/
+  );
+  await assert.rejects(
+    () => service.upsertPairing(TENANT, null, { sourceProduct: SRC, suggestedProducts: [SRC, A] }),
+    /cannot include the source product/
+  );
+  await assert.rejects(
+    () => service.upsertPairing(TENANT, null, { sourceProduct: SRC, suggestedProducts: [] }),
+    /1–4 unique/
+  );
+});
+
+test('upsertPairing rejects unknown product ids', async (t) => {
+  t.mock.method(Product, 'countDocuments', async () => 1); // only 1 of 2 exist
+  await assert.rejects(
+    () => service.upsertPairing(TENANT, null, { sourceProduct: SRC, suggestedProducts: [A, B] }),
+    /Unknown product/
+  );
+});
+
+test('upsertPairing persists an upsert scoped to the tenant', async (t) => {
+  let captured;
+  t.mock.method(Product, 'countDocuments', async () => 1);
+  t.mock.method(Merchant, 'findOneAndUpdate', async (filter, update, opts) => {
+    captured = { filter, update };
+    return { _id: 'row1', tenant: TENANT, sourceProduct: SRC, suggestedProducts: [A], active: true };
+  });
+
+  const row = await service.upsertPairing(TENANT, '507f1f77bcf86cd799439099', {
+    sourceProduct: SRC, suggestedProducts: [A], active: true,
+  });
+
+  assert.equal(captured.filter.tenant.toString(), TENANT);
+  assert.equal(captured.filter.sourceProduct.toString(), SRC);
+  assert.equal(row._id, 'row1');
+});
