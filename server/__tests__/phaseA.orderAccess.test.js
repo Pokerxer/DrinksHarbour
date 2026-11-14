@@ -47,3 +47,44 @@ test('merchant total deducts its own allocated discount without foreign shipping
  const view = require('../services/orderAccess').project(row, { _id: A, tenant: A, role: 'tenant_admin' });
  assert.equal(view.totalAmount, 90);
 });
+
+test('platform order detail uses wholesale cost for display while keeping recorded payouts', async t => {
+  const row = order();
+  row.items[0] = {
+    ...row.items[0], subproduct: C, quantity: 2, discountAmount: 10,
+    platformCommission: 12, size: { _id: B, tenant: A, subproduct: C, wholesalePrice: 35 },
+  };
+  row.items[1].platformCommission = 26;
+  row.platformCommissionTotal = 38;
+  t.mock.method(require('../models/AuditLog'), 'create', async () => ({}));
+  stub(t, row);
+
+  const req = { params: { id: row._id }, user: { _id: A, role: 'super_admin' } };
+  const res = await run(controller.getOrder, req);
+  const detail = res.body.data.order;
+  assert.equal(detail.platformProfit, 46); // 100 - 10 - (2 × 35) + 26
+  assert.equal(detail.platformCommissionTotal, 38);
+  assert.equal(detail.items[0].tenantRevenueShare, 87);
+  assert.equal(detail.items[0].platformWholesaleUnitCost, 35);
+  assert.equal(detail.items[1].platformWholesaleUnitCost, undefined);
+
+  row.items[0].platformWholesaleUnitCostAtPurchase = 45;
+  const snapshot = (await run(controller.getOrder, req)).body.data.order;
+  assert.equal(snapshot.platformProfit, 26);
+  assert.equal(snapshot.items[0].platformWholesaleUnitCost, 45);
+
+  row.items[0].platformWholesaleUnitCostAtPurchase = 0;
+  assert.equal((await run(controller.getOrder, req)).body.data.order.platformProfit, undefined);
+
+  delete row.items[0].platformWholesaleUnitCostAtPurchase;
+  row.items[0].size.tenant = B;
+  assert.equal((await run(controller.getOrder, req)).body.data.order.platformProfit, undefined);
+  row.items[0].size.tenant = A;
+
+  for (const user of [{ _id: C, role: 'customer' }, { _id: A, tenant: A, role: 'tenant_admin' }]) {
+    const restricted = (await run(controller.getOrder, { ...req, user })).body.data.order;
+    assert.equal(restricted.platformProfit, undefined);
+    assert.equal(restricted.items[0].size.wholesalePrice, undefined);
+    assert.equal(restricted.items[0].platformWholesaleUnitCost, undefined);
+  }
+});

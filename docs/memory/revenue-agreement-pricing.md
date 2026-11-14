@@ -82,3 +82,15 @@ pricing/controller/ownership tests: 34 passed. Scoped lint, syntax and whitespac
 checks pass. Project type check retains 359 existing errors, none in review files.
 No authenticated browser visual check; prior browser session required sign-in.
 Logs: `docs/superpowers/specs/RESUME-revenue-agreement-pricing.md`.
+
+## Admin order detail wholesale cost
+
+Platform Profit on the admin order detail uses a positive wholesale unit cost
+for the purchased size, multiplied by quantity and deducted from net
+merchandise. Lines without wholesale keep their recorded contribution. New
+marketplace orders record the wholesale basis at checkout, including zero when
+there is no applicable price. Older orders use the current wholesale price only
+for the same size, listing, tenant and currency. The detail calculation excludes
+delivery and tax and applies only to platform marketplace orders. Recorded
+commission, vendor payouts, settlement and refunds continue to use their own
+purchase snapshots.

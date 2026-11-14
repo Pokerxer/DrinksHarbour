@@ -3,6 +3,7 @@ const { calculateSubProductPricing } = require('../utils/pricing');
 
 const mongoose = require('mongoose');
 const orderAccess = require('../services/orderAccess');
+const { addOrderDetailProfit } = require('../services/orderDetailProfit');
 const Order = require('../models/Order');
 const Coupon = require('../models/Coupon');
 const User = require('../models/User');
@@ -147,7 +148,7 @@ exports.createOrder = asyncHandler(async (req, res) => {
       : Promise.resolve([]),
     sizeIds.length
       ? Size.find({ ...require('../constants/sizeChannels').retailSizeWhereClause(), _id: { $in: sizeIds } })
-          .select('_id subproduct status costPrice sellingPrice wholesalePrice packPlatformMarkupOverridePct tenant unitsPerPack maxOrderQuantity sellingPriceMarkupOverridePct commissionPriceOverride packCommissionPriceOverride platformMarkupOverridePct discountValue discountType discountStart discountEnd')
+          .select('_id subproduct status costPrice sellingPrice wholesalePrice currency packPlatformMarkupOverridePct tenant unitsPerPack maxOrderQuantity sellingPriceMarkupOverridePct commissionPriceOverride packCommissionPriceOverride platformMarkupOverridePct discountValue discountType discountStart discountEnd')
           .lean()
       : Promise.resolve([]),
   ]);
@@ -257,6 +258,7 @@ exports.createOrder = asyncHandler(async (req, res) => {
       priceAtPurchase:       customerPrice,
       itemSubtotal:          Math.round(itemSubtotal     * 100) / 100,
       discountAmount:        0,
+      platformWholesaleUnitCostAtPurchase: sz && (sz.currency ?? 'NGN') === 'NGN' ? sz.wholesalePrice ?? 0 : 0,
       ...split,
       tenantRevenueModel:    revenueModel,
       revenueRateAtPurchase: revenueModel === 'selling_price_markup' ? sizePricing.sellingPriceMarkupPct : revenueModel === 'commission' ? commissionPct : markupPct,
@@ -822,7 +824,9 @@ exports.getOrder = asyncHandler(async (req, res) => {
   const order = await Order.findById(req.params.id)
     .populate('items.product', 'name slug images type')
     .populate('items.subproduct', 'name sku imagesOverride baseSellingPrice')
-    .populate('items.size', 'displayName size sellingPrice')
+    .populate('items.size', orderAccess.platform(req.user)
+      ? 'displayName size sellingPrice wholesalePrice currency tenant subproduct'
+      : 'displayName size sellingPrice')
     .populate('items.tenant', 'name')
     .populate('posStaff', 'firstName lastName posName email')
     .populate('coupon', 'code discountType discountValue');
@@ -835,12 +839,13 @@ exports.getOrder = asyncHandler(async (req, res) => {
   }
 
   const actor = require('../services/guestOrderProof').actor(req, order);
-  orderAccess.access(order, actor);
+  const scope = orderAccess.access(order, actor);
   await orderAccess.audit(order, req.user, 'order_read');
 
+  const view = orderAccess.project(order, actor);
   res.status(200).json({
     success: true,
-    data: { order: orderAccess.project(order, actor) },
+    data: { order: scope === 'platform' ? addOrderDetailProfit(view) : view },
   });
 });
 

@@ -31,6 +31,7 @@ export function groupVendors(order: Order) {
  *  "left column top" of the order detail page. */
 export default function OrderItemsTable({ order }: { order: Order }) {
   const vendors = groupVendors(order);
+  const platformProfit = order.platformProfit ?? order.platformCommissionTotal;
 
   return (
     <div className="pb-5">
@@ -107,6 +108,12 @@ export default function OrderItemsTable({ order }: { order: Order }) {
                 </td>
                 <td className="px-5 py-4 text-right">
                   {formatCurrency(item.priceAtPurchase, order.currency)}
+                  {item.platformWholesaleUnitCost !== undefined && (
+                    <p className="text-xs text-gray-500">
+                      Wholesale cost per unit:{' '}
+                      {formatCurrency(item.platformWholesaleUnitCost, order.currency)}
+                    </p>
+                  )}
                 </td>
                 <td className="px-5 py-4 text-center font-semibold">
                   {item.quantity}
@@ -195,14 +202,11 @@ export default function OrderItemsTable({ order }: { order: Order }) {
           <div className="flex justify-between border-t border-muted pt-4 text-base font-semibold text-gray-900">
             Total <span>{formatCurrency(order.totalAmount, order.currency)}</span>
           </div>
-          {!!order.platformCommissionTotal && (
+          {(order.platformProfit !== undefined || !!platformProfit) && (
             <div className="flex items-center justify-between rounded-lg bg-violet-500/10 px-3 py-2 text-sm font-semibold text-violet-600 dark:text-violet-400">
               Platform Profit
               <span>
-                {formatCurrency(
-                  order.platformCommissionTotal,
-                  order.currency
-                )}
+                {formatCurrency(platformProfit, order.currency)}
               </span>
             </div>
           )}

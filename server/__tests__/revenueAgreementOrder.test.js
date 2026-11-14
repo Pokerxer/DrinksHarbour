@@ -17,7 +17,7 @@ async function checkout(t, foreign = false) {
   t.mock.method(require('../services/marketCheckoutRecovery'), 'recover', async () => null);
   t.mock.method(Order, 'countDocuments', async () => 0);
   t.mock.method(SubProduct, 'find', () => query([{ _id: sp, tenant, product, costPrice: 6000, baseSellingPrice: 10000, isOnSale: true, saleType: 'fixed', saleDiscountValue: 1000 }]));
-  t.mock.method(Size, 'find', () => query([{ _id: size, tenant: foreign ? oid() : tenant, subproduct: sp, costPrice: 6000, sellingPrice: 10000 }]));
+  t.mock.method(Size, 'find', () => query([{ _id: size, tenant: foreign ? oid() : tenant, subproduct: sp, costPrice: 6000, sellingPrice: 10000, wholesalePrice: 6800 }]));
   t.mock.method(Tenant, 'find', () => query([{ _id: tenant, revenueModel: 'commission', commissionPercentage: 13 }]));
   t.mock.method(Product, 'find', () => query([{ _id: product, platformMarkup: 80 }]));
   t.mock.method(Coupon, 'findOne', async () => ({ _id: oid(), allowedUsers: [], firstPurchaseOnly: false, isValid: true, calculateDiscount: () => 1800 }));
@@ -37,6 +37,8 @@ test('checkout snapshots the actual discounted commission split and calculates i
   const { captured, failure, stop } = await checkout(t);
   assert.equal(failure, stop);
   assert.equal(captured.items[0].priceAtPurchase, 9000);
+  assert.equal(captured.items[0].platformWholesaleUnitCostAtPurchase, 6800);
+  assert.equal(new Order(captured).items[0].platformWholesaleUnitCostAtPurchase, 6800);
   assert.equal(captured.items[0].revenueBasisAmount, 16200);
   assert.equal(captured.items[0].tenantRevenueShare, 14094);
   assert.equal(captured.items[0].platformCommission, 2106);

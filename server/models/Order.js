@@ -93,6 +93,10 @@ const orderItemSchema = new Schema({
     default: 0,
   },
 
+  // Per-unit wholesale cost for the platform margin shown in order details.
+  // Zero records that wholesale did not apply when the order was placed.
+  platformWholesaleUnitCostAtPurchase: { type: Number, min: 0, immutable: true },
+
   // Tenant revenue model snapshot for reporting
   tenantRevenueModel: {
     type: String,

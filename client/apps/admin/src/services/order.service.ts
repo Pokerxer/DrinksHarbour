@@ -38,6 +38,7 @@ export interface OrderItem {
   discountAmount?: number;
   tenantRevenueShare?: number;
   platformCommission?: number;
+  platformWholesaleUnitCost?: number;
   tenantRevenueModel?: string;
   packRateApplied?: boolean;
   /** Denormalized product name snapshotted on the item by the server. */
@@ -150,6 +151,7 @@ export interface Order {
   shippingMethod?: string;
   shippingInfo?: ShippingInfo;
   platformCommissionTotal?: number;
+  platformProfit?: number;
   /** Per-tenant fulfilment slice — tenant scope receives its own entry. */
   fulfillmentStatus?: Record<string, string>;
   status: string;
