@@ -13,6 +13,7 @@ import {
   PiStarDuotone,
   PiImageDuotone,
   PiPathDuotone,
+  PiMegaphoneDuotone,
   PiTruckDuotone,
   PiUserGearDuotone,
   PiUsersThreeDuotone,
@@ -252,6 +253,14 @@ export const tenantMenuItems: TenantMenuEntry[] = [
     href: routes.eCommerce.merchandising,
     icon: <PiPathDuotone />,
     requiredPlan: 'growth',
+  },
+  {
+    // Self-serve sponsored ads — a la carte (the prepaid ad wallet is the
+    // gate), so unlike Banners/Merchandising there is no requiredPlan here.
+    name: 'Advertising',
+    minRole: 'tenant_admin',
+    href: routes.eCommerce.advertising,
+    icon: <PiMegaphoneDuotone />,
   },
 
   // ─── Purchases ──────────────────────────────────────────────

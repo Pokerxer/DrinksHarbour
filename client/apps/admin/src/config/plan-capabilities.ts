@@ -278,6 +278,15 @@ export const ROUTE_CAPABILITIES: RouteRequirement[] = [
   },
   { prefix: '/banners', anyOf: [], label: 'Banners', legacyMinPlan: 'starter' },
   {
+    // Self-serve sponsored ads — a la carte revenue, NOT a priced capability:
+    // the prepaid ad wallet is the gate (activation refuses without funds),
+    // so the route only keeps the ordinary starter-or-above threshold.
+    prefix: '/advertising',
+    anyOf: [],
+    label: 'Advertising',
+    legacyMinPlan: 'starter',
+  },
+  {
     prefix: '/ecommerce/reviews',
     anyOf: [],
     label: 'Reviews',

@@ -217,6 +217,7 @@ export const config = {
     '/banners/:path*',
     '/banner/:path*',
     '/merchandising/:path*',
+    '/advertising/:path*',
     '/warehouses/:path*',
     '/purchases/:path*',
     '/sales/:path*',

@@ -128,6 +128,27 @@ describe('legacy thresholds', () => {
     expect(allow('/logistics', 'enterprise')).toBe(true);
     expect(allow('/logistics', 'venue')).toBe(true);
   });
+
+  it('keeps /advertising a la carte — starter and above, no capability gate', () => {
+    // Sponsored ads are billed per verified click out of the prepaid ad
+    // wallet, so the module is sold by usage, not by plan tier: starter
+    // passes and no capability list applies (the wallet gate is server-side).
+    expect(routeRequirementFor('/advertising')?.prefix).toBe('/advertising');
+    expect(routeRequirementFor('/advertising/campaigns/create')?.prefix).toBe(
+      '/advertising'
+    );
+    expect(allow('/advertising', 'starter')).toBe(true);
+    expect(allow('/advertising', 'growth')).toBe(true);
+    expect(allow('/advertising', 'custom')).toBe(true);
+    expect(allow('/advertising', 'free_trial')).toBe(false);
+    expect(
+      checkPlanAccess({
+        path: '/advertising',
+        role: 'tenant_owner',
+        plan: 'free_trial',
+      }).upgradeTo
+    ).toBe('starter');
+  });
 });
 
 describe('custom', () => {

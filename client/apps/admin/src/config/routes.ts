@@ -200,6 +200,9 @@ export const routes = {
     // Manual "buy X with Y" pairings (phase-2 merchandising, Growth+)
     merchandising: '/merchandising',
     createPairing: '/merchandising/create',
+    // Self-serve sponsored ads (a la carte, prepaid CPC wallet)
+    advertising: '/advertising',
+    createCampaign: '/advertising/campaigns/create',
     shop: '/ecommerce/shop',
     checkout: '/ecommerce/checkout',
     trackingId: (id: string) => `/ecommerce/tracking/${id}`,
