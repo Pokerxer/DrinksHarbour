@@ -198,6 +198,10 @@ async function publicInvoice(orderId, token) {
       phone: order.shippingAddress?.phone || '',
     },
     items,
+    // Presentation layout (WhatsApp builder): sections/notes + per-line
+    // descriptions. Product rows reference `items` by index — the payload's
+    // items array is index-aligned with order.items.
+    printLines: order.printLines ?? null,
     subtotal: order.subtotal,
     discountTotal: order.discountTotal,
     shippingFee: order.shippingFee,

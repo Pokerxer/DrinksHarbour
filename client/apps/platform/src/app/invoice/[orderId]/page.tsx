@@ -14,6 +14,8 @@ interface InvoiceData {
   orderNumber: string;
   customer: { name: string; phone: string };
   items: { name: string; size: string | null; tenant: string | null; quantity: number; unitPrice: number; itemSubtotal: number }[];
+  // Presentation layout from the WhatsApp order builder (optional).
+  printLines: { lineType: 'product' | 'section' | 'note'; name: string; description: string; productIndex: number | null }[] | null;
   subtotal: number;
   discountTotal: number;
   shippingFee: number;
@@ -110,6 +112,27 @@ function InvoicePageInner() {
 
   const paid = data.paymentStatus === 'paid';
 
+  // Presentation layout from the WhatsApp builder: sections, notes and
+  // per-line descriptions. Section rows carry a running subtotal of the
+  // product lines beneath them until the next section (same walk rule as
+  // the builder's line table).
+  const printLines = data.printLines?.length ? data.printLines : null;
+  const sectionSubtotals = new Map<number, number>();
+  if (printLines) {
+    let acc: { idx: number; total: number } | null = null;
+    for (let idx = 0; idx < printLines.length; idx++) {
+      const l = printLines[idx];
+      if (l.lineType === 'section') {
+        if (acc) sectionSubtotals.set(acc.idx, acc.total);
+        acc = { idx, total: 0 };
+      } else if (l.lineType === 'product' && acc) {
+        const item = l.productIndex != null ? data.items[l.productIndex] : undefined;
+        if (item) acc.total += item.itemSubtotal;
+      }
+    }
+    if (acc) sectionSubtotals.set(acc.idx, acc.total);
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 py-10 px-4">
       <div className="max-w-lg mx-auto bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
@@ -149,17 +172,54 @@ function InvoicePageInner() {
           )}
 
           <div className="space-y-2.5 text-sm">
-            {data.items.map((item, i) => (
-              <div key={i} className="flex justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="font-semibold text-gray-900 truncate">{item.name}{item.size ? ` · ${item.size}` : ''}</p>
-                  <p className="text-xs text-gray-400">
-                    Qty {item.quantity}{item.tenant ? ` · Sold by ${item.tenant}` : ''}
-                  </p>
-                </div>
-                <span className="font-semibold text-gray-900 flex-shrink-0">{fmt(item.itemSubtotal)}</span>
-              </div>
-            ))}
+            {printLines
+              ? printLines.map((l, i) => {
+                  if (l.lineType === 'section') {
+                    const sub = sectionSubtotals.get(i) || 0;
+                    return (
+                      <div key={`pl-${i}`} className="flex items-center justify-between gap-3 pt-1">
+                        <p className="font-bold text-gray-900">{l.name || 'Section'}</p>
+                        {sub > 0 && (
+                          <span className="flex-shrink-0 text-xs font-semibold text-gray-500">{fmt(sub)}</span>
+                        )}
+                      </div>
+                    );
+                  }
+                  if (l.lineType === 'note') {
+                    const text = l.description || l.name || '';
+                    if (!text) return null;
+                    return (
+                      <div key={`pl-${i}`} className="rounded-lg bg-amber-50 px-3 py-2 text-xs italic text-amber-700">
+                        {text}
+                      </div>
+                    );
+                  }
+                  const item = l.productIndex != null ? data.items[l.productIndex] : null;
+                  if (!item) return null;
+                  return (
+                    <div key={`pl-${i}`} className="flex justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-semibold text-gray-900 truncate">{item.name}{item.size ? ` · ${item.size}` : ''}</p>
+                        <p className="text-xs text-gray-400">
+                          Qty {item.quantity}{item.tenant ? ` · Sold by ${item.tenant}` : ''}
+                        </p>
+                        {l.description && <p className="text-xs italic text-gray-500">{l.description}</p>}
+                      </div>
+                      <span className="flex-shrink-0 font-semibold text-gray-900">{fmt(item.itemSubtotal)}</span>
+                    </div>
+                  );
+                })
+              : data.items.map((item, i) => (
+                  <div key={i} className="flex justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-gray-900 truncate">{item.name}{item.size ? ` · ${item.size}` : ''}</p>
+                      <p className="text-xs text-gray-400">
+                        Qty {item.quantity}{item.tenant ? ` · Sold by ${item.tenant}` : ''}
+                      </p>
+                    </div>
+                    <span className="font-semibold text-gray-900 flex-shrink-0">{fmt(item.itemSubtotal)}</span>
+                  </div>
+                ))}
           </div>
 
           <div className="mt-4 pt-3 border-t border-gray-100 space-y-1.5 text-sm text-gray-600">
