@@ -204,7 +204,6 @@ export const config = {
     '/logistics/:path*',
     '/ecommerce/:path*',
     '/merchant-orders/:path*',
-    '/whatsapp-orders/:path*',
     '/platform-ops/:path*',
     '/delivery-settings/:path*',
     '/products/:path*',

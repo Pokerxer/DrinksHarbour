@@ -60,14 +60,13 @@ fulfillment surface was built.
 
 ## Admin app surfaces (`client/apps/admin`)
 
-- Module: `/whatsapp-orders` (intake list) + `/whatsapp-orders/create`
-  (builder). Gated super_admin/admin in `config/route-roles.ts` (before the
-  PLATFORM_ROLES early-return — tenant roles otherwise fall through to true),
-  matcher added to `middleware.ts`, nav entry in
-  `layouts/hydrogen/menu-items.tsx`.
-- **Layout pattern**: `(hydrogen)/whatsapp-orders/layout.tsx` renders the
-  `ModuleNavHeader` (brand + tabs); the views render plain content — no page
-  renders its own header.
+- The Orders page links platform staff to `/ecommerce/orders/whatsapp` (intake)
+  and the intake links to `/ecommerce/orders/whatsapp/create` (builder).
+  The `/ecommerce/:path*` middleware matcher covers both pages and
+  `config/route-roles.ts` enforces platform-staff access. Old
+  `/whatsapp-orders` bookmarks redirect to the corresponding nested pages.
+- **Layout pattern**: The nested WhatsApp layout renders the
+  `ModuleNavHeader` with links to Orders, Intake and New order.
 - **Token accessor**: `useAuthorization()` from `@/hooks/use-authorization` →
   `user?.token` (not useSession).
 - **Builder** (`shared/whatsapp-orders/`): customer-card (live
@@ -149,3 +148,54 @@ as demo data.
 - No USSD on Korapay charges (channels `['card','bank_transfer']`).
 - Claims older than 30 days need reconciliation → admin uses "Fresh charge"
   (new attempt/reference).
+
+## WhatsApp Order Builder v2 (2026-11-14)
+
+- The Sales-style builder adds product, section and note rows, a review panel,
+  and live cart validation. Catalogue selections, Scan & Match candidates and
+  barcode lookups all resolve through the same per-tenant offer picker.
+  Platform staff can scan across tenants' published SubProducts. Tenant-scoped
+  matching continues to use the actor's tenant.
+- The picker loads `GET /api/subproducts/product/:productId?includeAll=true`
+  and displays each tenant's sizes, stock and marketplace price. It reads
+  `size.pricing.finalPrice ?? size.pricing.platformSellingPrice`. The
+  debounced cart validation reconciles displayed prices and quantities.
+  Order creation recalculates pricing on the server.
+- The draft lives in `sessionStorage` under `dh:wa-builder-draft-v2`. It
+  restores customer, delivery and lines in the current tab. The hydration
+  guard in `5909f701` delays saving until restoration completes so an auth
+  remount cannot replace the stored draft with empty initial state. Successful
+  creation clears the draft and the separate order-attempt key.
+- Manual creation accepts optional `manualOrder.printLines`. The server
+  normalizes the row type and text and validates product indices. Each
+  product row's zero-based `productIndex` points into the saved order's
+  `items`. Section/note rows use a null index. Saved items carry the
+  authoritative financial data.
+- Quotation and invoice actions map the saved order to the shared document
+  export dialog. The hosted invoice uses the same saved layout, including
+  section subtotals and notes. Both paths fall back to item rows for legacy
+  orders. The printed invoice includes payment status, including a paid
+  stamp after settlement.
+
+### Task 10 verification
+
+- The previous browser run confirmed the v2 shell, the Lagar dos Perdigões
+  Colheita Vinho Tinto catalogue selection from Wyn City at ₦28,800, and
+  section/note restoration after reload. That catalogue fixture had one
+  eligible tenant. ₦28,800 was its line price.
+- The resumed run passed all 19 targeted server tests, covering manual
+  creation, print-line normalization, cross-tenant scan scope, invoice
+  routes, payment metadata and settlement. Admin and platform type checks
+  passed, along with 16 admin print, catalogue and shared export tests.
+- The resumed live smoke could not start. The admin, platform and mock
+  gateway listeners returned `EPERM`, including a loopback-only bind test.
+  The API's Atlas SRV lookup returned `ECONNREFUSED`. No new v2 order,
+  final total or print/hosted-invoice screenshots were produced.
+- Resume in a development environment with working local listeners, MongoDB
+  access and the mock Korapay gateway. Use a single Playwright context, fill
+  the street textarea within Delivery address, and reload mid-build to
+  confirm the full draft. Complete the paste-scan path, create the order,
+  check the quotation preview and persisted `printLines` via the order API,
+  and check the hosted invoice and paid invoice print with mock settlement.
+  Capture screenshots from that order. The v1 demo orders above predate
+  the v2 print layout.

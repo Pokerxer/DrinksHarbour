@@ -78,6 +78,15 @@ const nextConfig = {
     // allows instead of one-per-core.
     memoryBasedWorkersCount: true,
   },
+  async redirects() {
+    return [
+      {
+        source: '/whatsapp-orders/:path*',
+        destination: '/ecommerce/orders/whatsapp/:path*',
+        permanent: true,
+      },
+    ];
+  },
   // Serve POS terminal pages (no admin header) under /point-of-sale/* URLs.
   // beforeFiles rewrites take priority over filesystem routes so the
   // (hydrogen) layout is bypassed and only the root layout is used.

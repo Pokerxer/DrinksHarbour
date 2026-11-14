@@ -1,16 +1,7 @@
 import ModuleNavHeader from '@/app/shared/module-nav-header';
 import { routes } from '@/config/routes';
-import { PiPlusCircleDuotone, PiWhatsappLogoDuotone } from 'react-icons/pi';
+import { PiPlusCircleDuotone, PiReceiptDuotone, PiWhatsappLogoDuotone } from 'react-icons/pi';
 
-/**
- * POS-style module chrome: nav header + content canvas. Responsive rules
- * (label hiding / wrapping) live in ModuleNavHeader. Route key mirrors the
- * "WhatsApp Orders" entry in layouts/hydrogen/menu-items.tsx.
- *
- * ModuleNavHeader renders the nav bar itself (brand/tabs props — it does not
- * wrap children), so the views render in the canvas below, exactly like the
- * merchant-orders module.
- */
 const LIST_HREF = routes.whatsappOrders.list;
 
 export default function WhatsAppOrdersLayout({
@@ -25,6 +16,11 @@ export default function WhatsAppOrdersLayout({
           brand="WhatsApp orders"
           brandHref={LIST_HREF}
           tabs={[
+            {
+              label: 'All orders',
+              href: routes.eCommerce.orders,
+              icon: <PiReceiptDuotone />,
+            },
             {
               label: 'Intake',
               href: LIST_HREF,

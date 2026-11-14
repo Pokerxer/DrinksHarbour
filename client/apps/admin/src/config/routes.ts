@@ -12,7 +12,10 @@ export const routes = {
   bookings: '/bookings',
   deliverySettings: '/delivery-settings',
   merchantOrders: '/merchant-orders',
-  whatsappOrders: { list: '/whatsapp-orders', create: '/whatsapp-orders/create' },
+  whatsappOrders: {
+    list: '/ecommerce/orders/whatsapp',
+    create: '/ecommerce/orders/whatsapp/create',
+  },
   occasionRequests: '/occasion-requests',
   venue: '/venue',
   venueCompletion: '/venue-completion',
