@@ -116,7 +116,7 @@ function Field({ label, name, type = 'text', placeholder, required = true, icon:
 export default function CheckoutPage() {
   const router = useRouter();
   const { isMainSite } = useTenant();
-  const { cartState, clearCart, clearCartEverywhere, syncCartToServer, loadServerCart, validateCartItems, applyValidationUpdates, validationMap } = useCart();
+  const { cartState, clearCart, clearCartEverywhere, syncCartToServer, loadServerCart, validateCartItems, applyValidationUpdates } = useCart();
 
   const [mounted,         setMounted]         = useState(false);
   const [isLoading,       setIsLoading]       = useState(false);
@@ -145,7 +145,8 @@ export default function CheckoutPage() {
   const utmRef = useRef(readUTMParams());
 
   // Validation modal state
-  const [validationIssues, setValidationIssues] = useState<Array<{ name: string; status: string; currentPrice?: number; oldPrice?: number; maxQuantity?: number | null }>>([]);
+  const [checkoutValidation, setCheckoutValidation] = useState<Awaited<ReturnType<typeof validateCartItems>>>();
+  const [validationIssues, setValidationIssues] = useState<Array<{ name: string; status: string; currentPrice?: number; oldPrice?: number; maxQuantity?: number | null; stockStatus: string }>>([]);
   const [showValidationModal, setShowValidationModal] = useState(false);
   const [pendingPayment, setPendingPayment] = useState<null | (() => Promise<void>)>(null);
 
@@ -778,38 +779,14 @@ export default function CheckoutPage() {
     setIsLoading(true);
     setError('');
     try {
-      await validateCartItems();
-      // validateCartItems populates validationMap — read it directly from state after awaiting
-      // But since state updates are async, re-fetch from the API inline here to be sure
-      const payload = cartState.cartArray
-        .filter(item => item.selectedSubProductId)
-        .map(item => ({
-          subProductId: item.selectedSubProductId,
-          sizeId:       item.selectedSizeId       || null,
-          tenantId:     item.selectedVendorId     || null,
-          quantity:     item.quantity || 1,
-          price:        getEffectiveUnitPrice(item),
-        }));
-
-      if (payload.length === 0) {
-        setIsLoading(false);
-        await proceed();
-        return;
-      }
-
-      const res  = await fetchWithAuth(`${API_URL}/api/cart/validate`, {
-        method:  'POST',
-        body:    JSON.stringify({ items: payload }),
-      });
-      const data = await res.json();
-
-      if (!data.success) {
+      const results = await validateCartItems({ checkout: true });
+      if (!results) {
         setIsLoading(false);
         setError('Could not verify stock for checkout. Please try again.');
         return;
       }
 
-      const issues = (data.data.items as any[]).filter(v => v.status !== 'ok');
+      const issues = Object.values(results).filter(item => item.status !== 'ok');
       if (issues.length === 0) {
         setIsLoading(false);
         await proceed();
@@ -827,9 +804,11 @@ export default function CheckoutPage() {
           currentPrice: v.currentPrice,
           oldPrice: v.oldPrice,
           maxQuantity: v.maxQuantity,
+          stockStatus: v.stockStatus,
         };
       });
 
+      setCheckoutValidation(results);
       setValidationIssues(issueDetails);
       setPendingPayment(() => proceed);
       setIsLoading(false);
@@ -843,7 +822,7 @@ export default function CheckoutPage() {
   // User accepts the validation changes and continues
   const handleAcceptAndContinue = async () => {
     setShowValidationModal(false);
-    applyValidationUpdates();
+    applyValidationUpdates(checkoutValidation);
     const proceed = pendingPayment;
     setPendingPayment(null);
     if (validationIssues.some(issue => issue.status !== 'price_changed')) {
@@ -977,7 +956,11 @@ export default function CheckoutPage() {
                       <div className="flex-1 min-w-0">
                         <p className="font-semibold text-gray-900 truncate">{issue.name}</p>
                         {(issue.status === 'out_of_stock' || issue.status === 'unavailable') && (
-                          <p className="text-xs text-red-600 mt-0.5">Out of stock — will be removed from your cart</p>
+                          <p className="text-xs text-red-600 mt-0.5">{issue.stockStatus === 'checkout_warehouse_unavailable'
+                              ? 'This seller’s checkout warehouse is unavailable.'
+                              : issue.status === 'out_of_stock'
+                                ? 'Out of stock at the checkout warehouse.'
+                                : 'This item is unavailable for checkout.'}</p>
                         )}
                         {issue.status === 'price_changed' && issue.currentPrice != null && (
                           <p className="text-xs text-amber-700 mt-0.5">
@@ -986,7 +969,7 @@ export default function CheckoutPage() {
                         )}
                         {issue.status === 'quantity_reduced' && issue.maxQuantity != null && (
                           <p className="text-xs text-amber-700 mt-0.5">
-                            Only <strong>{issue.maxQuantity}</strong> unit{issue.maxQuantity !== 1 ? 's' : ''} available — quantity will be adjusted
+                            Only <strong>{issue.maxQuantity}</strong> unit{issue.maxQuantity !== 1 ? 's' : ''} available at the checkout warehouse
                           </p>
                         )}
                       </div>

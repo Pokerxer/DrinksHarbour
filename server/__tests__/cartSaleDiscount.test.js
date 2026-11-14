@@ -207,9 +207,11 @@ test('a cart holding the sale price validates as ok, not price_changed', async (
     };
     return query;
   });
+  let defaultStock = 2;
   t.mock.method(Stock, 'aggregate', async pipeline => {
-    assert.deepEqual(pipeline[0].$match.$or[0].warehouse.$in, [defaultWarehouse]);
-    return [{ tenant: tenantId, warehouse: defaultWarehouse, subProduct: subProductId, size: sizeId, stock: 2 }];
+    const [warehouse] = pipeline[0].$match.$or[0].warehouse.$in;
+    const stock = warehouse.equals(displayWarehouse) ? 10 : defaultStock;
+    return [{ tenant: tenantId, warehouse, subProduct: subProductId, size: sizeId, stock }];
   });
 
   // What the storefront published, and therefore what the cart is holding.
@@ -224,7 +226,18 @@ test('a cart holding the sale price validates as ok, not price_changed', async (
   assert.equal(result.status, 'ok',
     'a cart holding the advertised sale price is not a price change');
   assert.equal(result.priceDiff, 0);
-  assert.equal(result.maxQuantity, 2, 'checkout quantity is capped at the default warehouse');
+  assert.equal(result.maxQuantity, 10, 'cart uses selected marketplace stock');
+  const [checkoutResult] = await cartService.validateCartItems([
+    { subProductId: String(subProductId), sizeId: String(sizeId), quantity: 3, price: salePrice },
+  ], { checkout: true });
+  assert.equal(checkoutResult.status, 'quantity_reduced');
+  assert.equal(checkoutResult.maxQuantity, 2, 'checkout quantity is capped at the default warehouse');
+  defaultStock = 0;
+  const line = { subProductId: String(subProductId), sizeId: String(sizeId), quantity: 1, price: salePrice };
+  const [cartWithStock] = await cartService.validateCartItems([line]);
+  const [checkoutWithoutStock] = await cartService.validateCartItems([line], { checkout: true });
+  assert.equal(cartWithStock.status, 'ok');
+  assert.equal(checkoutWithoutStock.status, 'out_of_stock');
   assert.equal(result.baseUnitPrice, salePrice,
     '"Accept prices" writes baseUnitPrice — it must not restore the pre-sale price');
 });

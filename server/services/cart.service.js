@@ -599,7 +599,7 @@ const clearCart = async (userId) => {
  * Validate cart items against current stock & pricing (pre-checkout safety check).
  * Public — works for guest and logged-in carts alike, no userId needed.
  */
-const validateCartItems = async (items) => {
+const validateCartItems = async (items, { checkout = false } = {}) => {
   const defaults = new Map();
   function getDefault(tenant) {
     const key = String(tenant._id);
@@ -673,16 +673,22 @@ const validateCartItems = async (items) => {
       saleActive: sizePricing.saleActive === true,
       priceBeforeSale: sizePricing.priceBeforeSale ?? sizePricing.finalPrice,
     };
-    const defaultWarehouse = subProduct.tenant._id ? await getDefault(subProduct.tenant) : undefined;
-    const locationStock = defaultWarehouse ? await cartSizeStock(
-      { _id: subProduct.tenant._id, warehouseSettings: { marketplaceWarehouses: [defaultWarehouse] } },
-      subProduct._id, size
-    ) : 0;
-    const stock = locationStock ?? 0;
+    let locationStock;
+    if (checkout) {
+      const defaultWarehouse = await getDefault(subProduct.tenant);
+      if (!defaultWarehouse) return unavailable({ stockStatus: 'checkout_warehouse_unavailable' });
+      locationStock = await cartSizeStock(
+        { _id: subProduct.tenant._id, warehouseSettings: { marketplaceWarehouses: [defaultWarehouse] } },
+        subProduct._id, size
+      );
+    } else {
+      locationStock = await cartSizeStock(subProduct.tenant, subProduct._id, size);
+    }
+    const stock = locationStock ?? size.availableStock ?? size.stock ?? 0;
     const isLowStock = stock > 0 && stock <= (size.lowStockThreshold ?? 6);
     const stockStatus = isLowStock ? 'low_stock' : 'available';
 
-    if (stock <= 0) {
+    if (stock <= 0 || (locationStock == null && size.availability === 'out_of_stock')) {
       return { ...base, ...packInfo, status: 'out_of_stock', available: false, currentPrice,
         priceDiff: currentPrice - oldPrice, stockStatus: 'out_of_stock', maxQuantity: 0, isLowStock: false };
     }

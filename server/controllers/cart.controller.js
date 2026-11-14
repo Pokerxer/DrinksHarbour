@@ -32,7 +32,7 @@ exports.saveCart = async (req, res) => {
 
 /**
  * POST /api/cart/validate
- * Public — pre-checkout stock & price validation. Works for guest carts too.
+ * Public — cart stock and price validation, with default-warehouse validation at checkout. Works for guest carts too.
  */
 exports.validateCart = async (req, res) => {
   try {
@@ -40,7 +40,7 @@ exports.validateCart = async (req, res) => {
     if (!Array.isArray(items) || items.length === 0) {
       return errorResponse(res, 'items array is required', 400);
     }
-    const results = await cartService.validateCartItems(items);
+    const results = await cartService.validateCartItems(items, { checkout: req.body.checkout === true });
     return successResponse(res, { items: results }, 'Cart validated');
   } catch (err) {
     return errorResponse(res, 'Failed to validate cart', 500, err);
