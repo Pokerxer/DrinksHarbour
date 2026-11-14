@@ -22,7 +22,7 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@floating-ui/react": "^0.27.20",
     "@googlemaps/js-api-loader": "^1.16.10",
-    "@headlessui/react": "2.2.0",
+    "@headlessui/react": "2.2.10",
     "@paralleldrive/cuid2": "^2.3.1",
     "@serwist/next": "^9.5.13",
     "@t3-oss/env-nextjs": "^0.13.11",
