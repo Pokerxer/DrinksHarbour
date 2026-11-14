@@ -12,6 +12,7 @@ import { useCart, getEffectiveUnitPrice, getLineOriginPrice } from '@/context/Ca
 import { calculateDiscountPercentage } from '@/utils/product.utils';
 import { useWishlist } from '@/context/WishlistContext';
 import { useModalWishlistContext } from '@/context/ModalWishlistContext';
+import CartCrossSellStrip from '@/components/Merchandising/CartCrossSellStrip';
 
 const ModalCart = () => {
   const { isModalOpen, closeModalCart } = useModalCartContext();
@@ -548,6 +549,15 @@ const ModalCart = () => {
                       );
                     })}
                   </AnimatePresence>
+                </div>
+              )}
+              {/* Cross-sell strip (phase 1, reused as-is) — inside the items
+                  area so it scrolls with the cart lines. It hides itself when
+                  there is nothing to suggest, and quick-add keeps the drawer
+                  open because it adds without navigating. */}
+              {cartCount > 0 && (
+                <div className="px-4 pb-4">
+                  <CartCrossSellStrip />
                 </div>
               )}
             </div>

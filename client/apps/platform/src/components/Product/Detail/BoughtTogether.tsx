@@ -6,6 +6,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { gtagEvent, viewItemListEvent, type GTagItem } from '@/lib/gtag';
 import { useCart } from '@/context/CartContext';
+import { useModalCartContext } from '@/context/ModalCartContext';
 import { cardPrice, fireSponsoredClick, useMerchandising, type MerchandisingProduct } from '@/components/Merchandising/useMerchandising';
 import SponsoredBadge from '@/components/Merchandising/SponsoredBadge';
 import type { ProductType } from '@/types/product.types';
@@ -37,6 +38,7 @@ export const sumBundlePrice = (
 const BoughtTogether: React.FC<BoughtTogetherProps> = ({ product }) => {
   const { data } = useMerchandising(product?._id, 'pdp');
   const { addToCart } = useCart();
+  const { openModalCart } = useModalCartContext();
   const [unchecked, setUnchecked] = useState<Record<string, boolean>>({});
 
   const complements = useMemo(
@@ -77,6 +79,8 @@ const BoughtTogether: React.FC<BoughtTogetherProps> = ({ product }) => {
       item_list_id: 'bought_together',
       sources: [...complements.map((c) => c.source ?? 'unknown'), 'pdp_product'],
     });
+    // The mini-cart is the confirmation surface for the bundle add (Task 12).
+    openModalCart();
   };
 
   return (

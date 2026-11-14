@@ -4,6 +4,7 @@ import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import BoughtTogether, { sumBundlePrice } from './BoughtTogether';
 import { useMerchandising } from '@/components/Merchandising/useMerchandising';
 import { useCart } from '@/context/CartContext';
+import { useModalCartContext } from '@/context/ModalCartContext';
 import type { ProductType } from '@/types/product.types';
 
 vi.mock('@/components/Merchandising/useMerchandising', () => ({
@@ -13,6 +14,7 @@ vi.mock('@/components/Merchandising/useMerchandising', () => ({
   useMerchandising: vi.fn(),
 }));
 vi.mock('@/context/CartContext', () => ({ useCart: vi.fn() }));
+vi.mock('@/context/ModalCartContext', () => ({ useModalCartContext: vi.fn() }));
 
 const product = { _id: 'p1', name: 'Base Bottle', slug: 'base-bottle', images: [] } as unknown as ProductType;
 
@@ -49,6 +51,7 @@ describe('BoughtTogether', () => {
       loading: false,
     });
     (useCart as ReturnType<typeof vi.fn>).mockReturnValue({ addToCart: vi.fn() });
+    (useModalCartContext as ReturnType<typeof vi.fn>).mockReturnValue({ openModalCart: vi.fn() });
 
     render(<BoughtTogether product={product} />);
     expect(screen.getByText('Base Bottle')).toBeTruthy();
@@ -69,6 +72,7 @@ describe('BoughtTogether', () => {
     });
     const addToCart = vi.fn();
     (useCart as ReturnType<typeof vi.fn>).mockReturnValue({ addToCart });
+    (useModalCartContext as ReturnType<typeof vi.fn>).mockReturnValue({ openModalCart: vi.fn() });
 
     render(<BoughtTogether product={product} />);
     fireEvent.click(screen.getByRole('button', { name: /add selected/i }));
@@ -78,11 +82,35 @@ describe('BoughtTogether', () => {
     expect(names).toContain('Tonic');
   });
 
+  it('opens the mini-cart after adding the bundle', () => {
+    (useMerchandising as ReturnType<typeof vi.fn>).mockReturnValue({
+      data: {
+        productId: 'p1',
+        context: 'pdp',
+        boughtTogether: [{ _id: 'c1', name: 'Tonic', slug: 'tonic', price: 500 }],
+        crossSells: [],
+        upSells: [],
+      },
+      loading: false,
+    });
+    (useCart as ReturnType<typeof vi.fn>).mockReturnValue({ addToCart: vi.fn() });
+    const openModalCart = vi.fn();
+    (useModalCartContext as ReturnType<typeof vi.fn>).mockReturnValue({ openModalCart });
+
+    render(<BoughtTogether product={product} />);
+    fireEvent.click(screen.getByRole('button', { name: /add selected/i }));
+
+    expect(openModalCart).toHaveBeenCalledTimes(1);
+  });
+
   it('renders null when fewer than 2 bundle items exist', () => {
     (useMerchandising as ReturnType<typeof vi.fn>).mockReturnValue({
       data: { productId: 'p1', context: 'pdp', boughtTogether: [], crossSells: [], upSells: [] },
       loading: false,
     });
+    (useCart as ReturnType<typeof vi.fn>).mockReturnValue({ addToCart: vi.fn() });
+    (useModalCartContext as ReturnType<typeof vi.fn>).mockReturnValue({ openModalCart: vi.fn() });
+
     const { container } = render(<BoughtTogether product={product} />);
     expect(container.innerHTML).toBe('');
   });

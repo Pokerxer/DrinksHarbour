@@ -336,14 +336,16 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
         gtagEvent('merchandising_select', { source: 'gift' });
         router.push('/cart?gift=1');
       } else {
-        setToast({ show: true, message: 'Added to cart successfully!', type: 'success' });
+        // Task 12: the opened mini-cart is the success feedback — toasts are
+        // kept for errors only, so the modal never fights a duplicate toast.
+        openModalCart();
       }
     } catch (error) {
       setToast({ show: true, message: 'Failed to add to cart', type: 'error' });
     } finally {
       setIsAddingToCart(false);
     }
-  }, [productData, selectedSizeData, selectedVendor, effectiveSize, localQuantity, addToCart, inStock, purchaseBlocked, limits.min, limits.max, router]);
+  }, [productData, selectedSizeData, selectedVendor, effectiveSize, localQuantity, addToCart, openModalCart, inStock, purchaseBlocked, limits.min, limits.max, router]);
 
   const handleAddToWishlist = useCallback(() => {
     if (!productData) return;
