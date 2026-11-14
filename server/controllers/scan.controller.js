@@ -95,18 +95,24 @@ exports.smartSearch = asyncHandler(async (req, res) => {
 
 /** POST /api/scan/match — desktop direct match (image URL or text), synchronous. */
 exports.desktopMatch = asyncHandler(async (req, res) => {
-  const tenantId = req.tenant?._id;
-  if (!tenantId)
-    return res.status(400).json({ success: false, message: 'Tenant context required' });
   const { imageUrl, text } = req.body || {};
   if (!imageUrl && !text)
     return res.status(400).json({ success: false, message: 'Provide imageUrl or text' });
 
+  // Platform admins (building WhatsApp orders) match across ALL tenants'
+  // published subproducts; the brand/category phases degrade to name/SKU
+  // matching when no tenant is scoped. Tenant actors keep today's behavior.
+  const isPlatform = ['super_admin', 'admin'].includes(req.user?.role);
+  const tenantId = isPlatform ? null : req.tenant?._id;
+  if (!tenantId && !isPlatform)
+    return res.status(400).json({ success: false, message: 'Tenant context required' });
+
+  const getterParams = isPlatform ? { page: 1, limit: 200, status: 'active' } : {};
   const result = await scanMatch.extractAndMatch(
     imageUrl ? { imageUrl } : { text },
     {
       tenantId,
-      getSubProducts: (t, p) => subProductService.getMySubProducts(t, p),
+      getSubProducts: (t, p) => subProductService.getMySubProducts(t, p ?? getterParams),
     }
   );
   res.json({ success: true, data: { items: result } });
