@@ -6,6 +6,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
+const Product = require('../models/Product');
 const productService = require('../services/product.service');
 const merchandising = require('../services/merchandising.service');
 
@@ -129,4 +130,55 @@ test('getUpSells: falls back to semantic-above when both tiers empty', async (t)
   const items = await merchandising.getUpSells(VIEWED._id, VIEWED, { limit: 4 });
 
   assert.equal(items[0].source, 'semantic');
+});
+
+test('getRecommendations assembles all three kinds and tags context', async (t) => {
+  merchandising.clearRecommendationsCache();
+  t.mock.method(merchandising, 'getBoughtTogether', async () => [card('a')]);
+  t.mock.method(merchandising, 'getCrossSells', async () => [card('b')]);
+  t.mock.method(merchandising, 'getUpSells', async () => [card('f')]);
+  t.mock.method(Product, 'findById', () => ({
+    lean: async () => ({ ...VIEWED, embedding: [0.1] }),
+  }));
+
+  const data = await merchandising.getRecommendations(VIEWED._id, { context: 'cart' });
+
+  assert.deepEqual(
+    Object.keys(data).sort(),
+    ['boughtTogether', 'context', 'crossSells', 'productId', 'upSells']
+  );
+  assert.equal(data.context, 'cart');
+  assert.equal(data.boughtTogether.length, 1);
+});
+
+test('getRecommendations serves a second identical call from cache without refetching', async (t) => {
+  merchandising.clearRecommendationsCache();
+  const spy = t.mock.method(merchandising, 'getCrossSells', async () => [card('b')]);
+  t.mock.method(merchandising, 'getBoughtTogether', async () => []);
+  t.mock.method(merchandising, 'getUpSells', async () => []);
+  t.mock.method(Product, 'findById', () => ({
+    lean: async () => ({ ...VIEWED }),
+  }));
+
+  await merchandising.getRecommendations(VIEWED._id, {});
+  await merchandising.getRecommendations(VIEWED._id, {});
+
+  assert.equal(spy.mock.callCount(), 1);
+});
+
+test('getRecommendations rejects invalid product IDs', async (t) => {
+  merchandising.clearRecommendationsCache();
+  await assert.rejects(
+    () => merchandising.getRecommendations('not-an-id', {}),
+    /Invalid product ID/
+  );
+});
+
+test('getRecommendations rejects unknown products', async (t) => {
+  merchandising.clearRecommendationsCache();
+  t.mock.method(Product, 'findById', () => ({ lean: async () => null }));
+  await assert.rejects(
+    () => merchandising.getRecommendations('507f1f77bcf86cd799439011', {}),
+    /Product not found/
+  );
 });

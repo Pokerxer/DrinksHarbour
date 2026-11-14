@@ -276,6 +276,46 @@ const getUpSells = async (productId, product, { limit = 4, tenantId } = {}) => {
   }));
 };
 
+// ─── Assembly + process-local cache ────────────────────────────────────────
+
+// Standalone-runtime agreement: process-local Map cache only, no Redis/Upstash
+// (docs/memory/standalone-without-upstash.md). Per-process is acceptable for a
+// read-only recommendation payload.
+const CACHE_TTL_MS = 5 * 60 * 1000;
+const recommendationsCache = new Map();
+
+const clearRecommendationsCache = () => recommendationsCache.clear();
+
+const getRecommendations = async (productId, { context = 'pdp', tenantId, limit } = {}) => {
+  if (!isMongoId(productId)) throw new ValidationError('Invalid product ID');
+
+  const cacheKey = `${productId}:${context}:${tenantId || 'market'}`;
+  const cached = recommendationsCache.get(cacheKey);
+  if (cached && Date.now() - cached.at < CACHE_TTL_MS) return cached.value;
+
+  const product = await Product.findById(productId).lean();
+  if (!product) throw new NotFoundError('Product not found');
+
+  const opts = { limit, tenantId };
+  // Any tier failing must not take down the whole payload (spec §degradation).
+  const settled = await Promise.allSettled([
+    module.exports.getBoughtTogether(productId, product, opts),
+    module.exports.getCrossSells(productId, product, opts),
+    module.exports.getUpSells(productId, product, opts),
+  ]);
+  const pick = (r) => (r.status === 'fulfilled' ? r.value : []);
+
+  const value = {
+    productId,
+    context,
+    boughtTogether: pick(settled[0]),
+    crossSells: pick(settled[1]),
+    upSells: pick(settled[2]),
+  };
+  recommendationsCache.set(cacheKey, { at: Date.now(), value });
+  return value;
+};
+
 module.exports = {
   hydrateCards,
   sellableForTenant,
@@ -287,5 +327,7 @@ module.exports = {
   getUpSells,
   upSellPriceBand,
   upSellBrandPremium,
+  getRecommendations,
+  clearRecommendationsCache,
   familyForType, // re-exported for the Task 4 test convenience
 };
