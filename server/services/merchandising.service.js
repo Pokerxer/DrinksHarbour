@@ -17,6 +17,7 @@ const { ValidationError, NotFoundError } = require('../utils/errors');
 const catalogKind = require('../constants/catalogKind');
 const { complementFamilies, typesForFamilies, familyForType } = require('../config/merchandising');
 const productService = require('./product.service');
+const pairingService = require('./merchandisingPairing.service');
 const { getProductRecommendations } = require('../utils/embeddings');
 
 // Marketplace candidates are beverage-only (DRI-5), matching the related strip.
@@ -286,6 +287,24 @@ const recommendationsCache = new Map();
 
 const clearRecommendationsCache = () => recommendationsCache.clear();
 
+// ─── Manual pairings (tenant dashboard, Growth+) ───────────────────────────
+// Storefront surface only: the tenant's own "buy X with Y" configuration
+// outranks every automatic tier. Suggestions are re-verified sellable via
+// hydrateCards (which drops products this tenant does not publish/stock).
+const manualPairingCards = async (tenantId, productId, cap) => {
+  try {
+    const pairing = await module.exports.getActivePairingSafe(tenantId, productId);
+    if (!pairing) return [];
+    const cards = await module.exports.hydrateCards(
+      pairing.suggestedProducts.map((id) => id.toString()),
+      { tenantId }
+    );
+    return cards.slice(0, cap).map((p) => ({ ...p, source: 'manual' }));
+  } catch {
+    return []; // pairing lookup must never take down recommendations
+  }
+};
+
 const getRecommendations = async (productId, { context = 'pdp', tenantId, limit } = {}) => {
   if (!isMongoId(productId)) throw new ValidationError('Invalid product ID');
 
@@ -305,11 +324,33 @@ const getRecommendations = async (productId, { context = 'pdp', tenantId, limit 
   ]);
   const pick = (r) => (r.status === 'fulfilled' ? r.value : []);
 
+  // Manual pairings are storefront-only and merge ahead of automatic tiers.
+  // NOTE: the process-local cache key below already includes tenantId, so a
+  // manual pairing edit becomes visible to shoppers within the 5-minute TTL —
+  // documented trade-off, not staleness (standalone-runtime agreement).
+  let manualCross = [];
+  let manualTogether = [];
+  if (tenantId) {
+    const cap = Math.max(0, (limit ?? 4) - 1); // leave room for ≥1 automatic item
+    [manualTogether, manualCross] = await Promise.all([
+      module.exports.manualPairingCards(tenantId, productId, Math.min(cap, 2)),
+      module.exports.manualPairingCards(tenantId, productId, cap),
+    ]);
+  }
+  const mergeManual = (auto, manual) => {
+    const seen = new Set(manual.map((p) => p._id.toString()));
+    return [...manual, ...auto.filter((p) => !seen.has(p._id.toString()))].slice(
+      0, limit ?? 4
+    );
+  };
+
   const value = {
     productId,
     context,
-    boughtTogether: pick(settled[0]),
-    crossSells: pick(settled[1]),
+    boughtTogether: mergeManual(pick(settled[0]), manualTogether),
+    crossSells: mergeManual(pick(settled[1]), manualCross),
+    // Manual pairings do not touch upSells — an upsell is a premium
+    // alternative, not a pairing.
     upSells: pick(settled[2]),
   };
   recommendationsCache.set(cacheKey, { at: Date.now(), value });
@@ -329,5 +370,8 @@ module.exports = {
   upSellBrandPremium,
   getRecommendations,
   clearRecommendationsCache,
+  manualPairingCards,
+  getActivePairingSafe: (tenantId, productId) =>
+    pairingService.getActivePairing(tenantId, productId),
   familyForType, // re-exported for the Task 4 test convenience
 };

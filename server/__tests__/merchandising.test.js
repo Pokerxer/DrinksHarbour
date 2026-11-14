@@ -10,6 +10,7 @@ const Product = require('../models/Product');
 const productService = require('../services/product.service');
 const merchandising = require('../services/merchandising.service');
 const productController = require('../controllers/product.controller');
+const pairingService = require('../services/merchandisingPairing.service');
 
 const res = () => {
   const r = { status: () => r, json: () => r };
@@ -223,4 +224,52 @@ test('controller: getMerchandising passes no tenantId on the marketplace', async
   );
 
   assert.equal(spy.mock.calls[0].arguments[1].tenantId, undefined);
+});
+
+test('storefront surface: manual pairing outranks automatic cross-sells', async (t) => {
+  merchandising.clearRecommendationsCache();
+  const TENANT = '64b0000000000000000000aa';
+  t.mock.method(pairingService, 'getActivePairing', async () => ({
+    _id: 'row1', tenant: TENANT, sourceProduct: VIEWED._id,
+    suggestedProducts: ['507f1f77bcf86cd799439015'], active: true,
+  }));
+  t.mock.method(merchandising, 'hydrateCards', async (ids) =>
+    ids.map((id) => card(id)).filter(Boolean));
+  t.mock.method(merchandising, 'getCrossSells', async () => [card('b')]);
+  t.mock.method(merchandising, 'getBoughtTogether', async () => []);
+  t.mock.method(merchandising, 'getUpSells', async () => []);
+  t.mock.method(Product, 'findById', () => ({ lean: async () => ({ ...VIEWED }) }));
+
+  const data = await merchandising.getRecommendations(VIEWED._id, { tenantId: TENANT });
+
+  assert.equal(data.crossSells[0].source, 'manual');
+  assert.equal(data.crossSells.length, 2); // manual first, automatic fills
+});
+
+test('marketplace surface never consults tenant pairings', async (t) => {
+  merchandising.clearRecommendationsCache();
+  const spy = t.mock.method(pairingService, 'getActivePairing', async () => null);
+
+  t.mock.method(merchandising, 'getCrossSells', async () => []);
+  t.mock.method(merchandising, 'getBoughtTogether', async () => []);
+  t.mock.method(merchandising, 'getUpSells', async () => []);
+  t.mock.method(Product, 'findById', () => ({ lean: async () => ({ ...VIEWED }) }));
+
+  await merchandising.getRecommendations(VIEWED._id, {});
+  assert.equal(spy.mock.callCount(), 0);
+});
+
+test('no pairing on the storefront falls through to automatic tiers unchanged', async (t) => {
+  merchandising.clearRecommendationsCache();
+  t.mock.method(pairingService, 'getActivePairing', async () => null);
+  // Real getCrossSells tier-1 tags every item `source: 'pairing_rules'` — the
+  // mock bypasses the internals, so it must return the tagged shape itself.
+  t.mock.method(merchandising, 'getCrossSells', async () =>
+    [card('b', { source: 'pairing_rules' })]);
+  t.mock.method(merchandising, 'getBoughtTogether', async () => []);
+  t.mock.method(merchandising, 'getUpSells', async () => []);
+  t.mock.method(Product, 'findById', () => ({ lean: async () => ({ ...VIEWED }) }));
+
+  const data = await merchandising.getRecommendations(VIEWED._id, { tenantId: '64b0000000000000000000aa' });
+  assert.equal(data.crossSells[0].source, 'pairing_rules');
 });
