@@ -11,6 +11,8 @@ const Anthropic = require('@anthropic-ai/sdk');
 // the retail channel — it may only propose products a shopper can actually buy
 // in the shop, so venue-only catalog kinds never surface here.
 const catalogKind = require('../constants/catalogKind');
+const { scopeOffers, selection } = require('./marketplaceWarehouseStock');
+const { retailSizeWhereClause } = require('../constants/sizeChannels');
 
 const Product = mongoose.models.Product || mongoose.model('Product');
 const SubProduct = mongoose.models.SubProduct || mongoose.model('SubProduct');
@@ -544,7 +546,7 @@ const loadCatalog = async (tenantId = null) => {
   const cacheKey = tenantId ? tenantId.toString() : 'all';
   const now = Date.now();
   const cached = _catalogCache[cacheKey];
-  if (cached && (now - cached.time) < CATALOG_CACHE_TTL) {
+  if (tenantId && cached && (now - cached.time) < CATALOG_CACHE_TTL) {
     return cached.value;
   }
 
@@ -561,7 +563,7 @@ const loadCatalog = async (tenantId = null) => {
     const activeTenants = await TenantModel.find({
       status: 'approved',
       subscriptionStatus: { $in: ['active', 'trialing'] },
-    }).select('_id name revenueModel sellingPriceMarkupPercentage markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits').lean();
+    }).select('_id name warehouseSettings.marketplaceWarehouses warehouseSettings.marketplaceWarehouse revenueModel sellingPriceMarkupPercentage markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits').lean();
     const activeTenantIds = activeTenants.map(t => t._id);
     const tenantById = {};
     activeTenants.forEach(t => { tenantById[t._id.toString()] = t; });
@@ -595,8 +597,9 @@ const loadCatalog = async (tenantId = null) => {
     const allSizeIds = subProducts.flatMap(sp => sp.sizes || []);
     const sizes = await SizeModel.find({
       _id: { $in: allSizeIds },
+      ...retailSizeWhereClause(),
       status: 'active',
-      availability: { $in: ['available', 'in_stock', 'low_stock'] },
+      availability: { $in: ['available', 'in_stock', 'low_stock', 'out_of_stock'] },
     }).select('_id size volumeMl stock sellingPrice costPrice wholesalePrice sellingPriceMarkupOverridePct platformMarkupOverridePct packPlatformMarkupOverridePct maxOrderQuantity unitsPerPack discountValue discountType discountStart discountEnd availability')
       .lean();
     const sizeById = {};
@@ -604,7 +607,16 @@ const loadCatalog = async (tenantId = null) => {
 
     // Step 5: Build product → subProducts map
     const spByProduct = {};
-    subProducts.forEach(sp => {
+    const offers = subProducts.map(sp => {
+      const tenant = tenantById[String(sp.tenant)];
+      const listedSizes = sp.sizes.map(size => sizeById[String(size)]).filter(Boolean);
+      const scopedSizes = tenantId || !selection(tenant).length
+        ? listedSizes.filter(size => size.availability !== 'out_of_stock')
+        : listedSizes;
+      return { ...sp, tenant, sizes: scopedSizes, hasVariants: sp.sizes.length > 0 };
+    });
+    const scopedOffers = tenantId ? offers : await scopeOffers(offers);
+    scopedOffers.forEach(sp => {
       const pid = sp.product.toString();
       if (!spByProduct[pid]) spByProduct[pid] = [];
       spByProduct[pid].push(sp);
@@ -644,26 +656,24 @@ const loadCatalog = async (tenantId = null) => {
       };
 
       for (const sp of sps) {
-        const tenant = tenantById[sp.tenant?.toString()];
+        const tenant = sp.tenant;
         if (!tenant) continue;
 
         if (sp.sizes && sp.sizes.length > 0) {
-          for (const sizeId of sp.sizes) {
-            const sz = sizeById[sizeId.toString()];
-            if (!sz) continue;
+          for (const sz of sp.sizes) {
             const pricing = calculateSizePricing(sz, p, tenant, sp.costPrice, sp.baseSellingPrice);
             if (!pricing.finalPrice || pricing.finalPrice <= 0) continue;
             const { price: finalPrice, originalPrice, onSale } = applySaleDiscount(pricing, sp);
             if (onSale) anyOnSale = true;
             computedPrices.push(finalPrice);
             const label = sizeLabel(sz);
-            const key = label ? sizeKey(label) : `unknown:${sizeId}`;
-            const stock = sz.stock || sp.availableStock || 0;
+            const key = label ? sizeKey(label) : `unknown:${sz._id}`;
+            const stock = sz.stock ?? sp.availableStock ?? 0;
             if (!sizeMap.has(key) || finalPrice < sizeMap.get(key).price) {
               sizeMap.set(key, { label: label || 'Size not specified', ...(Number.isFinite(sz.volumeMl) && sz.volumeMl > 0 ? { volumeMl: sz.volumeMl } : {}), price: finalPrice, originalPrice, onSale, stock });
             }
           }
-        } else {
+        } else if (!sp.hasVariants) {
           const pricing = calculateSubProductPricing(sp, p, tenant);
           if (!pricing.finalPrice || pricing.finalPrice <= 0) continue;
           const { price: finalPrice, onSale } = applySaleDiscount(pricing, sp);
@@ -753,7 +763,7 @@ const loadCatalog = async (tenantId = null) => {
     const text = `${categoriesLine}${stockNote}PRODUCTS:\n${catalogLines.join('\n')}`;
 
     const value = { text, entries };
-    _catalogCache[cacheKey] = { time: now, value };
+    if (tenantId) _catalogCache[cacheKey] = { time: now, value };
     return value;
   } catch (err) {
     console.error('loadCatalog error:', err.message);
@@ -881,7 +891,9 @@ const queryProducts = async (filters, searchQuery, limit = 10, brand = null, ten
     let result;
     try {
       // catalogChannel pinned last so no filter key can displace it (S1 retail gate).
-      result = await productService.searchProducts({ ...queryParams, catalogChannel: 'retail' });
+      result = await require('./marketContext').runMarket('NG',
+        () => productService.searchProducts({ ...queryParams, catalogChannel: 'retail' }),
+        { marketplaceStock: !tenantId });
     } catch (err) {
       console.error('searchProducts failed:', err.message);
     }
@@ -959,11 +971,11 @@ const queryProducts = async (filters, searchQuery, limit = 10, brand = null, ten
         status: { $in: ['active', 'low_stock', 'out_of_stock'] },
         tenant: { $in: activeTenantIds },
         baseSellingPrice: { $gt: 0 },
-      }).populate('tenant', 'name').lean();
+      }).populate('tenant', 'name warehouseSettings.marketplaceWarehouses warehouseSettings.marketplaceWarehouse').lean();
       
       // Get size IDs and try to fetch Size documents
       const allSizeIds = [...new Set(subProducts.flatMap(sp => (sp.sizes || []).map(s => s.toString())))];
-      const sizeDocs = allSizeIds.length > 0 ? await Size.find({ _id: { $in: allSizeIds } }).lean() : [];
+      const sizeDocs = allSizeIds.length > 0 ? await Size.find({ ...retailSizeWhereClause(), _id: { $in: allSizeIds } }).lean() : [];
       const sizeMap = {};
       sizeDocs.forEach(s => { 
         const id = s._id.toString();
@@ -973,7 +985,11 @@ const queryProducts = async (filters, searchQuery, limit = 10, brand = null, ten
       // Build availableAt for each product
       const availableAtMap = {};
       const subProductMap = {};
-      subProducts.forEach(sp => {
+      const offers = subProducts.map(sp => ({
+        ...sp, sizes: sp.sizes.map(size => sizeMap[String(size)]).filter(Boolean),
+      }));
+      const scopedOffers = tenantId ? offers : await scopeOffers(offers);
+      scopedOffers.forEach(sp => {
         const productId = sp.product.toString();
         
         // Build subProductMap for min price calculation
@@ -986,20 +1002,19 @@ const queryProducts = async (filters, searchQuery, limit = 10, brand = null, ten
         if (!availableAtMap[productId]) {
           availableAtMap[productId] = {
             _id: sp._id,
-            tenant: sp.tenant,
+            tenant: sp.tenant ? { _id: sp.tenant._id, name: sp.tenant.name } : null,
             sizes: []
           };
         }
         // Add sizes - use fetched Size docs with their individual pricing
         if (sp.sizes && sp.sizes.length > 0) {
-          sp.sizes.forEach((sizeId) => {
-            const sizeDoc = sizeMap[sizeId.toString()];
+          sp.sizes.forEach((sizeDoc) => {
             const sizeName = sizeLabel(sizeDoc);
             if (!sizeDoc || !sizeName) return;
             // Use Size's individual sellingPrice, fallback to baseSellingPrice
             const sizePrice = sizeDoc?.sellingPrice ?? sp.baseSellingPrice;
             availableAtMap[productId].sizes.push({
-              _id: sizeId,
+              _id: sizeDoc._id,
               size: sizeName,
               volumeMl: sizeDoc?.volumeMl,
               stock: sizeDoc?.availableStock ?? 0,

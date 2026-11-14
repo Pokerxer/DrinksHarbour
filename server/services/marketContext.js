@@ -9,15 +9,18 @@ function normalizeMarket(code = 'NG') {
 }
 const currentMarket = () => storage.getStore()?.market || 'NG';
 const publicScope = () => storage.getStore()?.public === true;
+const marketplaceStock = () => storage.getStore()?.marketplaceStock === true;
 const runMarket = (code, fn, options = {}) => storage.run({ market: normalizeMarket(code), ...options }, fn);
 function handler(fn) {
   return (req, res, next) => {
-    if (!enabled()) return fn(req, res, next);
+    const useMarketPolicy = enabled();
     try {
-      const market = normalizeMarket(req.headers?.['x-market-code'] || 'NG');
-      res.set('Cache-Control', 'private, no-store'); res.vary('x-market-code');
-      return runMarket(market, () => fn(req, res, next), { public: true });
+      const market = useMarketPolicy ? normalizeMarket(req.headers?.['x-market-code'] || 'NG') : 'NG';
+      const tenantSite = req.headers?.['x-is-tenant-site'] === 'true';
+      if (useMarketPolicy) res.vary('x-market-code');
+      if (useMarketPolicy || req.method === 'GET') res.set('Cache-Control', 'private, no-store');
+      return runMarket(market, () => fn(req, res, next), { public: true, marketplaceStock: !tenantSite });
     } catch (error) { next(error); }
   };
 }
-module.exports = { enabled, normalizeMarket, currentMarket, publicScope, runMarket, handler };
+module.exports = { enabled, normalizeMarket, currentMarket, publicScope, marketplaceStock, runMarket, handler };

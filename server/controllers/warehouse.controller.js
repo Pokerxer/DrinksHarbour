@@ -23,6 +23,7 @@ const resolveTracksBatch = async (subProductId, batchTrackingEnabled) => {
 // Tenant-level warehouse settings with schema defaults applied
 const WAREHOUSE_SETTINGS_DEFAULTS = {
   defaultWarehouse: null,
+  marketplaceWarehouse: null,
   lowStockThreshold: 10,
   valuationMethod: 'fifo',
   allowNegativeStock: false,
@@ -323,6 +324,9 @@ const isObjectId = (v) => typeof v === 'string' && /^[a-f\d]{24}$/i.test(v);
 const WAREHOUSE_SETTING_VALIDATORS = {
   // null/'' clears the default; otherwise must be a valid ObjectId
   defaultWarehouse: (v) => v === null || v === '' || isObjectId(v),
+  marketplaceWarehouses: (v) => Array.isArray(v) && v.every(isObjectId) &&
+    new Set(v.map(id => id.toLowerCase())).size === v.length,
+  marketplaceWarehouse: (v) => v === null || v === '' || isObjectId(v),
   lowStockThreshold: (v) => typeof v === 'number' && v >= 0,
   valuationMethod: (v) => ['fifo', 'average'].includes(v),
   allowNegativeStock: (v) => typeof v === 'boolean',
@@ -346,7 +350,7 @@ const WAREHOUSE_SETTING_VALIDATORS = {
 
 /**
  * Pure step of the settings update: keep only keys that pass their validator
- * and normalise defaultWarehouse '' → null. Exported for unit tests; the DB
+ * and normalise empty warehouse references '' → null. Exported for unit tests; the DB
  * ownership check for defaultWarehouse stays in the controller.
  */
 function pickValidSettingUpdates(warehouseSettings) {
@@ -355,7 +359,7 @@ function pickValidSettingUpdates(warehouseSettings) {
     if (key in warehouseSettings && isValid(warehouseSettings[key])) {
       const val = warehouseSettings[key];
       updates[`warehouseSettings.${key}`] =
-        key === 'defaultWarehouse' && val === '' ? null : val;
+        ['defaultWarehouse', 'marketplaceWarehouse'].includes(key) && val === '' ? null : val;
     }
   });
   return updates;
@@ -367,7 +371,15 @@ function pickValidSettingUpdates(warehouseSettings) {
 const updateWarehouseSettings = asyncHandler(async (req, res) => {
   const tenantId = requireTenant(req);
   const { warehouseSettings = {} } = req.body;
+  if (!warehouseSettings || typeof warehouseSettings !== 'object' || Array.isArray(warehouseSettings)) {
+    throw new ValidationError('Invalid warehouse settings');
+  }
 
+  for (const key of ['marketplaceWarehouse', 'marketplaceWarehouses']) {
+    if (Object.hasOwn(warehouseSettings, key) && !WAREHOUSE_SETTING_VALIDATORS[key](warehouseSettings[key])) {
+      throw new ValidationError('Select valid, distinct DrinksHarbour marketplace warehouses');
+    }
+  }
   const updates = pickValidSettingUpdates(warehouseSettings);
 
   if (Object.keys(updates).length === 0) {
@@ -390,6 +402,18 @@ const updateWarehouseSettings = asyncHandler(async (req, res) => {
         'Default warehouse must belong to your organisation'
       );
     }
+  }
+
+  const legacyWarehouse = updates['warehouseSettings.marketplaceWarehouse'];
+  const marketplaceWarehouses = updates['warehouseSettings.marketplaceWarehouses'] ??
+    (legacyWarehouse === undefined ? undefined : legacyWarehouse ? [legacyWarehouse] : []);
+  if (marketplaceWarehouses) {
+    const owned = await Warehouse.countDocuments({ _id: { $in: marketplaceWarehouses }, tenant: tenantId, isActive: true });
+    if (owned !== marketplaceWarehouses.length) {
+      throw new ValidationError('DrinksHarbour marketplace warehouses must be active and belong to your organisation');
+    }
+    updates['warehouseSettings.marketplaceWarehouses'] = marketplaceWarehouses;
+    updates['warehouseSettings.marketplaceWarehouse'] = null;
   }
 
   // Capture before-values for exactly the keys being changed (audit trail).

@@ -456,6 +456,8 @@ const tenantSchema = new Schema(
         ref: 'Warehouse',
         default: null,
       },
+      marketplaceWarehouse: { type: Schema.Types.ObjectId, ref: 'Warehouse', default: null },
+      marketplaceWarehouses: { type: [{ type: Schema.Types.ObjectId, ref: 'Warehouse' }], default: undefined },
       // Global low-stock threshold for warehouse stock highlighting
       lowStockThreshold: { type: Number, min: 0, default: 10 },
       // Inventory valuation method

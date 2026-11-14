@@ -50,6 +50,8 @@ export type WarehouseInput = {
 export interface WarehouseSettings {
   /** Pre-selected warehouse id for new stock operations; '' = none */
   defaultWarehouse: string;
+  marketplaceWarehouse?: string | null;
+  marketplaceWarehouses?: string[];
   /** Global low-stock threshold for warehouse stock highlighting */
   lowStockThreshold: number;
   valuationMethod: 'fifo' | 'average';

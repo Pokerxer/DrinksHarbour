@@ -114,6 +114,7 @@ async function getWarehouseStock(warehouseId, tenantId, settings = null) {
       .select('+automaticMinimum')
       .populate({
         path: 'subProduct',
+        match: { tenant: tenantId, status: { $ne: 'archived' } },
         // Prices included so the warehouse-detail drawer can show cost/price
         // without a second round-trip (tenant-scoped endpoint, not public).
         select: 'sku product imagesOverride costPrice baseSellingPrice currency',
@@ -146,7 +147,7 @@ async function getWarehouseStock(warehouseId, tenantId, settings = null) {
   }
 
   const now = new Date();
-  return rows.map((r) => {
+  return rows.filter((r) => r.subProduct).map((r) => {
     const { automaticMinimum, ...publicStock } = r;
     const spId = String(typeof r.subProduct === 'object' && r.subProduct ? r.subProduct._id : r.subProduct);
     const szId = String(typeof r.size === 'object' && r.size ? r.size._id : r.size);
@@ -519,7 +520,7 @@ async function getAllStock(tenantId, settings = null, { includeUnstocked = false
       .select('+automaticMinimum')
       .populate({
         path: 'subProduct',
-        match: { tenant: tenantId },
+        match: { tenant: tenantId, status: { $ne: 'archived' } },
         select: 'sku costPrice baseSellingPrice product imagesOverride',
         populate: {
           path: 'product',
@@ -556,7 +557,7 @@ async function getAllStock(tenantId, settings = null, { includeUnstocked = false
   }
 
   const now = new Date();
-  const stockRows = rows.map((r) => {
+  const stockRows = rows.filter((r) => r.subProduct).map((r) => {
     const sp = r.subProduct || {};
     const sz = r.size || {};
     const wh = r.warehouse || {};
@@ -625,6 +626,7 @@ async function getStockByWarehouse(subProductId, tenantId) {
     .select('+automaticMinimum')
     .populate({
       path: 'subProduct',
+      match: { tenant: tenantId, status: { $ne: 'archived' } },
       select: 'sku costPrice baseSellingPrice currency',
       populate: { path: 'product', select: 'name slug images' },
     })
@@ -636,7 +638,7 @@ async function getStockByWarehouse(subProductId, tenantId) {
     .populate('size', 'size colorName colorHexCode optionName costPrice sellingPrice')
     .lean();
   const now = new Date();
-  return rows.map(({ automaticMinimum, ...row }) => ({
+  return rows.filter((row) => row.subProduct).map(({ automaticMinimum, ...row }) => ({
     ...row,
     ...stockMinimumFields({ ...row, automaticMinimum }, now),
   }));

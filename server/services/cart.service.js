@@ -8,6 +8,8 @@ const SubProduct = require('../models/SubProduct');
 const Tenant = require('../models/Tenant');
 const { NotFoundError, ValidationError, ConflictError } = require('../utils/errors');
 const { calculateSizePricing, applySubProductSale } = require('../utils/pricing');
+const { cartSizeStock, selection, selectionFields } = require('./marketplaceWarehouseStock');
+const { resolveDefaults, defaultWarehouseField } = require('./marketplaceDefaultWarehouse');
 const { buildCartItemId, buildCartLine, mergeCartLines } = require('../helpers/cart.helpers');
 
 /**
@@ -35,7 +37,7 @@ const addToCart = async (data) => {
   const subProduct = await SubProduct.findOne({
     _id: subProductId,
     product: productId,
-    status: 'active',
+    status: { $in: ['active', 'low_stock', 'out_of_stock'] },
   })
     .populate({
       path: 'tenant',
@@ -46,7 +48,8 @@ const addToCart = async (data) => {
     })
     .lean();
 
-  if (!subProduct || !subProduct.tenant) {
+  if (!subProduct || !subProduct.tenant ||
+      (subProduct.status && subProduct.status !== 'active' && !selection(subProduct.tenant).length)) {
     throw new NotFoundError('Product variant not available from this seller');
   }
 
@@ -67,15 +70,17 @@ const addToCart = async (data) => {
     throw new NotFoundError('Product size not found');
   }
 
+  const locationStock = await cartSizeStock(subProduct.tenant, subProduct._id, size);
+  const stock = locationStock ?? size.stock;
   // Check availability
-  if (size.availability === 'out_of_stock' || size.stock === 0) {
+  if ((locationStock == null && size.availability === 'out_of_stock') || stock === 0) {
     throw new ConflictError('This product size is currently out of stock');
   }
 
   // Check if requested quantity is available
-  if (size.stock < quantity) {
+  if (stock < quantity) {
     throw new ValidationError(
-      `Only ${size.stock} units available. Please reduce quantity.`
+      `Only ${stock} units available. Please reduce quantity.`
     );
   }
 
@@ -120,9 +125,9 @@ const addToCart = async (data) => {
     const newQuantity = cart.items[existingItemIndex].quantity + quantity;
 
     // Verify new quantity doesn't exceed stock
-    if (newQuantity > size.stock) {
+    if (newQuantity > stock) {
       throw new ValidationError(
-        `Cannot add ${quantity} more. Only ${size.stock - cart.items[existingItemIndex].quantity} additional units available.`
+        `Cannot add ${quantity} more. Only ${stock - cart.items[existingItemIndex].quantity} additional units available.`
       );
     }
 
@@ -171,7 +176,7 @@ const addToCart = async (data) => {
       tenant: subProduct.tenant._id,
       priceAtAddition: addPricing.finalPrice,
       quantity,
-      maxAvailableAtAddition: size.stock,
+      maxAvailableAtAddition: stock,
       discountApplied: saleDiscount,
       addedAt: new Date(),
     };
@@ -270,7 +275,7 @@ const syncCart = async (userId, items) => {
       const subProduct = await SubProduct.findOne({
         _id: subProductId,
         product: productId,
-        status: 'active',
+        status: { $in: ['active', 'low_stock', 'out_of_stock'] },
       })
         .populate({
           path: 'tenant',
@@ -300,22 +305,7 @@ const syncCart = async (userId, items) => {
         continue;
       }
 
-      // Check stock
-      if (size.availability === 'out_of_stock' || size.stock === 0) {
-        results.errors.push({ item: { sizeId }, error: 'Item out of stock' });
-        continue;
-      }
-
-      // Check quantity limits
       const validQuantity = Math.min(Math.max(1, quantity || 1), size.maxOrderQuantity || 99);
-      
-      if (validQuantity > size.stock) {
-        results.errors.push({
-          item: { productId, sizeId },
-          error: `Only ${size.stock} units available`,
-        });
-        continue;
-      }
 
       // Add to cart using the main addToCart function
       await addToCart({
@@ -529,10 +519,11 @@ const updateCartItemQuantity = async (userId, itemId, quantity) => {
     throw new NotFoundError('Product size no longer available');
   }
 
-  if (quantity > size.stock) {
-    throw new ValidationError(
-      `Only ${size.stock} units available. Please reduce quantity.`
-    );
+  const line = cart.items[itemIndex];
+  const tenant = await Tenant.findById(line.tenant).select('warehouseSettings.marketplaceWarehouses warehouseSettings.marketplaceWarehouse').lean();
+  const stock = await cartSizeStock(tenant, line.subproduct, size) ?? size.stock;
+  if (quantity > stock) {
+    throw new ValidationError(`Only ${stock} units available. Please reduce quantity.`);
   }
 
   if (size.maxOrderQuantity && quantity > size.maxOrderQuantity) {
@@ -609,6 +600,13 @@ const clearCart = async (userId) => {
  * Public — works for guest and logged-in carts alike, no userId needed.
  */
 const validateCartItems = async (items) => {
+  const defaults = new Map();
+  function getDefault(tenant) {
+    const key = String(tenant._id);
+    if (!defaults.has(key)) defaults.set(key, resolveDefaults([tenant]).then(locations => locations.get(key)));
+    return defaults.get(key);
+  }
+
   return Promise.all((items || []).map(async (item) => {
     const { subProductId, sizeId, quantity = 1, price: oldPrice = 0 } = item;
     const base = { subProductId, sizeId: sizeId || null, oldPrice };
@@ -617,8 +615,8 @@ const validateCartItems = async (items) => {
       priceDiff: -oldPrice, stockStatus: 'unavailable', maxQuantity: 0, isLowStock: false, ...extra,
     });
 
-    const subProduct = await SubProduct.findOne({ _id: subProductId, status: 'active' })
-      .populate({ path: 'tenant', select: 'status subscriptionStatus revenueModel sellingPriceMarkupPercentage markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits' })
+    const subProduct = await SubProduct.findOne({ _id: subProductId, status: { $in: ['active', 'low_stock', 'out_of_stock'] } })
+      .populate({ path: 'tenant', select: `${selectionFields} ${defaultWarehouseField} status subscriptionStatus revenueModel sellingPriceMarkupPercentage markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits` })
       .populate({ path: 'product', select: 'type platformMarkup platformDiscount' });
     // NOTE: the sale fields (isOnSale/saleType/saleDiscountValue/sale dates) are
     // read off `subProduct` below. They are on the document itself, so no select
@@ -626,6 +624,7 @@ const validateCartItems = async (items) => {
     // them, or every sale item silently reverts to its pre-sale price.
 
     if (!subProduct || !subProduct.tenant ||
+        (subProduct.status && subProduct.status !== 'active' && !selection(subProduct.tenant).length) ||
         subProduct.tenant.status !== 'approved' ||
         !['active', 'trialing'].includes(subProduct.tenant.subscriptionStatus)) {
       return unavailable();
@@ -674,28 +673,34 @@ const validateCartItems = async (items) => {
       saleActive: sizePricing.saleActive === true,
       priceBeforeSale: sizePricing.priceBeforeSale ?? sizePricing.finalPrice,
     };
-    const stock         = size.availableStock || size.stock || 0;
+    const defaultWarehouse = subProduct.tenant._id ? await getDefault(subProduct.tenant) : undefined;
+    const locationStock = defaultWarehouse ? await cartSizeStock(
+      { _id: subProduct.tenant._id, warehouseSettings: { marketplaceWarehouses: [defaultWarehouse] } },
+      subProduct._id, size
+    ) : 0;
+    const stock = locationStock ?? 0;
+    const isLowStock = stock > 0 && stock <= (size.lowStockThreshold ?? 6);
+    const stockStatus = isLowStock ? 'low_stock' : 'available';
 
-    if (size.availability === 'out_of_stock' || stock <= 0) {
+    if (stock <= 0) {
       return { ...base, ...packInfo, status: 'out_of_stock', available: false, currentPrice,
         priceDiff: currentPrice - oldPrice, stockStatus: 'out_of_stock', maxQuantity: 0, isLowStock: false };
     }
 
     const maxQuantity = size.maxOrderQuantity ? Math.min(stock, size.maxOrderQuantity) : stock;
-    const isLowStock  = size.isLowStock;
 
     if (quantity > maxQuantity) {
       return { ...base, ...packInfo, status: 'quantity_reduced', available: true, currentPrice,
-        priceDiff: currentPrice - oldPrice, stockStatus: size.availability, maxQuantity, isLowStock };
+        priceDiff: currentPrice - oldPrice, stockStatus, maxQuantity, isLowStock };
     }
 
     if (Math.round(currentPrice) !== Math.round(oldPrice)) {
       return { ...base, ...packInfo, status: 'price_changed', available: true, currentPrice,
-        priceDiff: currentPrice - oldPrice, stockStatus: size.availability, maxQuantity, isLowStock };
+        priceDiff: currentPrice - oldPrice, stockStatus, maxQuantity, isLowStock };
     }
 
     return { ...base, ...packInfo, status: 'ok', available: true, currentPrice, priceDiff: 0,
-      stockStatus: size.availability, maxQuantity, isLowStock };
+      stockStatus, maxQuantity, isLowStock };
   }));
 };
 

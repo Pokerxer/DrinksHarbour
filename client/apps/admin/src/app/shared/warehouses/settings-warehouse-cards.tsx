@@ -21,6 +21,7 @@ import {
   PiWarning,
   PiWarehouse,
 } from 'react-icons/pi';
+import MarketplaceWarehousePicker from './marketplace-warehouse-picker';
 import { requiresBatchTracking, warehouseSettingsWarnings } from './settings-helpers';
 
 type SetField = <K extends keyof WarehouseSettings>(
@@ -289,11 +290,11 @@ export default function SettingsWarehouseCards({
         </div>
       )}
 
-      {vis('warehouse default low stock threshold general') && (
+      {vis('warehouse default low stock threshold general drinksharbour marketplace availability') && (
       <SectionCard id="wh_general" icon={<PiWarehouse size={16} />} title="General">
         <Row
           label="Default warehouse"
-          sub="Pre-selected warehouse for new stock operations and receiving."
+          sub="Used for DrinksHarbour checkout and pre-selected for stock operations and receiving."
         >
           <select
             value={wh.defaultWarehouse}
@@ -309,6 +310,11 @@ export default function SettingsWarehouseCards({
             ))}
           </select>
         </Row>
+        <MarketplaceWarehousePicker
+          warehouses={warehouses}
+          selected={wh.marketplaceWarehouses ?? []}
+          onChange={(value) => setWhField('marketplaceWarehouses', value)}
+        />
         <Row
           label="Low-stock threshold"
           sub="Stock at or below this quantity is flagged low across warehouse views."

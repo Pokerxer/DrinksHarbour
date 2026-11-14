@@ -1,6 +1,7 @@
 'use strict';
 const mongoose = require('mongoose');
 const context = require('./marketContext');
+const { constrainStockLookups } = require('./marketplaceWarehouseStock');
 const registry = require('../config/marketCategories');
 const { categoryFor } = require('./marketIngress');
 const active = () => context.enabled() && context.publicScope();
@@ -51,10 +52,12 @@ function productPipeline(pipeline, groups) {
   return [...prefix, ...result];
 }
 async function productAggregate(pipeline) {
-  return require('../models/Product').aggregate(active() ? productPipeline(pipeline, await eligibleGroups()) : pipeline);
+  const stages = context.marketplaceStock() ? constrainStockLookups(pipeline) : pipeline;
+  return require('../models/Product').aggregate(active() ? productPipeline(stages, await eligibleGroups()) : stages);
 }
 async function subproductAggregate(pipeline) {
-  return require('../models/SubProduct').aggregate(active() ? [...offerStages(await eligibleGroups()), ...pipeline] : pipeline);
+  const stages = context.marketplaceStock() ? constrainStockLookups(pipeline) : pipeline;
+  return require('../models/SubProduct').aggregate(active() ? [...offerStages(await eligibleGroups()), ...stages] : stages);
 }
 async function listingFilter(product) {
   if (!active()) return {};

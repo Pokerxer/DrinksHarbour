@@ -158,10 +158,15 @@ test('a cart holding the sale price validates as ok, not price_changed', async (
   const mongoose = require('mongoose');
   const SubProduct = require('../models/SubProduct');
   const Size = require('../models/Size');
+  const Warehouse = require('../models/Warehouse');
+  const Stock = require('../models/WarehouseStock');
   const cartService = require('../services/cart.service');
 
   const subProductId = new mongoose.Types.ObjectId();
   const sizeId = new mongoose.Types.ObjectId();
+  const tenantId = new mongoose.Types.ObjectId();
+  const defaultWarehouse = new mongoose.Types.ObjectId();
+  const displayWarehouse = new mongoose.Types.ObjectId();
 
   // A tenant and product with no markup/discount of their own, so
   // calculateSizePricing's finalPrice is exactly the size selling price and the
@@ -175,7 +180,8 @@ test('a cart holding the sale price validates as ok, not price_changed', async (
     saleDiscountValue: 10,
     saleStartDate: null,
     saleEndDate: null,
-    tenant: { status: 'approved', subscriptionStatus: 'active', revenueModel: 'markup', markupPercentage: 0 },
+    tenant: { _id: tenantId, warehouseSettings: { defaultWarehouse, marketplaceWarehouses: [displayWarehouse] },
+      status: 'approved', subscriptionStatus: 'active', revenueModel: 'markup', markupPercentage: 0 },
     product: { platformMarkup: 0, platformDiscount: null },
   };
   // The markup revenue model prices off costPrice; with every markup at 0 the
@@ -194,6 +200,17 @@ test('a cart holding the sale price validates as ok, not price_changed', async (
   };
   t.mock.method(SubProduct, 'findOne', () => thenable(subProduct));
   t.mock.method(Size, 'findOne', () => thenable(size));
+  t.mock.method(Warehouse, 'find', () => {
+    const query = {
+      select: () => query, sort: () => query, session: () => query,
+      lean: async () => [{ _id: defaultWarehouse, tenant: tenantId }],
+    };
+    return query;
+  });
+  t.mock.method(Stock, 'aggregate', async pipeline => {
+    assert.deepEqual(pipeline[0].$match.$or[0].warehouse.$in, [defaultWarehouse]);
+    return [{ tenant: tenantId, warehouse: defaultWarehouse, subProduct: subProductId, size: sizeId, stock: 2 }];
+  });
 
   // What the storefront published, and therefore what the cart is holding.
   const salePrice = roundUpTo100(10000 * 0.9);
@@ -207,6 +224,7 @@ test('a cart holding the sale price validates as ok, not price_changed', async (
   assert.equal(result.status, 'ok',
     'a cart holding the advertised sale price is not a price change');
   assert.equal(result.priceDiff, 0);
+  assert.equal(result.maxQuantity, 2, 'checkout quantity is capped at the default warehouse');
   assert.equal(result.baseUnitPrice, salePrice,
     '"Accept prices" writes baseUnitPrice — it must not restore the pre-sale price');
 });

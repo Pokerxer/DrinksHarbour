@@ -1,4 +1,6 @@
 const marketCatalog = require('./marketCatalog');
+const { marketplaceStock } = require('./marketContext');
+const { scopeOffers } = require('./marketplaceWarehouseStock');
 // Trending: market eligibility groups are resolved once per request and
 // categoryFor() is the same mapping marketCatalog.listingFilter uses, so the
 // product-tailored filter below stays meaning-identical while paying for the
@@ -2230,7 +2232,7 @@ const getProductByBarcode = async (barcode) => {
   }
 
   // Get active SubProducts
-  const subProducts = await SubProduct.find({
+  let subProducts = await SubProduct.find({
     ...await marketCatalog.listingFilter(product),
     product: product._id,
     status: 'active',
@@ -2241,7 +2243,7 @@ const getProductByBarcode = async (barcode) => {
         status: 'approved',
         subscriptionStatus: { $in: ['active', 'trialing'] },
       },
-      select: 'name slug logo',
+      select: 'warehouseSettings.marketplaceWarehouses warehouseSettings.marketplaceWarehouse name slug logo',
     })
     .populate({
       path: 'sizes',
@@ -2251,7 +2253,11 @@ const getProductByBarcode = async (barcode) => {
     .select('tenant sku baseSellingPrice sizes')
     .lean();
 
-  product.subProducts = subProducts.filter(sp => sp.tenant);
+  if (marketplaceStock()) subProducts = await scopeOffers(subProducts);
+  product.subProducts = subProducts.filter(sp => sp.tenant).map(sp => {
+    const { warehouseSettings: _settings, ...tenant } = sp.tenant;
+    return { ...sp, tenant };
+  });
 
   return product;
 };
@@ -6123,18 +6129,20 @@ const getTrendingProducts = async (limit = 10, dateRange = 7, categoryIds = null
     : {};
 
   const detailsFor = async (product) => {
-    const subProducts = await SubProduct.find({
+    let subProducts = await SubProduct.find({
     ...listingFilterFor(product),
       product: product._id,
       status: 'active',
       visibleInOnlineStore: { $ne: false },
     })
-      .populate('tenant', 'name slug logo city state country revenueModel sellingPriceMarkupPercentage markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits defaultCurrency primaryColor')
+      .populate('tenant', 'warehouseSettings.marketplaceWarehouses warehouseSettings.marketplaceWarehouse name slug logo city state country revenueModel sellingPriceMarkupPercentage markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits defaultCurrency primaryColor')
       .populate({ path: 'sizes', match: retailSizeWhereClause(), select: 'volume unit displayName sellingPrice costPrice wholesalePrice unitsPerPack sellingPriceMarkupOverridePct commissionPriceOverride packCommissionPriceOverride platformMarkupOverridePct packPlatformMarkupOverridePct availableStock compareAtPrice discount discountType discountStart discountEnd currency sku isDefault status availability' })
       .select(
         'tenant baseSellingPrice costPrice discountPercentage finalPrice currency sizes stockQuantity availability minOrderQuantity maxOrderQuantity revenueModel isFeaturedByTenant isOnSale salePrice saleStartDate saleEndDate saleType saleDiscountValue'
       )
       .lean();
+
+    if (marketplaceStock()) subProducts = await scopeOffers(subProducts);
 
     // Process SubProducts with Website Pricing (same logic as getAllProducts)
     const processedSubProducts = (subProducts || []).map((subProduct) => {
@@ -6703,7 +6711,7 @@ const getProductStockStatus = async (productId) => {
   }
 
   // Get all active SubProducts with sizes
-  const subProducts = await SubProduct.find({
+  let subProducts = await SubProduct.find({
     ...await marketCatalog.listingFilter(product),
     product: productId,
     status: 'active',
@@ -6711,14 +6719,16 @@ const getProductStockStatus = async (productId) => {
   })
     .populate({
       path: 'tenant',
-      select: 'name slug city state country',
+      select: 'warehouseSettings.marketplaceWarehouses warehouseSettings.marketplaceWarehouse name slug city state country',
     })
     .populate({
       path: 'sizes',
       match: retailSizeWhereClause(),
-      select: 'size displayName stock availability lowStockThreshold sellingPrice',
+      select: 'size displayName status stock availability lowStockThreshold sellingPrice',
     })
     .lean();
+
+  if (marketplaceStock()) subProducts = await scopeOffers(subProducts);
 
   // Calculate totals
   let totalStock = 0;
@@ -6727,7 +6737,7 @@ const getProductStockStatus = async (productId) => {
   let outOfStockCount = 0;
   const tenantStockData = [];
 
-  subProducts.forEach((sp) => {
+  subProducts.filter(sp => sp.tenant).forEach((sp) => {
     let tenantStock = 0;
     let tenantValue = 0;
 
@@ -6737,7 +6747,7 @@ const getProductStockStatus = async (productId) => {
         totalStock += stock;
         tenantStock += stock;
 
-        const value = stock * (size.sellingPrice || (revenueModel === 'selling_price_markup' ? subProduct.baseSellingPrice : 0) || 0);
+        const value = stock * (size.sellingPrice || 0);
         totalValue += value;
         tenantValue += value;
 
@@ -7123,7 +7133,7 @@ const getProductVariants = async (productId) => {
   const variants = await marketCatalog.subproductAggregate([
     {
       $match: {
-        product: productId,
+        product: new mongoose.Types.ObjectId(productId),
         status: 'active',
       },
     },
@@ -9112,7 +9122,7 @@ const getFeaturedProducts = async (page = 1, limit = 12, options = {}) => {
   const processedProducts = await Promise.all(
     products.map(async (product) =>
       processProductForDisplay(
-        product,
+        { ...product, activeSubProducts: (product.subProducts || []).filter(offer => offer.sizes?.length) },
         tenantMap,
         ratings[product._id.toString()] || { average: 0, count: 0 },
         sales[product._id.toString()] || 0
@@ -10247,7 +10257,7 @@ const getProductBySlug = async (slug, { shoppingLocation = null, tenantId = null
   // ══════════════════════════════════════════════════════════════════════════
   // 2. FETCH ACTIVE SUBPRODUCTS WITH TENANTS & SIZES
   // ══════════════════════════════════════════════════════════════════════════
-  const subProducts = await SubProduct.find({
+  let subProducts = await SubProduct.find({
     ...await marketCatalog.listingFilter(product),
     product: product._id,
     visibleInOnlineStore: { $ne: false },
@@ -10258,7 +10268,7 @@ const getProductBySlug = async (slug, { shoppingLocation = null, tenantId = null
       path: 'tenant',
       match: SELLING_TENANT_MATCH,
       select:
-        'name slug logo location primaryColor revenueModel sellingPriceMarkupPercentage markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits defaultCurrency country city state',
+        'warehouseSettings.marketplaceWarehouses warehouseSettings.marketplaceWarehouse name slug logo location primaryColor revenueModel sellingPriceMarkupPercentage markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits defaultCurrency country city state',
     })
     .populate({
       path: 'sizes',
@@ -10268,12 +10278,14 @@ const getProductBySlug = async (slug, { shoppingLocation = null, tenantId = null
         availability: { $in: [...SELLABLE_SIZE_MATCH.availability.$in, 'out_of_stock'] },
       },
       select:
-        'size displayName colorName optionName image imageScope sellingPrice costPrice wholesalePrice unitsPerPack sellingPriceMarkupOverridePct commissionPriceOverride packCommissionPriceOverride platformMarkupOverridePct packPlatformMarkupOverridePct discountedPrice compareAtPrice stock availableStock availability currency discount sku isDefault volumeMl minOrderQuantity maxOrderQuantity',
+        'status lowStockThreshold size displayName colorName optionName image imageScope sellingPrice costPrice wholesalePrice unitsPerPack sellingPriceMarkupOverridePct commissionPriceOverride packCommissionPriceOverride platformMarkupOverridePct packPlatformMarkupOverridePct discountedPrice compareAtPrice stock availableStock availability currency discount sku isDefault volumeMl minOrderQuantity maxOrderQuantity',
     })
     .select(
       'tenant sku imagesOverride costPrice baseSellingPrice currency discount discountType discountedPrice discountStart discountEnd sizes status totalSold totalRevenue isFeaturedByTenant isOnSale salePrice saleStartDate saleEndDate saleType saleDiscountValue'
     )
     .lean();
+
+  if (surface !== catalogKind.DETAIL_SURFACES.TENANT_SITE) subProducts = await scopeOffers(subProducts);
 
   // Filter out SubProducts with no active tenant or no available sizes
   const activeSubProducts = subProducts.filter(
@@ -11055,7 +11067,7 @@ const getProductById = async (id, includePending = false, { adminDetails = false
     ? { product: product._id }
     : { product: product._id, status: 'active', visibleInOnlineStore: { $ne: false } };
 
-  const subProducts = await SubProduct.find({ ...subProductQuery, ...(!includePending ? await marketCatalog.listingFilter(product) : {}) })
+  let subProducts = await SubProduct.find({ ...subProductQuery, ...(!includePending ? await marketCatalog.listingFilter(product) : {}) })
     .populate({
       path: 'tenant',
       match: includePending 
@@ -11065,7 +11077,7 @@ const getProductById = async (id, includePending = false, { adminDetails = false
             subscriptionStatus: { $in: ['active', 'trialing'] },
           },
       select:
-        'name slug logo primaryColor revenueModel sellingPriceMarkupPercentage markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits defaultCurrency country city state',
+        'warehouseSettings.marketplaceWarehouses warehouseSettings.marketplaceWarehouse name slug logo primaryColor revenueModel sellingPriceMarkupPercentage markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits defaultCurrency country city state',
     })
     .populate({
       path: 'sizes',
@@ -11073,10 +11085,10 @@ const getProductById = async (id, includePending = false, { adminDetails = false
         ? undefined 
         : {
             ...retailSizeWhereClause(),
-            availability: { $in: ['available', 'low_stock', 'pre_order'] },
+            availability: { $in: ['available', 'low_stock', 'pre_order', 'out_of_stock'] },
           },
       select:
-        ['size displayName sellingPrice costPrice unitsPerPack sellingPriceMarkupOverridePct commissionPriceOverride packCommissionPriceOverride platformMarkupOverridePct packPlatformMarkupOverridePct stock availability currency discountValue discountType discountStart discountEnd lowStockThreshold sku barcode weightGrams volumeMl minOrderQuantity maxOrderQuantity',
+        ['status size displayName sellingPrice costPrice unitsPerPack sellingPriceMarkupOverridePct commissionPriceOverride packCommissionPriceOverride platformMarkupOverridePct packPlatformMarkupOverridePct stock availability currency discountValue discountType discountStart discountEnd lowStockThreshold sku barcode weightGrams volumeMl minOrderQuantity maxOrderQuantity',
          adminDetails ? 'colorName optionName unitType dimensions shelfLifeDays servingsPerUnit venueServing' : ''].join(' '),
     })
     .select(
@@ -11084,6 +11096,15 @@ const getProductById = async (id, includePending = false, { adminDetails = false
       (adminDetails ? ' isPublished' : '')
     )
     .lean();
+
+  if (!adminDetails) {
+    if (marketplaceStock()) subProducts = await scopeOffers(subProducts);
+    subProducts = subProducts.map(sp => {
+      if (!sp.tenant) return sp;
+      const { warehouseSettings: _settings, ...tenant } = sp.tenant;
+      return { ...sp, tenant };
+    });
+  }
 
   // When not in includePending mode, filter to only approved tenants
   product.subProducts = includePending 
@@ -11128,7 +11149,7 @@ const getProductById = async (id, includePending = false, { adminDetails = false
 
   // Process product
   const processed = await processProductForDisplay(
-    product,
+    { ...product, activeSubProducts: product.subProducts.filter(offer => offer.sizes?.length) },
     tenantMap,
     ratingsData,
     salesData
@@ -11299,7 +11320,7 @@ const getProductAvailability = async (productId, location = {}) => {
   const availability = await marketCatalog.subproductAggregate([
     {
       $match: {
-        product: productId,
+        product: new mongoose.Types.ObjectId(productId),
         status: 'active',
       },
     },
