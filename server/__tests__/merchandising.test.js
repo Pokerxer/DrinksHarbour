@@ -357,11 +357,9 @@ test('sponsoredForSurface refuses an empty wallet and an unknown surface', async
   );
 });
 
-test('marketplace: sponsored merges FIRST with attribution, deduped out of the other arrays, impression on serve', async (t) => {
+test('marketplace: sponsored merges FIRST with attribution, impression on serve', async (t) => {
   merchandising.clearRecommendationsCache();
-  // The sponsored product is ALSO an organic bought-together hit — it must
-  // surface exactly once (the paid placement), never twice.
-  t.mock.method(merchandising, 'getBoughtTogether', async () => [card('adp')]);
+  t.mock.method(merchandising, 'getBoughtTogether', async () => [card('x')]);
   t.mock.method(merchandising, 'getCrossSells', async () => [card('b'), card('c')]);
   t.mock.method(merchandising, 'getUpSells', async () => []);
   t.mock.method(merchandising, 'sponsoredForSurface', async () =>
@@ -371,15 +369,38 @@ test('marketplace: sponsored merges FIRST with attribution, deduped out of the o
 
   const data = await merchandising.getRecommendations(VIEWED._id, {});
 
-  assert.equal(data.crossSells[0].source, 'sponsored');           // first
-  assert.equal(data.crossSells[0].adCampaignId, 'camp1');         // attribution
-  assert.equal(data.crossSells.length, 3);
-  assert.equal(data.boughtTogether.length, 0);                    // deduped out
+  // pdp context: the paid placement lives in upSells (the PDP's disclosed
+  // list above the step-up rail), not in crossSells which the PDP doesn't render.
+  assert.equal(data.upSells[0].source, 'sponsored');               // home array
+  assert.equal(data.upSells[0].adCampaignId, 'camp1');             // attribution
+  assert.equal(data.upSells.length, 1);
+  assert.equal(data.crossSells.length, 2);
+  assert.equal(data.boughtTogether.length, 1);                     // organic stays
   assert.deepEqual(impressions.mock.calls[0].arguments, ['camp1']); // once per serve
 
   // Cached serves within the TTL do not re-count the impression.
   await merchandising.getRecommendations(VIEWED._id, {});
   assert.equal(impressions.mock.callCount(), 1);
+});
+
+test('cart context: sponsored merges into crossSells first (the rendered strip)', async (t) => {
+  merchandising.clearRecommendationsCache();
+  t.mock.method(merchandising, 'getBoughtTogether', async () => []);
+  t.mock.method(merchandising, 'getCrossSells', async () => [card('b'), card('c')]);
+  t.mock.method(merchandising, 'getUpSells', async () => [card('f')]);
+  t.mock.method(merchandising, 'sponsoredForSurface', async () =>
+    [sponsoredCard('adp', 'camp1b')]);
+  const impressions = t.mock.method(merchandising, 'recordImpressionSafe', () => {});
+  t.mock.method(Product, 'findById', () => ({ lean: async () => ({ ...VIEWED }) }));
+
+  const data = await merchandising.getRecommendations(VIEWED._id, { context: 'cart' });
+
+  assert.equal(data.crossSells[0].source, 'sponsored');
+  assert.equal(data.crossSells[0].adCampaignId, 'camp1b');
+  assert.equal(data.crossSells.length, 3);
+  assert.equal(data.upSells.length, 1); // organic premium item stays
+  assert.ok(data.upSells.every((p) => p.source !== 'sponsored'));
+  assert.deepEqual(impressions.mock.calls[0].arguments, ['camp1b']);
 });
 
 test('storefront: sponsored sits behind manual pairings, ahead of automatic tiers', async (t) => {
@@ -398,12 +419,38 @@ test('storefront: sponsored sits behind manual pairings, ahead of automatic tier
     [sponsoredCard('ads', 'camp2')]);
   t.mock.method(Product, 'findById', () => ({ lean: async () => ({ ...VIEWED }) }));
 
-  const data = await merchandising.getRecommendations(VIEWED._id, { tenantId: TENANT });
+  const data = await merchandising.getRecommendations(VIEWED._id, { tenantId: TENANT, context: 'cart' });
 
   assert.equal(data.crossSells[0].source, 'manual');      // manual outranks paid
   assert.equal(data.crossSells[1].source, 'sponsored');   // paid outranks automatic
   assert.equal(data.crossSells[2].source, undefined);     // automatic fills last
   assert.equal(data.crossSells.length, 3);
+});
+
+test('storefront pdp: sponsored surfaces in upSells behind nothing, manual stays in crossSells', async (t) => {
+  merchandising.clearRecommendationsCache();
+  const TENANT = '64b0000000000000000000aa';
+  t.mock.method(pairingService, 'getActivePairing', async () => ({
+    _id: 'row1', tenant: TENANT, sourceProduct: VIEWED._id,
+    suggestedProducts: ['507f1f77bcf86cd799439015'], active: true,
+  }));
+  t.mock.method(merchandising, 'hydrateCards', async (ids) =>
+    ids.map((id) => card(id)));
+  t.mock.method(merchandising, 'getCrossSells', async () => [card('b')]);
+  t.mock.method(merchandising, 'getBoughtTogether', async () => []);
+  t.mock.method(merchandising, 'getUpSells', async () => []);
+  t.mock.method(merchandising, 'sponsoredForSurface', async () =>
+    [sponsoredCard('ads', 'camp2b')]);
+  const impressions = t.mock.method(merchandising, 'recordImpressionSafe', () => {});
+  t.mock.method(Product, 'findById', () => ({ lean: async () => ({ ...VIEWED }) }));
+
+  const data = await merchandising.getRecommendations(VIEWED._id, { tenantId: TENANT });
+
+  assert.equal(data.crossSells[0].source, 'manual');   // pairing tier untouched
+  assert.equal(data.crossSells[1].source, undefined);  // automatic fills
+  assert.equal(data.upSells[0].source, 'sponsored');   // paid slot is the pdp home
+  assert.equal(data.upSells[0].adCampaignId, 'camp2b');
+  assert.deepEqual(impressions.mock.calls[0].arguments, ['camp2b']);
 });
 
 test('sponsored slot is dropped without an impression when the product already surfaced organically', async (t) => {

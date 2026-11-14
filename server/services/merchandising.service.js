@@ -416,16 +416,19 @@ const getRecommendations = async (productId, { context = 'pdp', tenantId, limit 
   }
   const sponsoredId = sponsoredCard ? String(sponsoredCard._id) : null;
 
+  // Organic always wins ACROSS the whole response: if the paid product already
+  // earns any organic slot (any automatic tier or a manual pairing), the paid
+  // card is dropped entirely and no impression is counted.
+  const organicIds = new Set(
+    [...pick(settled[0]), ...pick(settled[1]), ...pick(settled[2]),
+     ...manualTogether, ...manualCross].map((p) => String(p._id))
+  );
+
   const mergeManual = (auto, manual, { sponsored = false } = {}) => {
     const seen = new Set(manual.map((p) => String(p._id)));
-    // Organic always wins the slot: when the sponsored product is already
-    // surfaced in this array (manual pairing or an automatic tier), the paid
-    // card is dropped entirely — the organic item stands and no impression is
-    // counted. Otherwise the paid card sits AFTER manual pairings but BEFORE
-    // the automatic tiers — FIRST on the marketplace, where manual is always
-    // empty.
-    const head = sponsored && sponsoredId && !seen.has(sponsoredId)
-      && !auto.some((p) => String(p._id) === sponsoredId)
+    // Otherwise the paid card sits AFTER manual pairings but BEFORE the
+    // automatic tiers — FIRST on the marketplace, where manual is always empty.
+    const head = sponsored && sponsoredId && !organicIds.has(sponsoredId)
       ? [{ ...sponsoredCard, source: 'sponsored' }]
       : [];
     if (head.length) seen.add(sponsoredId);
@@ -433,13 +436,20 @@ const getRecommendations = async (productId, { context = 'pdp', tenantId, limit 
       .slice(0, limit ?? 4);
   };
 
-  const crossSells = mergeManual(pick(settled[1]), manualCross, { sponsored: true });
-  // Sourced from the tag, not just the product id: the organic card for the
-  // same product must not be mistaken for the paid placement.
-  const sponsoredIncluded = crossSells.some((p) => p.source === 'sponsored');
+  // The paid placement must live in the array the context actually renders:
+  // cart → crossSells (the cart strip), pdp → upSells (the disclosed list
+  // above the step-up rail). Organic always wins the slot; the same product is
+  // then deduped out of the other arrays so it surfaces exactly once.
+  const sponsoredContext = context === 'cart' ? 'cart' : 'pdp';
+  const crossSellsAuto = pick(settled[1]);
+  const upSellsAuto = pick(settled[2]);
+  const sponsoredHomeArray = sponsoredContext === 'cart'
+    ? mergeManual(crossSellsAuto, manualCross, { sponsored: true })
+    : mergeManual(upSellsAuto, [], { sponsored: true });
+  const sponsoredIncluded = sponsoredHomeArray.some((p) => p.source === 'sponsored');
 
   // A paid placement surfaces exactly ONCE: when the sponsored card is served
-  // in crossSells, the same product is deduped out of the other arrays (the
+  // in its home array, the same product is deduped out of the other arrays (the
   // same mechanism mergeManual uses for manual vs automatic items).
   const stripSponsored = (items) =>
     sponsoredIncluded ? items.filter((p) => String(p._id) !== sponsoredId) : items;
@@ -448,10 +458,14 @@ const getRecommendations = async (productId, { context = 'pdp', tenantId, limit 
     productId,
     context,
     boughtTogether: stripSponsored(mergeManual(pick(settled[0]), manualTogether)),
-    crossSells,
-    // Manual pairings and the paid slot do not compete for upSells — an
-    // upsell is a premium alternative, not a pairing.
-    upSells: stripSponsored(pick(settled[2])),
+    crossSells: sponsoredContext === 'cart'
+      ? sponsoredHomeArray
+      : stripSponsored(mergeManual(crossSellsAuto, manualCross)),
+    // Manual pairings never compete for upSells — an upsell is a premium
+    // alternative, not a pairing — but the paid pdp slot does (disclosed).
+    upSells: sponsoredContext === 'cart'
+      ? stripSponsored(upSellsAuto)
+      : sponsoredHomeArray,
   };
   // Impression is counted on the serve path only, right before the cache set:
   // cached serves within the TTL window keep the sponsored card in the payload
