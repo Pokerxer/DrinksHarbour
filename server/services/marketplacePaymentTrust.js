@@ -45,6 +45,14 @@ async function initialize(provider, actor, amount, currency, email, metadata = {
   // redirect return and the webhook can find it. Only orderId is honoured —
   // kind/userId/paymentAccount stay trust-controlled.
   if (extraMetadata && extraMetadata.orderId) trusted.orderId = String(extraMetadata.orderId);
+  // Ad wallet top-ups ride this same charge path. The gateway metadata is the
+  // only durable carrier of purpose/tenant (verify + webhook echo it), and the
+  // controller is required to have stamped tenantId from the JWT (Workstream A).
+  if (metadata.purpose === 'ad_wallet') {
+    if (!mongoose.isValidObjectId(metadata.tenantId)) throw new ValidationError('Ad wallet top-up requires a valid tenant');
+    trusted.purpose = 'ad_wallet';
+    trusted.tenantId = String(metadata.tenantId);
+  }
   try {
     const service = require('./payment.service');
     const result = provider === 'stripe' ? await service.createStripePaymentIntent(Number(amount), currency, trusted)
@@ -102,6 +110,9 @@ async function evidence(details, actor, orderData) {
     if (!result.success || !data || data.reference !== reference || data.metadata?.kind !== 'marketplace_order' ||
         data.metadata?.userId !== String(actor._id) || data.metadata?.paymentAccount !== 'platform' ||
         minor(data.amount) !== minor(claim.amount) || String(data.currency).toUpperCase() !== claim.currency) throw new ConflictError('Payment evidence does not match checkout');
+    // Prepaid ad spend is not order money: a top-up must never fund an order,
+    // otherwise the same receipt could be spent twice (order + wallet credit).
+    if (data.metadata?.purpose === 'ad_wallet') throw new ConflictError('Ad wallet top-ups cannot fund orders');
     receipt = { method: provider, reference, transactionId: String(data.transactionId || reference), amount: Number(data.amount),
       currency: String(data.currency).toUpperCase(), paidAt: data.paidAt || new Date(), channel: data.channel };
   }

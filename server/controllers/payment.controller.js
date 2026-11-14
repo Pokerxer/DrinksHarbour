@@ -5,6 +5,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const { successResponse } = require('../utils/response');
 const paymentService = require('../services/payment.service');
 const Order = require('../models/Order');
+const { ForbiddenError } = require('../utils/errors');
 
 /**
  * @desc    Initialize Stripe payment (without order)
@@ -96,7 +97,16 @@ const initializePaystackPayment = asyncHandler(async (req, res) => {
     });
   }
 
-  const paymentData = await require('../services/marketplacePaymentTrust').initialize('paystack', req.user, amount, 'NGN', email, metadata, req.get('Idempotency-Key'));
+  // Ad wallet top-ups are tenant-only prepaid ad spend. Workstream A: the
+  // tenant identity comes from the JWT, never the body, and is stamped into
+  // the charge metadata so verify/webhook settlement credits the right wallet.
+  const adWalletTopUp = metadata?.purpose === 'ad_wallet';
+  if (adWalletTopUp && !req.user?.tenant) {
+    throw new ForbiddenError('Ad wallet top-up requires a tenant account');
+  }
+
+  const paymentData = await require('../services/marketplacePaymentTrust').initialize('paystack', req.user, amount, 'NGN', email,
+    adWalletTopUp ? { ...metadata, tenantId: String(req.user.tenant) } : metadata, req.get('Idempotency-Key'));
 
   successResponse(res, paymentData, 'Paystack payment initialized successfully');
 });
@@ -120,6 +130,10 @@ const verifyPaystackPayment = asyncHandler(async (req, res) => {
   const result = await paymentService.verifyPaystackTransaction(reference);
 
   if (result.success) {
+    // Ad wallet top-ups settle into the prepaid wallet here too; settle is
+    // non-throwing and idempotent by reference, so this never fails the
+    // receipt response and re-verifies are safe.
+    await require('../services/adWalletTopup.service').settleAdWalletCredit(reference);
     successResponse(res, require('../services/marketplacePaymentReads').publicReceipt(result.data), 'Payment verified successfully');
   } else {
     res.status(400).json({

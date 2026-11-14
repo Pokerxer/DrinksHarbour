@@ -22,6 +22,15 @@ async function processEvent(event) {
     if (!await settlement.settlePayment(data.reference, payment)) throw new ConflictError('Checkout payment reference not found');
     return;
   }
+  // Ad wallet top-ups settle straight into the prepaid ad wallet. They must
+  // not enter marketplace order settlement (trust.evidence refuses their
+  // purpose); creditAdWallet's reference idempotency makes webhook retries
+  // safe. settle is non-throwing, so settlement hiccups are logged and
+  // acknowledged rather than forcing endless Paystack retries.
+  if (data.metadata?.purpose === 'ad_wallet') {
+    await require('./adWalletTopup.service').settleAdWalletCredit(data.reference);
+    return;
+  }
   await require('./marketplaceWebhook').settle('paystack', data.reference);
 }
 module.exports = { validSignature, processEvent };
