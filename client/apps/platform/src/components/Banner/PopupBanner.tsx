@@ -923,6 +923,10 @@ export default function PopupBanner({ allowedPaths, preview }: PopupBannerProps)
     if (isPopupCooldownActive()) return; // recent popup — stay quiet
 
     const path = window.location.pathname;
+    // Payment surfaces must never be covered by marketing popups — a customer
+    // mid-payment on their invoice is a no-marketing page (the popup's
+    // full-viewport overlay would otherwise trap the Pay button).
+    if (path.startsWith('/invoice')) return;
     const eligible = banners
       .filter((b) => {
         if (allowedPaths && !allowedPaths.some((p) => path.startsWith(p))) return false;

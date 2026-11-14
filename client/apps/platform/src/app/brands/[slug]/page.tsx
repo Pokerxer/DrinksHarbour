@@ -43,7 +43,7 @@ async function fetchBrandProducts(brandName: string) {
   try {
     const res = await fetch(
       `${API_URL}/api/products/search?brand=${encodeURIComponent(brandName)}&limit=8`,
-      { next: { revalidate: 1800 } }
+      { cache: 'no-store' }
     );
     if (!res.ok) return [];
     const data = await res.json();

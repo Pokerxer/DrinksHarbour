@@ -82,7 +82,7 @@ async function fetchInitialProducts(
     );
     const query = buildShopSearchParams(sp, opts).toString();
     const res = await fetch(`${API_URL}/api/products/search?${query}`, {
-      next: { revalidate: 300 },
+      cache: 'no-store',
     });
     if (!res.ok) return EMPTY_RESULT;
     return parseProductsResponse(await res.json());

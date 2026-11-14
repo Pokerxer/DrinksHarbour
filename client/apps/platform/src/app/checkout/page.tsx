@@ -804,9 +804,8 @@ export default function CheckoutPage() {
       const data = await res.json();
 
       if (!data.success) {
-        // Can't validate — proceed with a warning
         setIsLoading(false);
-        await proceed();
+        setError('Could not verify stock for checkout. Please try again.');
         return;
       }
 
@@ -837,8 +836,7 @@ export default function CheckoutPage() {
       setShowValidationModal(true);
     } catch {
       setIsLoading(false);
-      // On validation error, let them proceed — server will catch real issues
-      await proceed();
+      setError('Could not verify stock for checkout. Please try again.');
     }
   };
 
@@ -848,6 +846,10 @@ export default function CheckoutPage() {
     applyValidationUpdates();
     const proceed = pendingPayment;
     setPendingPayment(null);
+    if (validationIssues.some(issue => issue.status !== 'price_changed')) {
+      router.push('/cart');
+      return;
+    }
     if (proceed) {
       // Small delay for state to settle after applyValidationUpdates
       setTimeout(async () => { await proceed(); }, 50);
@@ -1002,7 +1004,7 @@ export default function CheckoutPage() {
                     onClick={handleAcceptAndContinue}
                     className="flex-1 px-4 py-2.5 bg-gradient-to-br from-red-700 to-red-900 text-white font-bold rounded-xl text-sm hover:from-red-800 hover:to-red-950 transition-all"
                   >
-                    Accept &amp; Continue
+                    {validationIssues.some(issue => issue.status !== 'price_changed') ? 'Update Cart' : 'Accept & Continue'}
                   </button>
                 </div>
               </div>

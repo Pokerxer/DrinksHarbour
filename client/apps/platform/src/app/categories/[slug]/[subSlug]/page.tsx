@@ -46,7 +46,7 @@ async function fetchSubCategoryProducts(categoryId: string, subId: string) {
   try {
     const res = await fetch(
       `${API_URL}/api/products/search?category=${encodeURIComponent(categoryId)}&subCategory=${encodeURIComponent(subId)}&limit=8`,
-      { next: { revalidate: 1800 } }
+      { cache: 'no-store' }
     );
     if (!res.ok) return [];
     const data = await res.json();
