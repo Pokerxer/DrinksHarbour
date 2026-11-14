@@ -10,9 +10,6 @@
 // returned 12, and the product page's own widget (`ProductClient.tsx:49`, which
 // asks for `?limit=8`) also got 12.
 //
-// The same positional call existed inside the service itself, in
-// getFrequentlyBoughtTogether's no-co-purchase-data fallback.
-//
 // Passing the number through unwrapped also puts it straight into Mongo —
 // getRelatedProducts hands `limit` to `$limit: limit * 3` and `.limit(limit * 3)`
 // — so the parse has to be sanitised, not just re-wrapped: `?limit=abc` would
@@ -21,8 +18,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const Order = require('../models/Order');
-const Product = require('../models/Product');
 const productService = require('../services/product.service');
 const productController = require('../controllers/product.controller');
 
@@ -77,27 +72,3 @@ test('an absurd ?limit= is capped', async (t) => {
   assert.equal(options.limit, 50);
 });
 
-test('getFrequentlyBoughtTogether passes its limit through as options too', async (t) => {
-  // Its fallback, when a product has no co-purchase history, called
-  // getRelatedProducts(productId, limit) positionally — so a request for 5
-  // came back with 12. That call is a local binding inside the service, so it
-  // is driven for real here and observed where the limit lands: the mixed
-  // strategy's `{ $limit: limit * 3 }`.
-  const productId = '507f1f77bcf86cd799439011';
-  let limitStage;
-
-  t.mock.method(Order, 'aggregate', async () => []); // no co-purchase history
-  t.mock.method(Product, 'findById', () => {
-    const chain = { populate: () => chain, lean: async () => ({ _id: productId, status: 'approved', type: 'whisky' }) };
-    return chain;
-  });
-  t.mock.method(Product, 'aggregate', async (pipeline) => {
-    limitStage = pipeline.find(s => s.$limit)?.$limit;
-    return [];
-  });
-
-  await productService.getFrequentlyBoughtTogether(productId, 5);
-
-  assert.equal(limitStage, 15, 'the fallback asked for 5 → the pipeline should take 5 × 3');
-  assert.notEqual(limitStage, 36, 'the limit was dropped and the service default of 12 won');
-});

@@ -293,6 +293,18 @@ router.get(
 );
 
 /**
+ * Get merchandising recommendations (bought-together, cross-sells, upsells)
+ * @route GET /api/products/:id/merchandising?context=pdp|cart
+ * @access Public
+ */
+router.get(
+  '/:id/merchandising',
+  mongoIdValidation,
+  validate,
+  productController.getMerchandising
+);
+
+/**
  * Get product reviews
  * @route GET /api/products/:id/reviews
  * @access Public

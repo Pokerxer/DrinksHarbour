@@ -9,6 +9,8 @@ const Product = require('../models/Product');
 const { ForbiddenError, ValidationError } = require('../utils/errors');
 const cartService = require('../services/cart.service');
 const wishlistService = require('../services/wishlist.service');
+const merchandisingService = require('../services/merchandising.service');
+const Tenant = require('../models/Tenant');
 const Review = require('../models/Review');
 const Order  = require('../models/Order');
 const cloudinaryService = require('../services/cloudinary.service');
@@ -1749,54 +1751,46 @@ const clearWishlistController = asyncHandler(async (req, res) => {
 
 
 /**
- * @desc    Get frequently bought together
- * @route   GET /api/products/:id/bought-together
+ * @desc    Get merchandising recommendations (bought-together, cross-sells,
+ *          upsells) for a product. Batched: one request serves the PDP or
+ *          cart surface.
+ * @route   GET /api/products/:id/merchandising?context=pdp|cart
  * @access  Public
  */
-const getFrequentlyBoughtTogether = asyncHandler(async (req, res) => {
+const getMerchandising = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const limit = parseInt(req.query.limit) || 5;
+  const rawContext = (req.query.context || 'pdp').toString();
+  const context = rawContext === 'cart' ? 'cart' : 'pdp';
+  const parsedLimit = parseInt(req.query.limit, 10);
+  const limit = Number.isFinite(parsedLimit)
+    ? Math.min(Math.max(parsedLimit, 1), 8)
+    : undefined;
 
-  const products = await productService.getFrequentlyBoughtTogether(id, limit);
+  // DRI-9 surface context, same stance as getProductBySlug: the platform
+  // middleware flags tenant-storefront requests with `x-is-tenant-site` and
+  // injects `x-tenant-slug`. On the marketplace (header absent) results are
+  // aggregated across tenants; on a storefront they are restricted to that
+  // tenant's published, online-visible SubProducts. Header-derived by design —
+  // the data this grants is public published-catalog data, and tenant-private
+  // reads remain JWT-scoped.
+  let tenantId = req.tenant?._id; // subdomain-resolved by resolveTenantContext
+  // `req.get` is guarded so plain-object reqs (unit tests) skip the header
+  // branch instead of crashing; on real Express requests this is always set.
+  if (!tenantId && req.get && req.get('x-is-tenant-site') === 'true') {
+    const slug = (req.get('x-tenant-slug') || '').toString().toLowerCase().trim();
+    if (slug) {
+      const tenant = await Tenant.findOne({ slug, status: 'approved' })
+        .select('_id')
+        .lean();
+      tenantId = tenant?._id;
+    }
+  }
 
-  res.status(200).json({
-    success: true,
-    data: { products },
-  });
-});
+  const data = await withDbRetry(() =>
+    merchandisingService.getRecommendations(id, { context, limit, tenantId })
+  );
 
-/**
- * @desc    Get cross-sell products
- * @route   GET /api/products/:id/cross-sells
- * @access  Public
- */
-const getProductCrossSells = asyncHandler(async (req, res) => {
-  const { id } = req.params;
-  const limit = parseInt(req.query.limit) || 4;
-
-  const products = await productService.getProductCrossSells(id, limit);
-
-  res.status(200).json({
-    success: true,
-    data: { products },
-  });
-});
-
-/**
- * @desc    Get up-sell products
- * @route   GET /api/products/:id/up-sells
- * @access  Public
- */
-const getProductUpSells = asyncHandler(async (req, res) => {
-  const { id } = req.params;
-  const limit = parseInt(req.query.limit) || 4;
-
-  const products = await productService.getProductUpSells(id, limit);
-
-  res.status(200).json({
-    success: true,
-    data: { products },
-  });
+  res.status(200).json({ success: true, data });
 });
 
 // ============================================================
@@ -2062,10 +2056,8 @@ module.exports = {
 
     // Product Relations
     getRelatedProducts,
-    getFrequentlyBoughtTogether,
-    getProductCrossSells,
-    getProductUpSells,
-  
+    getMerchandising,
+
     // Product Variants
     getProductVariants,
     compareProductVariants,
@@ -2086,7 +2078,7 @@ for (const name of [
   'getProductBySlug', 'getProductById', 'fetchProduct', 'getProductsByCategory', 'getProductsByBrand',
   'getProductsByTags', 'getProductsByFlavors', 'getTrendingProducts', 'getSeasonalProducts',
   'getProductFilterOptions', 'getProductByBarcode', 'getRelatedProducts', 'getProductRecommendations',
-  'getPersonalizedRecommendations', 'getProductCompetitors', 'getFrequentlyBoughtTogether',
-  'getProductCrossSells', 'getProductUpSells', 'getProductVariants', 'compareProductVariants',
+  'getPersonalizedRecommendations', 'getProductCompetitors', 'getMerchandising',
+  'getProductVariants', 'compareProductVariants',
   'getProductStockStatus', 'getProductPriceRange', 'getProductAvailability',
 ]) module.exports[name] = require('../services/marketContext').handler(module.exports[name]);
