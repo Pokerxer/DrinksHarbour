@@ -49,6 +49,18 @@ test('mergeCartLines unions disjoint lines, DB lines first', () => {
   assert.deepStrictEqual(merged.map((l) => l.quantity), [1, 3]);
 });
 
+test('mergeCartLines collapses the same offer arriving under two ids (max wins, never sum)', () => {
+  // A stale guest mirror can carry the offer under the pre-2026-11-13 id
+  // scheme while the stored cart emits the current one — the union must not
+  // keep both, or syncCart re-adds the offer once per id and the quantity
+  // doubles "on its own" (2026-11-14 report).
+  const db =    [{ cartItemId: 'p1-70cl-Wyn City', quantity: 1, selectedSubProductId: 'sp1', selectedSizeId: 'sz1' }];
+  const local = [{ cartItemId: 'p1-70cl-Wyn City-default', quantity: 3, selectedSubProductId: 'sp1', selectedSizeId: 'sz1' }];
+  const merged = mergeCartLines(db, local);
+  assert.strictEqual(merged.length, 1);
+  assert.strictEqual(merged[0].quantity, 3);
+});
+
 test('mergeCartLines prefers DB field values over local ones for overlapping lines', () => {
   const db =    [{ cartItemId: 'a', quantity: 1, price: 128500 }];
   const local = [{ cartItemId: 'a', quantity: 1, price: 99 }];

@@ -226,35 +226,45 @@ const addToCart = async (data) => {
 };
 
 /**
- * Sync entire cart from localStorage to server
- * Replaces server cart with items from local cart
+ * Sync entire cart from localStorage to server.
+ * Replaces the server cart with the client's items, atomically.
+ *
+ * Two hardening rules, both from the 2026-11-14 "quantity doubles on its
+ * own" report:
+ *  1. The payload is COLLAPSED per offer (product+subproduct+size, higher
+ *     quantity wins) BEFORE writing. A stale browser mirror can carry the
+ *     same offer under two cartItemId schemes; the old per-entry addToCart
+ *     loop re-added it once per id and summed the quantities.
+ *  2. The cart is written in ONE pass (validated snapshots + totals in a
+ *     single update), not clear-then-add-per-item. Two overlapping syncs
+ *     (a merge and a debounced save) then converge on the same final state
+ *     instead of interleaving clear/add/add into a doubled line. The stock
+ *     and maxOrderQuantity checks addToCart enforced are re-applied here,
+ *     and checkout re-validates everything again anyway.
  */
 const syncCart = async (userId, items) => {
+  const emptyResults = { added: 0, skipped: 0, errors: [] };
   if (!items || !Array.isArray(items) || items.length === 0) {
-    return { cart: await getCart(userId), results: { added: 0, skipped: 0, errors: [] } };
+    const cart = await getCart(userId);
+    return { cart, results: { ...emptyResults } };
   }
 
-  const results = {
-    added: 0,
-    skipped: 0,
-    errors: [],
-  };
-
-  // Clear existing cart first
-  const existingCart = await Cart.findOne({ user: userId });
-  if (existingCart && existingCart.items.length > 0) {
-    existingCart.items = [];
-    existingCart.subtotal = 0;
-    existingCart.estimatedTotal = 0;
-    existingCart.discountTotal = 0;
-    await existingCart.save();
-    await updateUserCartCount(userId, 0);
-  }
-
-  // Add each item from local cart
+  // 1. Collapse the payload per offer — higher quantity wins, never the sum.
+  const byOffer = new Map();
   for (const item of items) {
+    const key = `${item.productId}-${item.subProductId}-${item.sizeId}`;
+    const existing = byOffer.get(key);
+    if (!existing) byOffer.set(key, item);
+    else existing.quantity = Math.max(existing.quantity || 1, item.quantity || 1);
+  }
+
+  // 2. Validate every unique offer and build its snapshot line with the SAME
+  //    pricing pipeline addToCart uses (platform price AFTER sub-product sale).
+  const results = { ...emptyResults };
+  const lines = [];
+  for (const item of byOffer.values()) {
     try {
-      const { productId, subProductId, sizeId, tenantId, quantity, price } = item;
+      const { productId, subProductId, sizeId, tenantId, quantity } = item;
 
       if (!productId || !subProductId || !sizeId || !tenantId) {
         results.errors.push({
@@ -264,18 +274,16 @@ const syncCart = async (userId, items) => {
         continue;
       }
 
-      // Verify product exists
       const product = await Product.findOne({ _id: productId, status: 'approved' }).lean();
       if (!product) {
         results.errors.push({ item: { productId }, error: 'Product not found or not available' });
         continue;
       }
 
-      // Verify subProduct exists and belongs to product
       const subProduct = await SubProduct.findOne({
         _id: subProductId,
         product: productId,
-        status: { $in: ['active', 'low_stock', 'out_of_stock'] },
+        status: 'active',
       })
         .populate({
           path: 'tenant',
@@ -283,50 +291,95 @@ const syncCart = async (userId, items) => {
         })
         .lean();
 
-      if (!subProduct) {
+      if (!subProduct || !subProduct.tenant) {
         results.errors.push({ item: { subProductId }, error: 'Product variant not available' });
         continue;
       }
 
-      // Verify tenant matches
-      if (tenantId && subProduct.tenant && subProduct.tenant._id.toString() !== tenantId.toString()) {
+      if (subProduct.tenant._id.toString() !== tenantId.toString()) {
         results.errors.push({ item: { subProductId, tenantId }, error: 'Tenant mismatch' });
         continue;
       }
 
-      // Verify size exists
-      const size = await Size.findOne({ ...retailSizeWhereClause(),
-        _id: sizeId,
-        subproduct: subProductId,
-      }).lean();
+      await require('./marketIngress').assertOffer({ tenant: subProduct.tenant, product });
 
+      const size = await Size.findOne({ ...retailSizeWhereClause(), _id: sizeId, subproduct: subProductId }).lean();
       if (!size) {
         results.errors.push({ item: { sizeId }, error: 'Size not found' });
         continue;
       }
 
+      if (size.availability === 'out_of_stock' || size.stock === 0) {
+        results.errors.push({ item: { sizeId }, error: 'Item out of stock' });
+        continue;
+      }
+
       const validQuantity = Math.min(Math.max(1, quantity || 1), size.maxOrderQuantity || 99);
+      if (validQuantity > size.stock) {
+        results.errors.push({
+          item: { productId, sizeId },
+          error: `Only ${size.stock} units available`,
+        });
+        continue;
+      }
 
-      // Add to cart using the main addToCart function
-      await addToCart({
-        userId,
-        productId,
-        subProductId,
-        sizeId,
-        tenantId: tenantId || subProduct.tenant?._id,
+      const addPricing = applySubProductSale(
+        calculateSizePricing(size, product, subProduct.tenant, subProduct.costPrice, subProduct.baseSellingPrice),
+        subProduct,
+      );
+      const saleDiscount = addPricing.saleActive
+        ? Math.max(0, (addPricing.priceBeforeSale ?? addPricing.finalPrice) - addPricing.finalPrice)
+        : 0;
+
+      lines.push({
+        product: product._id,
+        subproduct: subProduct._id,
+        size: size._id,
+        tenant: subProduct.tenant._id,
+        priceAtAddition: addPricing.finalPrice,
         quantity: validQuantity,
+        maxAvailableAtAddition: size.stock,
+        discountApplied: saleDiscount,
+        addedAt: new Date(),
       });
-
       results.added++;
     } catch (error) {
       results.errors.push({ item: { productId: item.productId }, error: error.message });
     }
   }
 
-  // Get updated cart
-  const cart = await getCart(userId);
+  // 3. ONE write: replace the cart's items and totals atomically (upsert).
+  const filter = { user: userId };
+  const update = {
+    $set: {
+      items: lines,
+      subtotal: Math.round(lines.reduce((sum, l) => sum + l.priceAtAddition * l.quantity, 0) * 100) / 100,
+    },
+  };
+  update.$set.estimatedTotal = update.$set.subtotal;
+  update.$set.discountTotal = 0;
+  const cart = await Cart.findOneAndUpdate(filter, update, { new: true, upsert: true })
+    .populate({
+      path: 'items.product',
+      select: 'name slug images type isAlcoholic abv',
+    })
+    .populate({
+      path: 'items.subproduct',
+      select: 'sku baseSellingPrice',
+      populate: { path: 'tenant', select: 'name slug logo' },
+    })
+    .populate({
+      path: 'items.size',
+      match: retailSizeWhereClause(),
+      select: 'size displayName sellingPrice stock availability currency',
+    })
+    .lean();
 
-  return { cart, results };
+  await updateUserCartCount(userId, lines.length);
+
+  // The client stores lines shaped by getCart/buildCartLine — cartItemId,
+  // selected* ids and fresh pricing. The raw populated document lacks them.
+  return { cart: await getCart(userId), results };
 };
 
 /**

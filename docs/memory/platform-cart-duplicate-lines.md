@@ -79,3 +79,13 @@ two size rows sharing one display size string merge under the string id.
 - Green: cart-identity 10/10, shop suite 52/52, purchase-flow/quickview/
   wedding-chat node tests, server cart helpers + write-path 33/33,
   `tsc --noEmit` clean.
+
+## Server-side quantity doubling (2026-11-14, follow-up)
+
+Report: one Jameson from Wyn City became quantity 2 "on its own" after a while. Two server paths summed quantities:
+
+1. **syncCart ran addToCart per payload entry** — a payload holding the same offer under two cartItemId schemes (a stale guest mirror with the pre-2026-11-13 id + the current colourless one) re-added the offer once per id: 1+1=2. Deterministic repro in cartSyncDedup.mongo.test.js.
+2. **mergeCartLines unioned by id only** — the same two-id overlap kept both lines into syncCart.
+
+Fixes: syncCart now collapses the payload per offer (product+subproduct+size, higher quantity wins), validates each, and writes the cart in ONE atomic update (validated snapshots priced through the same pipeline as addToCart) — overlapping syncs (merge + debounced save) converge instead of interleaving clear/add/add; mergeCartLines falls back to the offer key (selectedSubProductId+selectedSizeId) when ids differ, max wins, never the sum. addToCart itself is unchanged (single-add semantics are correct).
+Verified: cartSyncDedup.mongo (1/1), cart.helpers (24/24), cart+marketplace suites (29/29), sales-reservation suites (4/4).

@@ -88,25 +88,53 @@ const buildCartLine = (item, pricing) => {
 
 /**
  * Union of the stored cart and the browser's cart, keyed by cartItemId.
- * A line present on both sides keeps the HIGHER quantity — never the sum, so
- * logging in repeatedly cannot inflate a line. Every other field comes from the
- * DB line, which carries freshly-computed pricing.
+ * A line present on both sides keeps the HIGHER quantity - never the sum, so
+ * logging in repeatedly cannot inflate a line. Every other field comes from
+ * the DB line, which carries freshly-computed pricing.
+ *
+ * The same offer can arrive under TWO ids - a stale browser mirror may still
+ * carry the pre-2026-11-13 colour-suffixed id while the stored cart emits the
+ * current colourless one. Identity therefore falls back to the offer key
+ * (selectedSubProductId + selectedSizeId): one offer = one line, higher
+ * quantity wins. Without this, syncCart re-added the offer once per id and
+ * the quantity doubled "on its own" (2026-11-14 report).
  */
+const offerKey = (line) =>
+  line?.selectedSubProductId && line?.selectedSizeId
+    ? `${line.selectedSubProductId}-${line.selectedSizeId}`
+    : null;
+
 const mergeCartLines = (dbLines, localLines) => {
-  const merged = (dbLines || []).map((line) => ({ ...line }));
-  const indexById = new Map(merged.map((line, i) => [line.cartItemId, i]));
+  const merged = [];
+  const byId = new Map();
+  const byOffer = new Map();
+  const place = (line) => {
+    merged.push(line);
+    if (line.cartItemId) byId.set(line.cartItemId, merged.length - 1);
+    const key = offerKey(line);
+    if (key && !byOffer.has(key)) byOffer.set(key, merged.length - 1);
+  };
+
+  for (const dbLine of dbLines || []) place({ ...dbLine });
 
   for (const local of localLines || []) {
-    const existingIndex = indexById.get(local.cartItemId);
+    const existingIndex =
+      byId.get(local.cartItemId) ??
+      (offerKey(local) !== null ? byOffer.get(offerKey(local)) : undefined);
 
     if (existingIndex === undefined) {
-      merged.push({ ...local });
-      indexById.set(local.cartItemId, merged.length - 1);
+      place({ ...local });
       continue;
     }
 
     const existing = merged[existingIndex];
     existing.quantity = Math.max(existing.quantity || 1, local.quantity || 1);
+    // Backfill identity fields a legacy mirror line lacks so the offer key
+    // keeps protecting the merged line from further duplicate arrivals.
+    if (!existing.selectedSubProductId && local.selectedSubProductId) {
+      existing.selectedSubProductId = local.selectedSubProductId;
+      existing.selectedSizeId = local.selectedSizeId;
+    }
   }
 
   return merged;
