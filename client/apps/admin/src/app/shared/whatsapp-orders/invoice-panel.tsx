@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import * as Icon from 'react-icons/pi';
 import { useAuthorization } from '@/hooks/use-authorization';
 import { whatsappOrderService } from '@/services/whatsapp-order.service';
+import { printOrderDocuments } from '@/utils/print/whatsapp-order-print';
 
 /** Invoice block as serialized by GET /api/orders/:id (Mongoose subdoc). */
 interface OrderInvoice {
@@ -143,6 +144,31 @@ export default function WhatsAppInvoicePanel({
             )}
           </div>
         )}
+        {/* Printable documents via the shared document-template pipeline. */}
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() =>
+              printOrderDocuments(orderId, token, 'quotation').catch((e) =>
+                setError(e instanceof Error ? e.message : 'Failed to build the quotation')
+              )
+            }
+            className="px-4 py-2 border border-gray-200 text-gray-700 rounded-xl text-xs font-bold hover:bg-gray-50"
+          >
+            Print quotation
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              printOrderDocuments(orderId, token, 'invoice').catch((e) =>
+                setError(e instanceof Error ? e.message : 'Failed to build the invoice')
+              )
+            }
+            className="px-4 py-2 border border-gray-200 text-gray-700 rounded-xl text-xs font-bold hover:bg-gray-50"
+          >
+            Print invoice
+          </button>
+        </div>
         {paid && (
           <p className="text-xs text-gray-500">
             Settled via {invoice?.paymentReference || 'gateway receipt'}.
