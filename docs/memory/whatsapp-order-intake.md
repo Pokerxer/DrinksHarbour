@@ -100,9 +100,45 @@ fulfillment surface was built.
   empty URI — replica set not running at test time). None of them touch
   payments/orders/whatsapp code paths.
 - `client/apps/platform` and `client/apps/admin` `npm run type:check`: exit 0.
-- MANUAL SMOKE STILL PENDING (plan Task 10 step 3): needs dev servers + Korapay
-  sandbox — create order → issue invoice → open link → sandbox pay → verify
-  paid state, tenant queue, webhook path.
+
+## LIVE SMOKE (2026-11-14, local mock Korapay) — PASSED, with 4 production fixes found
+
+`KORAPAY_SECRET_KEY` in `server/.env` is a **live** (`sk_live_`) key, so the
+smoke ran against a local mock gateway: `payment.service.KORAPAY_BASE_URL` is
+now env-overridable (`KORAPAY_BASE_URL=http://localhost:5099/merchant/api/v1`),
+with a mock that mimics initialize/charge-lookup (commit `0a…`/base-url change).
+Full path verified: admin login → manual order (UI builder AND API) → invoice
+issue → hosted invoice page → simulated payment → verified attach →
+`paymentStatus: paid` → webhook idempotent → tenant (tenant_admin) sees the
+order masked ("Online customer", own-tenant line only) → admin intake list +
+order-detail panel + builder success screen (screenshots in the session tmp).
+
+**Fixes the smoke surfaced (all committed):**
+1. `order.controller` platform-staff check was `!req.user.tenant` — wrong: the
+   seeded super_admin's JWT embeds a tenant snapshot. Now role-based, mirroring
+   `orderAccess.platform`.
+2. `issueInvoice` persisted the attempt counter only AFTER a successful
+   initialize — a failed init left nothing saved, so every retry rebuilt the
+   same requestKey and hit the same `uncertain` claim forever. Attempt+token
+   are now persisted BEFORE the gateway call.
+3. `trust.claimReceipt` wrote `user: data.user` — guest manual orders have
+   `order.user = null` and MarketplacePaymentClaim requires a user. Falls back
+   to the claim's original user.
+4. **Builder UX**: the picker displays tenant retail price, but cart/validate
+   compares against the marketplace price → `price_changed` on nearly every
+   line. The builder now ADOPTS server-corrected prices/quantities (re-quotes
+   delivery fee after correction) and blocks only `out_of_stock`/`unavailable`
+   — mirroring checkout's Accept & Continue.
+5. **Picker empty**: `limit=20` sorted by newest returned zero sellable
+   listings → raised to 60.
+6. **Platform UX**: marketing popups could cover the invoice page's Pay button;
+   `PopupBanner` now skips `/invoice` routes entirely.
+
+**Known smoke limitations:** the mock returns `payment_method: 'bank_transfer'`
+and no 3-D Secure; real Korapay channel data will differ (evidence handles it).
+Temp tenant-staff user `smoke-tenant@drinksharbour.dev` was removed after the
+run. The unpaid second order DH2611140002 (from the UI builder drive) remains
+as demo data.
 
 ## Gotchas
 
