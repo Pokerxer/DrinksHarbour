@@ -87,19 +87,21 @@ agreement: docs/memory/ads-billing.md.
   campaign; daily-budget exhaustion marks `budget_exhausted`. Sponsored cards
   carry `source: 'sponsored'` + `adCampaignId`; disclosure badge
   `client/apps/platform/src/components/Merchandising/SponsoredBadge.tsx` is
-  mandatory at every render site. PDP campaigns surface in the disclosed
-  sponsored list above the Step-Up rail (`components/Product/Detail/index.tsx` —
-  the rail stays organic); cart campaigns surface in
-  `components/Merchandising/CartCrossSellStrip.tsx`; BoughtTogether items can
-  be sponsored too (`components/Product/Detail/BoughtTogether.tsx`).
+  mandatory at every render site. Placement is context-dependent (fix
+  2026-11-14): `pdp` campaigns surface in the disclosed sponsored list above
+  the Step-Up rail (`components/Product/Detail/index.tsx` — the rail and the
+  bought-together bundle stay organic); `cart` campaigns surface in
+  `components/Merchandising/CartCrossSellStrip.tsx`. BoughtTogether keeps
+  defensive sponsored handling (`source === 'sponsored'` → badge + click) but
+  the server no longer routes paid cards into the bundle.
   Click attribution: `fireSponsoredClick` in `useMerchandising.ts` fires
   `POST /api/ads/clicks/:adCampaignId` before the user action (cart strip +
   BoughtTogether).
 - GA4: no new sponsored-click gtag event — CPC attribution is server-side
   (click endpoint); GA4 events carry `source: 'sponsored'` through the existing
-  `add_to_cart_merchandising` / `view_item_list` payloads. Known follow-up:
-  the PDP disclosed sponsored list's plain links do not yet fire
-  `fireSponsoredClick` (only cart strip + BoughtTogether do).
+  `add_to_cart_merchandising` / `view_item_list` payloads. The PDP disclosed
+  sponsored list's links fire `fireSponsoredClick` on navigation (fixed
+  2026-11-14, same as cart strip + BoughtTogether).
 - Tenant dashboard Advertising module (ungated by plan — à la carte revenue):
   `client/apps/admin/src/app/(hydrogen)/advertising/`,
   `app/shared/ads/` (wallet-card, campaigns-table/-columns, campaign-form,
