@@ -134,13 +134,13 @@ async function claimReceipt(proof, data, session, requestFingerprint) {
     return prior;
   }
   if (row?.state === 'needs_review') throw new ConflictError('Payment requires reconciliation');
-  const saved = { provider: proof.receipt.method, reference: proof.receipt.reference, account: 'platform', user: data.user,
+  const saved = { provider: proof.receipt.method, reference: proof.receipt.reference, account: 'platform', user: data.user ?? proof.claim.user,
     amount: proof.receipt.amount, currency: proof.receipt.currency, receipt: proof.receipt, requestFingerprint, channelSnapshot: proof.claim.channelSnapshot, state: 'allocated', order: data._id, fingerprint: fp };
   if (row) { row.set(saved); await row.save({ session }); }
   else await Claim.create([{ _id: proof.identity, ...saved }], { session });
   return null;
 }
-async function createOrder(data, tenantConfigs, details, actor, requestKey, requestFingerprint) {
+async function createOrder(data, tenantConfigs, details, actor, requestKey, requestFingerprint, { requireDefaultWarehouse = false } = {}) {
   const proof = details ? await evidence(details, actor, data) : null;
   const Request = require('../models/OrderCheckoutRequest');
   if (!proof && (typeof requestKey !== 'string' || !requestKey || requestKey.length > 128)) throw new ValidationError('Idempotency-Key is required for unpaid checkout');
@@ -166,7 +166,10 @@ async function createOrder(data, tenantConfigs, details, actor, requestKey, requ
           paymentDetails: proof.receipt, paymentReference: proof.receipt.reference,
           paymentMethod: normalizePaymentMethod(proof.receipt.channel) || normalizePaymentMethod(proof.receipt.method) || data.paymentMethod });
       }
-      order = await require('./storefrontLocationOrders').createMappedOrder(data, tenantConfigs, { session });
+      order = await require('./storefrontLocationOrders').createMappedOrder(data, tenantConfigs, {
+        session,
+        requireDefaultWarehouse,
+      });
       if (!order) {
         await require('./storefrontStock').reserveStock(data.items, session);
         order = new Order({ ...data, onlineStockVersion: 1 }); order.$locals.deferAccounting = true; await order.save({ session });
