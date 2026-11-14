@@ -254,10 +254,13 @@ test('addToCart stores the post-sale price and the sale delta', async (t) => {
 test('the price addToCart stores validates as ok, not price_changed', async (t) => {
   const SubProduct = require('../models/SubProduct');
   const Size = require('../models/Size');
+  const Warehouse = require('../models/Warehouse');
+  const Stock = require('../models/WarehouseStock');
   const cartService = require('../services/cart.service');
 
   const subProductId = new mongoose.Types.ObjectId();
   const sizeId = new mongoose.Types.ObjectId();
+  const warehouse = new mongoose.Types.ObjectId();
 
   const subProduct = {
     _id: subProductId,
@@ -280,6 +283,16 @@ test('the price addToCart stores validates as ok, not price_changed', async (t) 
   };
   t.mock.method(SubProduct, 'findOne', () => thenable(subProduct));
   t.mock.method(Size, 'findOne', () => thenable(size));
+  t.mock.method(Warehouse, 'find', () => {
+    const query = {
+      select: () => query, sort: () => query, session: () => query,
+      lean: async () => [{ _id: warehouse, tenant: FLAT_TENANT._id, isDefault: true }],
+    };
+    return query;
+  });
+  t.mock.method(Stock, 'aggregate', async () => [
+    { tenant: FLAT_TENANT._id, warehouse, subProduct: subProductId, size: sizeId, stock: 50 },
+  ]);
 
   // Exactly what the fixed addToCart writes.
   const stored = applySubProductSale(

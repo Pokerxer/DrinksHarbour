@@ -22,6 +22,11 @@ const REFERENCES = [
   ['KioskScan', ['size']],
   ['POSCombo', ['choiceLines.items.allowedSizes']],
   ['Promotion', ['sizes', 'bundleItems.size', 'excludedSizes']],
+  ['OpenedBottle', ['source.size']],
+  ['VenueConsumptionEvent', ['items.size']],
+  ['VenueEventPackage', ['size', 'components.size']],
+  ['VenuePackageCommitment', ['packageSnapshot.packageLine.size', 'packageSnapshot.components.size', 'stockReservations.size']],
+  ['RecipeVersion', ['output.size']],
 ];
 
 async function sizeDeletionStatus(size, tenantId) {
