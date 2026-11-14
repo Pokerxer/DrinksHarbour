@@ -82,6 +82,13 @@ const PUBLIC_ALLOWLIST = new Set([
   'POST banner.routes.js /:id/conversion',
   'POST banner.routes.js /entity/:type/:id/impression',
   'POST banner.routes.js /entity/:type/:id/click',
+  // Sponsored-placement CPC beacons (phase-2 merchandising, adClick.routes.js):
+  // same write-only counter class as the banner endpoints above. No PII, no
+  // read path; a click is deduped per visitor+day server-side before any
+  // billing, so an anonymous beacon can only ever cost the advertiser its own
+  // prepaid wallet one tariff for one unique visitor.
+  'POST adClick.routes.js /clicks/:campaignId',
+  'POST adClick.routes.js /impressions/:campaignId',
   'POST sale.routes.js /:id/view',
   'POST product.routes.js /cart/:id',
 
