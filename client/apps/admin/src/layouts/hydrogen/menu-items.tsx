@@ -31,6 +31,7 @@ import {
   PiUserGearDuotone,
   PiUsersThreeDuotone,
   PiWarehouseDuotone,
+  PiWhatsappLogoDuotone,
 } from 'react-icons/pi';
 
 // Platform (super admin) sidebar.
@@ -289,6 +290,7 @@ export const menuItems = [
     icon: <PiReceiptDuotone />,
   },
   { name: 'Merchant fulfillment', href: '/merchant-orders', icon: <PiReceiptDuotone /> },
+  { name: 'WhatsApp Orders', href: routes.whatsappOrders.list, icon: <PiWhatsappLogoDuotone /> },
   {
     name: 'Live Carts',
     href: routes.eCommerce.carts,

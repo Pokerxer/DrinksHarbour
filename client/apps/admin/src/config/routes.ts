@@ -12,6 +12,7 @@ export const routes = {
   bookings: '/bookings',
   deliverySettings: '/delivery-settings',
   merchantOrders: '/merchant-orders',
+  whatsappOrders: { list: '/whatsapp-orders', create: '/whatsapp-orders/create' },
   occasionRequests: '/occasion-requests',
   venue: '/venue',
   venueCompletion: '/venue-completion',
@@ -196,6 +197,9 @@ export const routes = {
     bannerAnalytics: '/banners/analytics',
     editBanner: (id: string) => `/banners/${id}/edit`,
     bannerDetails: (id: string) => `/banners/${id}`,
+    // Manual "buy X with Y" pairings (phase-2 merchandising, Growth+)
+    merchandising: '/merchandising',
+    createPairing: '/merchandising/create',
     shop: '/ecommerce/shop',
     checkout: '/ecommerce/checkout',
     trackingId: (id: string) => `/ecommerce/tracking/${id}`,

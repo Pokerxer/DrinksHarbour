@@ -58,3 +58,11 @@ test('central catalogue approval queue is super_admin-only', () => {
   // The rest of the /products catalogue stays open to platform staff.
   expect(roleCanAccessRoute('/products', 'admin')).toBe(true);
 });
+
+test('whatsapp-orders is platform-staff only', () => {
+  expect(roleCanAccessRoute('/whatsapp-orders', 'super_admin')).toBe(true);
+  expect(roleCanAccessRoute('/whatsapp-orders/create', 'admin')).toBe(true);
+  expect(roleCanAccessRoute('/whatsapp-orders', 'tenant_owner')).toBe(false);
+  expect(roleCanAccessRoute('/whatsapp-orders', 'tenant_staff')).toBe(false);
+  expect(roleCanAccessRoute('/whatsapp-orders', 'customer')).toBe(false);
+});
