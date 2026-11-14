@@ -25,6 +25,7 @@ import RefundHistory from './refund-history';
 import OrderItemsTable from './order-items-table';
 import GiftPanel from './gift-panel';
 import { WidgetCard, Field, Row, PaymentBadge, LoadingSkeleton } from './widgets';
+import WhatsAppInvoicePanel from '@/app/shared/whatsapp-orders/invoice-panel';
 
 /**
  * Full order detail: summary bar → items/payment/refunds (left) and
@@ -179,6 +180,18 @@ export default function OrderView({
           <WidgetCard title="Order Status" childrenWrapperClass="p-5 @5xl:p-6">
             <StatusStepper order={order} onUpdate={setOrder} />
           </WidgetCard>
+
+          {/* Manual intake (WhatsApp) orders settle through a token-gated
+              hosted invoice instead of the payment panel — issue / re-send /
+              copy the customer link here. Rendered only for that channel. */}
+          {order.originChannel === 'whatsapp' && (
+            <WhatsAppInvoicePanel
+              orderId={order._id}
+              orderNumber={order.orderNumber}
+              paymentStatus={order.paymentStatus}
+              invoice={order.invoice}
+            />
+          )}
 
           <WidgetCard
             title="Customer Details"

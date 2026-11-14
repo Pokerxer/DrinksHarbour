@@ -135,6 +135,16 @@ export interface Order {
   };
   paymentReference?: string;
   paidAt?: string;
+  /** Manual intake (WhatsApp orders transcribed by platform staff). */
+  originChannel?: 'whatsapp' | null;
+  placedBy?: { _id: string; firstName?: string; lastName?: string } | null;
+  invoice?: {
+    token?: string;
+    issuedAt?: string;
+    provider?: string;
+    paymentReference?: string;
+    attempt?: number;
+  } | null;
   refundDetails?: { amount?: number; reason?: string; createdAt?: string };
   shippingAddress?: ShippingAddress;
   shippingMethod?: string;
