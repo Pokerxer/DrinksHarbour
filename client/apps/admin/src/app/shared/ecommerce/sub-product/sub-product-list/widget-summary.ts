@@ -15,7 +15,11 @@ export function summarizeWidgets(
   filters: SubProductFilterInput,
   now = Date.now()
 ) {
-  const candidates = filterSubProducts(items, { ...filters, statusFilter: '' });
+  const candidates = filterSubProducts(items, {
+    ...filters,
+    statusFilter: '',
+    includeArchived: true,
+  });
   const cutoff = now - 30 * 24 * 60 * 60 * 1000;
   const recent = candidates.filter((item) => {
     const created = new Date(item.createdAt).getTime();

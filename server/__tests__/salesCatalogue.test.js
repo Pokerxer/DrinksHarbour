@@ -14,7 +14,7 @@ test('catalogue caps page size, rejects invalid IDs and scopes before lookups', 
     page: -1,
   });
   assert.equal(limit, 48);
-  assert.deepEqual(pipeline[0], { $match: { tenant } });
+  assert.deepEqual(pipeline[0], { $match: { tenant, status: { $ne: 'archived' } } });
   const rows = pipeline.at(-1).$facet.products;
   assert.equal(pipeline.some(stage => stage.$lookup?.from === 'sizes'), false);
   assert.ok(rows.findIndex(stage => stage.$lookup?.from === 'sizes') > rows.findIndex(stage => stage.$limit));

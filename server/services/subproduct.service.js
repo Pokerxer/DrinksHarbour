@@ -22,6 +22,8 @@ const { getSubProductStats } = require('./subproductStats');
 const { SUBPRODUCT_LIST_FIELDS, SIZE_LIST_FIELDS } = require('./subproduct-list-fields');
 const { assessSubProductDeletion } = require('./warehouseStock.helpers');
 const { assertSizesDeletable, sizeDeletionStatus, removedSizes } = require('./size-deletion');
+const { assertSubProductDeletable } = require('./subproduct-deletion');
+const { prepareSizeBarcode } = require('./size-barcode');
 const { calculateSubProductPricing, calculateSizePricing, isDiscountActive, resolveRevenueRates, calcPlatformCostPrice } = require('../utils/pricing');
 
 // ── Catalog-kind pivot (constants/catalogKind.js — single source) ──────────
@@ -186,6 +188,7 @@ const getMySubProducts = async (tenantId, options) => {
     warehouseId = null,
     fresh = false,
     view,
+    includeArchived = false,
   } = options;
   const listView = view === 'list';
 
@@ -200,8 +203,10 @@ const getMySubProducts = async (tenantId, options) => {
     query.tenant = tenantId;
   }
 
-  if (status) {
+  if (typeof status === 'string' && status) {
     query.status = status;
+  } else if (!listView || !includeArchived) {
+    query.status = { $ne: 'archived' };
   }
 
   // Search across product name and SKU. Product name lives on the populated
@@ -324,7 +329,7 @@ const getMySubProducts = async (tenantId, options) => {
     }
   }
 
-  const stats = { total, ...summary };
+  const stats = { total: status === 'archived' ? 0 : total, ...summary };
 
   return {
     subProducts,
@@ -1287,7 +1292,7 @@ const getSubProduct = async (subProductId, tenantId, options = {}) => {
     },
     {
       path: 'sizes',
-      select: 'size displayName sizeCategory unitType colorName optionName image imageScope dimensions shelfLifeDays venueServing servingSchemaVersion minOrderQuantity sellingPrice costPrice unitsPerPack sellingPriceMarkupOverridePct commissionPriceOverride packCommissionPriceOverride platformMarkupOverridePct packPlatformMarkupOverridePct markupPercentage roundUp saleDiscountPercentage salePrice compareAtPrice wholesalePrice currency stock reservedStock availableStock lowStockThreshold reorderLevel reorderQuantity availability sku barcode packaging weightGrams volumeMl servingsPerUnit discountValue discountType discountStart discountEnd isDefault isOnSale rank totalSold',
+      select: 'size displayName sizeCategory unitType colorName optionName image imageScope dimensions shelfLifeDays venueServing servingSchemaVersion minOrderQuantity sellingPrice costPrice unitsPerPack sellingPriceMarkupOverridePct commissionPriceOverride packCommissionPriceOverride platformMarkupOverridePct packPlatformMarkupOverridePct markupPercentage roundUp saleDiscountPercentage salePrice compareAtPrice wholesalePrice currency stock reservedStock availableStock lowStockThreshold reorderLevel reorderQuantity availability sku barcode archivedBarcode packaging weightGrams volumeMl servingsPerUnit discountValue discountType discountStart discountEnd isDefault isOnSale rank totalSold',
     },
     {
       path: 'vendor',
@@ -2096,6 +2101,18 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
         console.log(`📦 Matching size "${sizeData.size}":`, existingSize ? `Found (${existingSize._id})` : 'Not found - will create new');
         
         if (existingSize) {
+          const barcode = typeof sizeData.barcode === 'string'
+            ? sizeData.barcode.trim()
+            : sizeData.barcode;
+          const barcodeChanged = barcode && barcode !== existingSize.barcode;
+          if (barcodeChanged) {
+            await prepareSizeBarcode({
+              tenant: tenantObjectId,
+              barcode,
+              sizeId: existingSize._id,
+            });
+          }
+
           // When the platform cost basis changes (supplier cost or wholesale
           // price), snapshot the last effective platform and pack markup % (from
           // the pre-change size) so the Final Platform Unit Selling Price and
@@ -2153,7 +2170,6 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
             reorderQuantity: sizeData.reorderQuantity ?? existingSize.reorderQuantity,
             // Generate unique SKU if empty to avoid duplicate key errors
             sku: sizeData.sku || existingSize.sku || `${subProduct.sku}-${sizeData.size}`.toUpperCase().replace(/\s+/g, ''),
-            barcode: sizeData.barcode || existingSize.barcode || '',
             markupPercentage: sizeData.markupPercentage ?? existingSize.markupPercentage,
             roundUp: sizeData.roundUp || existingSize.roundUp || '100',
             saleDiscountPercentage: sizeData.saleDiscountPercentage ?? existingSize.saleDiscountPercentage,
@@ -2166,7 +2182,16 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
             rank: sizeData.rank ?? existingSize.rank,
           });
           
-          const updated = await Size.findByIdAndUpdate(existingSize._id, existingSize, { new: true });
+          // Avoid writing back a barcode that another request may have released
+          // since this edit loaded its size rows.
+          const sizeFields = { ...existingSize };
+          if (barcodeChanged) sizeFields.barcode = barcode;
+          else delete sizeFields.barcode;
+          const updated = await Size.findOneAndUpdate(
+            { _id: existingSize._id, subproduct: subProductId, tenant: tenantObjectId },
+            sizeFields,
+            { new: true }
+          );
           updatedSizeIds.push(updated._id);
         } else {
           // Create new size
@@ -2309,6 +2334,13 @@ const deleteSubProduct = async (subProductId, tenantId) => {
   const productId = subProduct.product;
   const wasActive = subProduct.status === 'active';
 
+  // Refuse to delete a SubProduct with any transactional footprint. Orders,
+  // sales, inventory movements, purchases, reviews etc. embed this id (and its
+  // Size ids) in immutable documents; hard-deleting dangles those references.
+  // The operator's tool for this case is ARCHIVE — it keeps every reference
+  // resolvable and is reversible via restore.
+  await assertSubProductDeletable(subProduct, tenantId);
+
   // Refuse to delete a SubProduct that still holds stock. Deleting it would
   // strand its WarehouseStock lines on an id that no longer resolves — populate
   // returns null for the dangling ref, and the quantity becomes invisible
@@ -2345,6 +2377,19 @@ const deleteSubProduct = async (subProductId, tenantId) => {
 
   // Delete associated sizes
   await Size.deleteMany({ subproduct: subProductId });
+
+  // Derived/ephemeral records that point only at this listing: drop them so
+  // no ref dangles. Transactional history was refused above, so nothing with
+  // audit value is removed here.
+  await Promise.all([
+    require('../models/PriceHistory').deleteMany({ subProduct: subProductId }),
+    Shipping.deleteMany({ subProduct: subProductId }),
+    require('../models/IngredientProfile').deleteMany({ subProduct: subProductId, tenant: tenantId }),
+    require('../models/Pricelist').updateMany(
+      { subProduct: subProductId },
+      { $unset: { subProduct: 1 } }
+    ),
+  ]);
 
   // Delete SubProduct
   await SubProduct.findByIdAndDelete(subProductId);
@@ -2527,32 +2572,6 @@ function normalizePackaging(packaging) {
     return { type: packaging.trim() };
   }
   return undefined;
-}
-
-/**
- * Validation helper: Check barcode uniqueness within a tenant
- */
-async function validateBarcodeUniqueness(barcode, tenantId, excludeSizeId = null) {
-  if (!barcode || String(barcode).trim() === '') return;
-
-  const query = {
-    tenant: tenantId,
-    barcode: String(barcode).trim(),
-  };
-  if (excludeSizeId) {
-    query._id = { $ne: excludeSizeId };
-  }
-
-  const existing = await Size.findOne(query)
-    .populate({ path: 'subproduct', select: 'sku' })
-    .lean();
-
-  if (existing) {
-    const subproductSku = existing.subproduct?.sku || 'unknown';
-    throw new ValidationError(
-      `Barcode "${barcode}" is already in use by size on SubProduct "${subproductSku}".`
-    );
-  }
 }
 
 /**
@@ -3374,11 +3393,12 @@ const transferSubProduct = async (subProductId, newTenantId, user) => {
 
   await subProduct.save();
 
-  // Update all associated sizes with new SKUs
-  const sizes = await Size.find({ subProduct: subProductId });
+  // Update all associated sizes with new SKUs (Size schema field is
+  // `subproduct` — the camelCase filter here used to match nothing).
+  const sizes = await Size.find({ subproduct: subProductId });
 
   for (const size of sizes) {
-    const newSizeSKU = await generateSizeSKU(subProductId, size.value, {
+    const newSizeSKU = await generateSizeSKU(subProductId, size.size, {
       model: Size,
     });
 
@@ -3434,13 +3454,14 @@ const archiveSubProduct = async (subProductId, tenantId) => {
 
   await subProduct.save();
 
-  // Update all sizes to archived
+  // Update all sizes to unavailable. NOTE: the Size schema field is
+  // `subproduct` (lowercase) — an earlier camelCase filter here matched
+  // nothing, so sizes kept their live availability after archiving.
   await Size.updateMany(
-    { subProduct: subProductId },
+    { subproduct: subProductId },
     {
       $set: {
-        availability: 'out_of_stock',
-        'metadata.archivedAt': new Date(),
+        availability: 'discontinued',
       },
     }
   );
@@ -3485,8 +3506,9 @@ const restoreSubProduct = async (subProductId, tenantId) => {
 
   await subProduct.save();
 
-  // Recalculate availability based on stock
-  const sizes = await Size.find({ subProduct: subProductId });
+  // Recalculate availability based on stock (Size schema field is
+  // `subproduct` — the camelCase filter here used to match nothing).
+  const sizes = await Size.find({ subproduct: subProductId });
 
   let hasStock = false;
   let hasLowStock = false;
@@ -3500,22 +3522,19 @@ const restoreSubProduct = async (subProductId, tenantId) => {
     }
   }
 
-  // Update availability
-  if (hasStock) {
-    subProduct.availability = hasLowStock ? 'low_stock' : 'available';
-  } else {
-    subProduct.availability = 'out_of_stock';
-  }
+  // Update listing-level stock status (SubProduct has no `availability`
+  // field — the earlier assignment here was silently dropped by Mongoose).
+  subProduct.stockStatus = hasStock
+    ? (hasLowStock ? 'low_stock' : 'in_stock')
+    : 'out_of_stock';
 
   await subProduct.save();
 
   // Update sizes availability
   for (const size of sizes) {
-    if (size.stock > 0) {
-      size.availability = size.stock <= 10 ? 'low_stock' : 'available';
-    } else {
-      size.availability = 'out_of_stock';
-    }
+    size.availability = size.stock > 0
+      ? (size.stock <= 10 ? 'low_stock' : 'available')
+      : 'out_of_stock';
     await size.save();
   }
 
@@ -4921,6 +4940,7 @@ const resolveSystemTenant = async (tenantId, user) => {
  */
 const addSize = async (subProductId, sizeData, tenantId, user = null) => {
   if (Object.keys(sizeData).some(key => key.split('.')[0] === 'sellingPriceMarkupOverridePct' || key.startsWith('$'))) throw new ForbiddenError('Marketplace overrides must be changed through platform review');
+  if (Object.hasOwn(sizeData, 'archivedBarcode')) throw new ForbiddenError('Archived barcode history is read-only');
   if (sizeData.servingSchemaVersion === 2 || sizeData.venueServing || sizeData.size === 'venue_serving') throw new ValidationError('Use the versioned serving command to create venue servings');
   // Resolve system tenant for super admin
   tenantId = await resolveSystemTenant(tenantId, user);
@@ -4941,11 +4961,6 @@ const addSize = async (subProductId, sizeData, tenantId, user = null) => {
   const existingVariants = await Size.find({ subproduct: subProductId, tenant: tenantId, servingSchemaVersion: { $ne: 2 } })
     .select('size colorName optionName').lean();
   await validateRetailVariantsForWrite([...existingVariants, sizeData]);
-
-  // Validate barcode uniqueness within tenant
-  if (sizeData.barcode) {
-    await validateBarcodeUniqueness(sizeData.barcode, tenantId);
-  }
 
   const newSize = {
     ...sizeData,
@@ -4969,6 +4984,9 @@ const addSize = async (subProductId, sizeData, tenantId, user = null) => {
  */
 const updateSize = async (subProductId, sizeId, updateData, tenantId, user = null) => {
   if (Object.keys(updateData).some(key => ['sellingPriceMarkupOverridePct', 'variantColorKey'].includes(key.split('.')[0]) || key.startsWith('$'))) throw new ForbiddenError('Marketplace overrides must be changed through platform review');
+  if (Object.keys(updateData).some(key => ['_id', 'tenant', 'subproduct', 'archivedBarcode'].includes(key.split('.')[0]))) {
+    throw new ForbiddenError('Size ownership and archived barcode history are read-only');
+  }
   // Resolve system tenant for super admin
   tenantId = await resolveSystemTenant(tenantId, user);
 
@@ -4998,11 +5016,6 @@ const updateSize = async (subProductId, sizeId, updateData, tenantId, user = nul
       colorName: updateData.colorName ?? size.colorName,
       optionName: updateData.optionName ?? size.optionName,
     }]);
-  }
-
-  // Validate barcode uniqueness within tenant if changing barcode
-  if (updateData.barcode && updateData.barcode !== size.barcode) {
-    await validateBarcodeUniqueness(updateData.barcode, tenantId, sizeId);
   }
 
   // Normalise packaging string → object before assigning

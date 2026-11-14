@@ -14,7 +14,7 @@ const scoped = scope => asyncHandler(async (req, res, next) => {
   next();
 });
 router.get('/inventory', scoped('inventory:read'), asyncHandler(async (req, res) => {
-  const rows = await SubProduct.find({ tenant: req.integrationTenant })
+  const rows = await SubProduct.find({ tenant: req.integrationTenant, status: { $ne: 'archived' } })
     .select('_id product sku totalStock availableStock reservedStock').limit(100).lean();
   res.json({ success: true, data: rows });
 }));

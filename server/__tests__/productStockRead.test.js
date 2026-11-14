@@ -93,7 +93,7 @@ test('reservation stock reads scope listing and size queries to the same tenant 
   });
   t.mock.method(Tenant, 'find', () => chain([{ _id: 'a', name: 'Tenant A' }]));
   const product = await getProductStock('p', 'a');
-  assert.deepEqual(listingQuery, { product: 'p', tenant: 'a' });
+  assert.deepEqual(listingQuery, { product: 'p', tenant: 'a', status: { $ne: 'archived' } });
   assert.deepEqual(sizeQuery, {
     _id: { $in: ['s'] },
     $or: [{ subproduct: 'sp', tenant: 'a' }],

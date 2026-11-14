@@ -457,6 +457,33 @@ export const subproductService = {
     return readJson(response);
   },
 
+  /**
+   * Server-side deletion eligibility check (services/subproduct-deletion.js).
+   * A listing with order/inventory history can never be hard-deleted — the UI
+   * must offer archive instead.
+   */
+  async getDeletionStatus(id: string, token: string): Promise<{
+    canDelete: boolean;
+    blockers: { collection: string; count: number }[];
+    message: string;
+  }> {
+    const response = await fetch(`${API_URL}/api/subproducts/${id}/deletion`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!response.ok) {
+      const error = await readError(response);
+      throw new Error(error.message || 'Failed to check deletion status');
+    }
+    const body = (await readJson(response)) as {
+      data: {
+        canDelete: boolean;
+        blockers: { collection: string; count: number }[];
+        message: string;
+      };
+    };
+    return body.data;
+  },
+
   async getSubProductsByTenant(tenantId: string, token: string) {
     const response = await fetch(
       `${API_URL}/api/subproducts/tenant/${tenantId}`,

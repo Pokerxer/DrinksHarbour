@@ -130,3 +130,26 @@ it('defaults to 50 rows and requests lightweight client-side catalog records', a
   expect(result.current.pageSize).toBe(50);
   expect(get.mock.calls[0][1]).toMatchObject({ view: 'list', limit: 5000 });
 });
+
+it('requests archive records only while an archive filter is enabled', async () => {
+  const get = vi.spyOn(subproductService, 'getSubProducts').mockImplementation(
+    async (_token, params) => ({
+      success: true,
+      data: {
+        subProducts: params?.includeArchived
+          ? [{ _id: 'active' }, { _id: 'archived', status: 'archived' }]
+          : [{ _id: 'active' }],
+      },
+    })
+  );
+  const { result, rerender } = renderHook(
+    ({ includeArchived }) => useSubProducts('token', { clientSideMode: true, includeArchived }),
+    { initialProps: { includeArchived: false } }
+  );
+  await waitFor(() => expect(result.current.items.map(item => item._id)).toEqual(['active']));
+  expect(get.mock.calls[0][1]).not.toHaveProperty('includeArchived');
+  rerender({ includeArchived: true });
+  await waitFor(() => expect(result.current.items.map(item => item._id)).toEqual(['active', 'archived']));
+  rerender({ includeArchived: false });
+  await waitFor(() => expect(result.current.items.map(item => item._id)).toEqual(['active']));
+});

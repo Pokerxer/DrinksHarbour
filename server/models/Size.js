@@ -476,6 +476,12 @@ const sizeSchema = new Schema(
       type: String,
       trim: true,
     },
+
+    // Previous lookup key retained after it was released for reuse.
+    archivedBarcode: {
+      type: String,
+      select: false,
+    },
     
     gtin: {
       type: String,
@@ -738,6 +744,10 @@ const sizeSchema = new Schema(
       maxlength: 500,
       // Internal notes
     },
+
+    // Operational metadata (transfer trail, cleanup notes). Mixed because
+    // writers across services stamp small keyed entries into it.
+    metadata: { type: Schema.Types.Mixed, default: undefined },
   },
   {
     timestamps: true,
@@ -857,7 +867,16 @@ sizeSchema.pre('validate', function() {
   } else if (this.size === 'venue_serving' || this.venueServing) this.invalidate('venueServing', 'Venue serving requires schema version 2');
 });
 
-sizeSchema.pre('save', function() {
+sizeSchema.pre('save', async function() {
+  if (this.isModified('barcode') && this.barcode) {
+    await require('../services/size-barcode').prepareSizeBarcode({
+      tenant: this.tenant,
+      barcode: this.barcode,
+      sizeId: this._id,
+      session: this.$session(),
+    });
+  }
+
   // Calculate price per unit
   if (this.volumeMl && this.volumeMl > 0 && this.sellingPrice) {
     this.pricePerMl = Number((this.sellingPrice / this.volumeMl).toFixed(2));

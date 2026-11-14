@@ -6,7 +6,9 @@ const { sizeDeletionStatus, assertSizesDeletable, removedSizes } = require('../s
 const modelNames = ['WarehouseStock', 'InventoryMovement', 'WarehouseMovement',
   'StockMovement', 'WarehouseBatch', 'Order', 'SalesOrder', 'CustomerInvoice', 'Sales', 'PurchaseOrder',
   'StockTransfer', 'VendorBill', 'VendorReturn', 'PurchaseAgreement', 'Cart',
-  'ReorderRule', 'VendorPricelist', 'Review', 'KioskScan', 'POSCombo', 'Promotion'];
+  'ReorderRule', 'VendorPricelist', 'Review', 'KioskScan', 'POSCombo', 'Promotion',
+  // 2026-11-13: venue/bottle/recipe history sources added to the guard
+  'OpenedBottle', 'VenueConsumptionEvent', 'VenueEventPackage', 'VenuePackageCommitment', 'RecipeVersion'];
 const size = () => ({ _id: new mongoose.Types.ObjectId(), subproduct: new mongoose.Types.ObjectId(), size: '75cl' });
 
 function references(t, hit) {

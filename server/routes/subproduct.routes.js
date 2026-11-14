@@ -93,6 +93,13 @@ router.patch(
 );
 
 /**
+ * @route   GET /api/subproducts/:id/deletion
+ * @desc    Check whether a SubProduct can be hard-deleted (or must be archived)
+ * @access  Private (Tenant admin or Super admin)
+ */
+router.get('/:id/deletion', tenantAdminOrSuperAdmin, subProductController.getSubProductDeletionStatus);
+
+/**
  * @route   DELETE /api/subproducts/:id
  * @desc    Delete SubProduct
  * @access  Private (Tenant admin or Super admin)

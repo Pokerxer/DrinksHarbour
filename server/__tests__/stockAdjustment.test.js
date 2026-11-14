@@ -268,3 +268,17 @@ test('legacy aggregate and generic adjustment entry points fail closed without w
     /warehouse/i,
   );
 });
+
+test('an archived listing cannot be changed from a stale stock count screen', async () => {
+  const { d, state } = setup();
+  const findOne = d.SubProduct.findOne;
+  d.SubProduct.findOne = (query) => {
+    const cursor = findOne(query);
+    const lean = cursor.lean;
+    cursor.lean = async () => ({ ...(await lean()), status: 'archived' });
+    return cursor;
+  };
+  await assert.rejects(applyStockAdjustment(d, input, 'user', ids.tenant), /archived/i);
+  assert.equal(state.calls, 0);
+  assert.deepEqual(state.movements, []);
+});

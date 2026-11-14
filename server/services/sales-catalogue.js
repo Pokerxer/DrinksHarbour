@@ -76,7 +76,7 @@ function buildCataloguePipeline(tenantId, options = {}) {
   }[sortKey] || { 'product.name': 1, _id: 1 };
 
   const pipeline = [
-    { $match: scope },
+    { $match: { ...scope, status: { $ne: 'archived' } } },
     {
       $project: {
         product: 1,

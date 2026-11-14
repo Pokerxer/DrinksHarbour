@@ -31,3 +31,42 @@ test('counts require original receipt and consistent remaining source quantity',
  await require('../models/WarehouseBatch').updateOne({_id:lot._id},{$set:{'venueValuation.issuedQuantityScaled':2}});
  const drift=await finish('drift');assert.equal(drift.completeness,'incomplete');assert.equal(drift.items[0].valueMinor,null);
 });
+
+test('an archived listing cannot enter a new count or freeze a stale draft', async (t) => {
+  await connectVenueMongo(t, 'archived_count');
+  const scope = await fixture();
+  await require('../services/venue/service-sessions').ensureIndexes();
+  await require('../models/User').updateOne(
+    { _id: scope.actor.userId },
+    { $set: { posPermissions: ['pos:sell', 'venue:inventory_count'] } },
+  );
+  const Count = require('../models/VenueInventoryCount');
+  await Count.createIndexes();
+  const item = await beverage(scope, { currentQuantity: 2, reservedQuantity: 0 });
+  const api = require('../services/venue/inventory-counts');
+  const capture = (countKey) => api.createCount({
+    ...scope,
+    idempotencyKey: countKey,
+    input: {
+      countKey,
+      items: [{
+        subProductId: item.subProductId,
+        sizeId: item.sizeId,
+        quantity: { amountScaled: 2, scale: 1, unit: 'count' },
+      }],
+    },
+  });
+  const draft = await capture('before-archive');
+  await require('../models/SubProduct').updateOne(
+    { _id: item.subProductId, tenant: scope.tenantId },
+    { $set: { status: 'archived' } },
+  );
+  await assert.rejects(capture('after-archive'), { code: 'COUNT_STALE' });
+  await assert.rejects(api.completeCount({
+    ...scope,
+    countId: draft.id,
+    expectedVersion: 0,
+    idempotencyKey: 'stale-review',
+  }), { code: 'COUNT_STALE' });
+  assert.equal((await Count.findById(draft.id).lean()).state, 'draft');
+});

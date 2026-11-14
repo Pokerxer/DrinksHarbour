@@ -72,11 +72,13 @@ async function applyStockAdjustment(d, input, actor, tenant) {
       if (!warehouse || warehouse.isActive === false)
         throw new NotFoundError('Active warehouse not found');
       const sp = await d.SubProduct.findOne({ _id: subProductId, tenant })
-        .select('product sizes costPrice lowStockThreshold')
+        .select('product sizes costPrice lowStockThreshold status')
         .populate('product', 'tracksBatch')
         .session(session)
         .lean();
       if (!sp) throw new NotFoundError('Product not found');
+      if (sp.status === 'archived')
+        throw new ConflictError('This product is archived. Refresh the current stock count.');
       // Size docs store the sub-product under `subproduct` (models/Size.js) —
       // querying `subProduct` matched no document and failed every /inventory
       // adjustments write with NotFoundError.

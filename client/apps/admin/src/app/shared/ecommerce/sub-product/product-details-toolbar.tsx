@@ -42,9 +42,29 @@ export default function ProductDetailsToolbar(
     if (locked.current) return;
     router.push(path);
   }
-  function ask(next: DetailAction) {
+  async function ask(next: DetailAction) {
     if (disabled || locked.current) return;
     setError('');
+    // A listing with order/inventory history can never be hard-deleted — check
+    // first so the dialog offers ARCHIVE instead of a doomed delete.
+    if (next === 'delete' && props.id && props.token) {
+      try {
+        const status = await subproductService.getDeletionStatus(
+          props.id,
+          props.token
+        );
+        if (!status.canDelete) {
+          setAction('archive');
+          setError(
+            status.message ||
+              'This product has history and cannot be deleted. Archive it instead.'
+          );
+          return;
+        }
+      } catch {
+        /* Check unavailable — the server guard still refuses the delete. */
+      }
+    }
     setAction(next);
   }
   async function confirmAction() {

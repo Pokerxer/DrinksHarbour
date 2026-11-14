@@ -1,0 +1,323 @@
+{
+  "deletedAt": "2026-11-13T21:00:30.883Z",
+  "sizes": [
+    {
+      "_id": "6a5a2a7a1d733baa9e914fb0",
+      "subproduct": "6a5a2a7a1d733baa9e914fad",
+      "tenant": "699165839f3308b1baeca8fc",
+      "sku": "SKU-1OV5MA-70CL-L1PI99N",
+      "size": "70cl",
+      "displayName": "70cl",
+      "stock": 4,
+      "doc": {
+        "_id": "6a5a2a7a1d733baa9e914fb0",
+        "subproduct": "6a5a2a7a1d733baa9e914fad",
+        "tenant": "699165839f3308b1baeca8fc",
+        "size": "70cl",
+        "displayName": "70cl",
+        "sizeCategory": "standard",
+        "unitType": "volume_ml",
+        "volumeMl": null,
+        "weightGrams": null,
+        "servingsPerUnit": null,
+        "unitsPerPack": 6,
+        "sellingPrice": 383200,
+        "costPrice": 306520,
+        "platformMarkupOverridePct": null,
+        "packPlatformMarkupOverridePct": null,
+        "compareAtPrice": null,
+        "wholesalePrice": null,
+        "currency": "NGN",
+        "stock": 4,
+        "reservedStock": 0,
+        "availableStock": 4,
+        "lowStockThreshold": 10,
+        "reorderLevel": 0,
+        "reorderQuantity": 50,
+        "availability": "discontinued",
+        "sku": "SKU-1OV5MA-70CL-L1PI99N",
+        "barcode": null,
+        "packaging": {
+          "type": "pack-6"
+        },
+        "discountValue": 0,
+        "discountType": null,
+        "isExpiryRequired": false,
+        "isProductionDateRequired": false,
+        "minOrderQuantity": 1,
+        "maxOrderQuantity": null,
+        "orderIncrement": 1,
+        "requiresAgeVerification": false,
+        "requiresPrescription": false,
+        "totalSold": 0,
+        "totalRevenue": 0,
+        "forecastedDemand": 0,
+        "salesVelocity": 0,
+        "turnoverRate": 0,
+        "viewCount": 0,
+        "addToCartCount": 0,
+        "conversionRate": 0,
+        "popularityScore": 0,
+        "isBestSeller": false,
+        "isPopularSize": false,
+        "rank": 1,
+        "status": "discontinued",
+        "isDefault": false,
+        "isFeatured": false,
+        "isLimitedEdition": false,
+        "isOnSale": false,
+        "bulkPricing": [],
+        "images": [],
+        "createdAt": "2026-07-17T13:13:30.343Z",
+        "updatedAt": "2026-07-17T13:13:31.565Z",
+        "__v": 0,
+        "metadata": {
+          "orphanCleanup": {
+            "at": "2026-11-13T01:44:18.776Z",
+            "reason": "parent SubProduct deleted; marked discontinued to keep movement history resolvable"
+          }
+        },
+        "sp": []
+      },
+      "referencing": {
+        "inventoryMovements": 3,
+        "orders": 0
+      },
+      "movements": [
+        {
+          "_id": "6a5a2a7b1d733baa9e914fc8",
+          "type": "received",
+          "quantity": 4,
+          "subProduct": "6a5a2a7a1d733baa9e914fad",
+          "createdAt": "2026-07-17T13:13:31.477Z"
+        },
+        {
+          "_id": "6a76ee23cd8df783c7454bd8",
+          "type": "written_off",
+          "quantity": 4,
+          "subProduct": "6a5a2a7a1d733baa9e914fad",
+          "createdAt": "2026-08-08T08:51:47.955Z"
+        },
+        {
+          "_id": "6a8c4a47e9d705fa4c5c7473",
+          "type": "received",
+          "quantity": 4,
+          "subProduct": "6a5a2a7a1d733baa9e914fad",
+          "createdAt": "2026-07-17T13:13:31.128Z"
+        }
+      ]
+    },
+    {
+      "_id": "6a5a2c39bedac1691c560957",
+      "subproduct": "6a5a2c39bedac1691c560954",
+      "tenant": "699165839f3308b1baeca8fc",
+      "sku": "SKU-M9NZUW-70CL-UMLWNTD",
+      "size": "70cl",
+      "displayName": "70cl",
+      "stock": 4,
+      "doc": {
+        "_id": "6a5a2c39bedac1691c560957",
+        "subproduct": "6a5a2c39bedac1691c560954",
+        "tenant": "699165839f3308b1baeca8fc",
+        "size": "70cl",
+        "displayName": "70cl",
+        "sizeCategory": "standard",
+        "unitType": "volume_ml",
+        "volumeMl": null,
+        "weightGrams": null,
+        "servingsPerUnit": null,
+        "unitsPerPack": 6,
+        "sellingPrice": 383200,
+        "costPrice": 306520,
+        "platformMarkupOverridePct": null,
+        "packPlatformMarkupOverridePct": null,
+        "compareAtPrice": null,
+        "wholesalePrice": null,
+        "currency": "NGN",
+        "stock": 4,
+        "reservedStock": 0,
+        "availableStock": 4,
+        "lowStockThreshold": 10,
+        "reorderLevel": 0,
+        "reorderQuantity": 50,
+        "availability": "discontinued",
+        "sku": "SKU-M9NZUW-70CL-UMLWNTD",
+        "barcode": null,
+        "packaging": {
+          "type": "pack-6"
+        },
+        "discountValue": 0,
+        "discountType": null,
+        "isExpiryRequired": false,
+        "isProductionDateRequired": false,
+        "minOrderQuantity": 1,
+        "maxOrderQuantity": null,
+        "orderIncrement": 1,
+        "requiresAgeVerification": false,
+        "requiresPrescription": false,
+        "totalSold": 0,
+        "totalRevenue": 0,
+        "forecastedDemand": 0,
+        "salesVelocity": 0,
+        "turnoverRate": 0,
+        "viewCount": 0,
+        "addToCartCount": 0,
+        "conversionRate": 0,
+        "popularityScore": 0,
+        "isBestSeller": false,
+        "isPopularSize": false,
+        "rank": 1,
+        "status": "discontinued",
+        "isDefault": false,
+        "isFeatured": false,
+        "isLimitedEdition": false,
+        "isOnSale": false,
+        "bulkPricing": [],
+        "images": [],
+        "createdAt": "2026-07-17T13:20:57.333Z",
+        "updatedAt": "2026-07-17T13:20:58.583Z",
+        "__v": 0,
+        "metadata": {
+          "orphanCleanup": {
+            "at": "2026-11-13T01:44:19.037Z",
+            "reason": "parent SubProduct deleted; marked discontinued to keep movement history resolvable"
+          }
+        },
+        "sp": []
+      },
+      "referencing": {
+        "inventoryMovements": 3,
+        "orders": 0
+      },
+      "movements": [
+        {
+          "_id": "6a5a2c3abedac1691c560975",
+          "type": "received",
+          "quantity": 4,
+          "subProduct": "6a5a2c39bedac1691c560954",
+          "createdAt": "2026-07-17T13:20:58.493Z"
+        },
+        {
+          "_id": "6a76ee25cd8df783c7454beb",
+          "type": "written_off",
+          "quantity": 4,
+          "subProduct": "6a5a2c39bedac1691c560954",
+          "createdAt": "2026-08-08T08:51:49.402Z"
+        },
+        {
+          "_id": "6a8c4a47e9d705fa4c5c74af",
+          "type": "received",
+          "quantity": 4,
+          "subProduct": "6a5a2c39bedac1691c560954",
+          "createdAt": "2026-07-17T13:20:58.138Z"
+        }
+      ]
+    },
+    {
+      "_id": "6a5a2c70bedac1691c560c60",
+      "subproduct": "6a5a2c70bedac1691c560c5d",
+      "tenant": "699165839f3308b1baeca8fc",
+      "sku": "SKU-G1N0ZL-70CL-VTAC2SV",
+      "size": "70cl",
+      "displayName": "70cl",
+      "stock": 49,
+      "doc": {
+        "_id": "6a5a2c70bedac1691c560c60",
+        "subproduct": "6a5a2c70bedac1691c560c5d",
+        "tenant": "699165839f3308b1baeca8fc",
+        "size": "70cl",
+        "displayName": "70cl",
+        "sizeCategory": "standard",
+        "unitType": "volume_ml",
+        "volumeMl": null,
+        "weightGrams": null,
+        "servingsPerUnit": null,
+        "unitsPerPack": 6,
+        "sellingPrice": 12200,
+        "costPrice": 9755,
+        "platformMarkupOverridePct": null,
+        "packPlatformMarkupOverridePct": null,
+        "compareAtPrice": null,
+        "wholesalePrice": null,
+        "currency": "NGN",
+        "stock": 49,
+        "reservedStock": 0,
+        "availableStock": 49,
+        "lowStockThreshold": 10,
+        "reorderLevel": 0,
+        "reorderQuantity": 50,
+        "availability": "discontinued",
+        "sku": "SKU-G1N0ZL-70CL-VTAC2SV",
+        "barcode": null,
+        "packaging": {
+          "type": "pack-6"
+        },
+        "discountValue": 0,
+        "discountType": null,
+        "isExpiryRequired": false,
+        "isProductionDateRequired": false,
+        "minOrderQuantity": 1,
+        "maxOrderQuantity": null,
+        "orderIncrement": 1,
+        "requiresAgeVerification": false,
+        "requiresPrescription": false,
+        "totalSold": 0,
+        "totalRevenue": 0,
+        "forecastedDemand": 0,
+        "salesVelocity": 0,
+        "turnoverRate": 0,
+        "viewCount": 0,
+        "addToCartCount": 0,
+        "conversionRate": 0,
+        "popularityScore": 0,
+        "isBestSeller": false,
+        "isPopularSize": false,
+        "rank": 1,
+        "status": "discontinued",
+        "isDefault": false,
+        "isFeatured": false,
+        "isLimitedEdition": false,
+        "isOnSale": false,
+        "bulkPricing": [],
+        "images": [],
+        "createdAt": "2026-07-17T13:21:52.646Z",
+        "updatedAt": "2026-07-17T13:21:53.881Z",
+        "__v": 0,
+        "metadata": {
+          "orphanCleanup": {
+            "at": "2026-11-13T01:44:19.185Z",
+            "reason": "parent SubProduct deleted; marked discontinued to keep movement history resolvable"
+          }
+        },
+        "sp": []
+      },
+      "referencing": {
+        "inventoryMovements": 3,
+        "orders": 0
+      },
+      "movements": [
+        {
+          "_id": "6a5a2c71bedac1691c560c78",
+          "type": "received",
+          "quantity": 49,
+          "subProduct": "6a5a2c70bedac1691c560c5d",
+          "createdAt": "2026-07-17T13:21:53.793Z"
+        },
+        {
+          "_id": "6a76ee25cd8df783c7454bef",
+          "type": "written_off",
+          "quantity": 49,
+          "subProduct": "6a5a2c70bedac1691c560c5d",
+          "createdAt": "2026-08-08T08:51:49.684Z"
+        },
+        {
+          "_id": "6a8c4a47e9d705fa4c5c74b0",
+          "type": "received",
+          "quantity": 49,
+          "subProduct": "6a5a2c70bedac1691c560c5d",
+          "createdAt": "2026-07-17T13:21:53.439Z"
+        }
+      ]
+    }
+  ]
+}

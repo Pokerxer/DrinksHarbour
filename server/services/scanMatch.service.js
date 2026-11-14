@@ -449,7 +449,11 @@ async function findSubProductsByBrandIds(brandIds, tenantId, limit = 8) {
       .select('_id').lean()
       .then((docs) => docs.map((d) => d._id));
     if (!productIds.length) return [];
-    return await SubProduct.find({ product: { $in: productIds }, tenant: tenantId })
+    return await SubProduct.find({
+      product: { $in: productIds },
+      tenant: tenantId,
+      status: { $ne: 'archived' },
+    })
       .populate(PRODUCT_POPULATE)
       .populate('sizes')
       .limit(limit)
@@ -473,7 +477,11 @@ async function findSubProductsByType(productType, tenantId, limit = 5) {
       .select('_id').lean()
       .then((docs) => docs.map((d) => d._id));
     if (!productIds.length) return [];
-    return await SubProduct.find({ product: { $in: productIds }, tenant: tenantId })
+    return await SubProduct.find({
+      product: { $in: productIds },
+      tenant: tenantId,
+      status: { $ne: 'archived' },
+    })
       .populate(PRODUCT_POPULATE)
       .populate('sizes')
       .limit(limit)
@@ -564,7 +572,11 @@ async function findSubProductsByCategoryIds({ categoryIds = [], subCategoryIds =
       .then((docs) => docs.map((d) => d._id));
     if (!productIds.length) return [];
 
-    return await SubProduct.find({ product: { $in: productIds }, tenant: tenantId })
+    return await SubProduct.find({
+      product: { $in: productIds },
+      tenant: tenantId,
+      status: { $ne: 'archived' },
+    })
       .populate(PRODUCT_POPULATE)
       .populate('sizes')
       .limit(limit)

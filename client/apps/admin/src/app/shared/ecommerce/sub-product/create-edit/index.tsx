@@ -1110,6 +1110,27 @@ function SubProductForm({
     }
   }
 
+  async function requestDelete() {
+    if (!subProductId || !token) return;
+    // A listing with order/inventory history can never be hard-deleted — check
+    // first so the dialog offers ARCHIVE instead of a doomed delete.
+    setActionLoading('delete');
+    try {
+      const status = await subproductService.getDeletionStatus(subProductId, token);
+      setActionLoading(null);
+      if (!status.canDelete) {
+        setConfirmModal('archive');
+        toast.error(status.message || 'This product has history and cannot be deleted.');
+        return;
+      }
+      setConfirmModal('delete');
+    } catch {
+      // Check unavailable — the server guard still refuses the delete.
+      setActionLoading(null);
+      setConfirmModal('delete');
+    }
+  }
+
   const toolbarBusy = isLoading || isAutoSaving || isFetching || isGenerating || isNavigating || actionLoading !== null;
 
   async function navigateSafely(navigate: () => void) {
@@ -1181,7 +1202,7 @@ function SubProductForm({
             menu={{
               onDuplicate: handleDuplicate,
               onArchive: () => setConfirmModal(isArchived ? 'restore' : 'archive'),
-              onDelete: () => setConfirmModal('delete'),
+              onDelete: requestDelete,
             }}
             stats={{
               stock: Number(watch('subProductData.totalStock')) || 0,

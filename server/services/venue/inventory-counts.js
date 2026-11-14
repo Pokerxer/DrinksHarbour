@@ -1,6 +1,7 @@
 'use strict';
 const Count = require('../../models/VenueInventoryCount');
 const Stock = require('../../models/WarehouseStock');
+const SubProduct = require('../../models/SubProduct');
 const { loadVenueContext } = require('./context');
 const { runVenueOperation, fingerprint } = require('./operations');
 const { fail, requireId } = require('./errors');
@@ -14,6 +15,18 @@ const dto = (row) => ({
   asOf: row.cutoff?.toISOString?.() || row.cutoff,
   missingReasons: row.missingReasons || [],
 });
+
+async function assertCountListings(items, tenantId, mongoSession) {
+  const ids = [...new Set(items.map((item) => String(item.subProductId)))];
+  const available = await SubProduct.countDocuments({
+    _id: { $in: ids },
+    tenant: tenantId,
+    status: { $ne: 'archived' },
+  }).session(mongoSession);
+  if (available !== ids.length)
+    fail('COUNT_STALE', 'A count item is archived or unavailable. Start a new count.');
+}
+
 async function requireIndexes() {
   const indexes = await Count.collection
     .listIndexes()
@@ -108,6 +121,7 @@ async function createCount(args) {
         action: 'inventory.count',
         mongoSession,
       });
+      await assertCountListings(input.items, args.tenantId, mongoSession);
       const items = [];
       for (const item of input.items) {
         const size = await require('../../models/Size')
@@ -196,6 +210,7 @@ async function completeCount(args) {
       if (!row) fail('NOT_FOUND', 'Count not found', 404);
       if (row.state !== 'draft' || row.version !== args.expectedVersion)
         fail('STATE_CHANGED');
+      await assertCountListings(row.items, args.tenantId, mongoSession);
       const reasons = [];
       for (const item of row.items) {
         const opened = await require('../../models/OpenedBottle')

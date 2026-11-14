@@ -137,7 +137,7 @@ describe('quick filters', () => {
     expect(filter(items, { quickFilters: ['featured'] }).length).toBe(1);
     expect(filter(items, { quickFilters: ['best_seller'] }).length).toBe(0);
     expect(filter(items, { quickFilters: ['has_sales'] }).length).toBe(1);
-    expect(filter(items, { quickFilters: ['no_sales'] }).length).toBe(4);
+    expect(filter(items, { quickFilters: ['no_sales'] }).length).toBe(3);
   });
 
   it('needs_reorder falls back to reorder point 5', () => {
@@ -449,4 +449,32 @@ it('filters registered business types and keeps non-beverage goods out of alcoho
   const drink = item({ product: { _id: 'water', name: 'Water', slug: 'water', type: 'water', isAlcoholic: false } });
   expect(filter([goods, drink], { advancedFilters: af({ beverageTypes: ['home_lighting'] }) })).toEqual([goods]);
   expect(filter([goods, drink], { advancedFilters: af({ isAlcoholic: false }) })).toEqual([drink]);
+});
+
+describe('archived listings', () => {
+  it('requires an explicit archive filter, including when searching by name or stock', () => {
+    const active = item({ totalStock: 0 });
+    const archived = item({ status: 'archived', totalStock: 0 });
+    const records = [active, archived];
+
+    expect(filter(records, {})).toEqual([active]);
+    expect(filter(records, { searchQuery: archived.sku })).toEqual([]);
+    expect(filter(records, { statusFilter: 'out_of_stock' })).toEqual([active]);
+    expect(filter(records, { statusFilter: 'archived' })).toEqual([archived]);
+    expect(filter(records, { advancedFilters: af({ status: ['archived'] }) })).toEqual([archived]);
+    expect(filter(records, { includeArchived: true, customMatch: () => true })).toEqual(records);
+  });
+
+  it('excludes archives from operational counts even when archive records are loaded', () => {
+    const records = [
+      item({ totalStock: 2 }),
+      item({ status: 'archived', totalStock: 1, isPublished: false }),
+      item({ status: 'archived', totalStock: 0 }),
+    ];
+
+    expect(computeStats(records)).toEqual({
+      total: 1, active: 1, lowStock: 1, outOfStock: 0,
+      published: 1, draft: 0, archived: 2, discontinued: 0,
+    });
+  });
 });

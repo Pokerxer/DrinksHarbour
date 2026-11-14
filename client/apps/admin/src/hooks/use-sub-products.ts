@@ -30,6 +30,7 @@ export interface UseSubProductsOptions {
   /** When true, fetch all lightweight catalog pages and filter locally.
    *  When false, fetch one page from the server. */
   clientSideMode?: boolean;
+  includeArchived?: boolean;
 }
 
 export interface UseSubProductsResult {
@@ -71,6 +72,7 @@ export function useSubProducts(
     initialPageSize = DEFAULT_SUBPRODUCT_PAGE_SIZE,
     searchDebounceMs = 350,
     clientSideMode = false,
+    includeArchived = false,
   } = options;
 
   const [items, setItems] = useState<any[]>([]);
@@ -140,7 +142,12 @@ export function useSubProducts(
         if (showRefresh) params.refresh = 'true';
 
         const response = clientSideMode
-          ? await loadSubProductCatalog(token, showRefresh, () => callId === fetchRef.current)
+          ? await loadSubProductCatalog(
+              token,
+              showRefresh,
+              () => callId === fetchRef.current,
+              includeArchived
+            )
           : await subproductService.getSubProducts(token, params);
 
         // Stale-call guard: ignore out-of-order responses.
@@ -164,14 +171,16 @@ export function useSubProducts(
           }
           if (data.stats) setStats(data.stats);
           else {
-            // Fallback: compute basic stats from the current page list
+            const current = list.filter((p) => p.status !== 'archived');
             setStats({
-              total: data.pagination?.total ?? list.length,
-              active: list.filter((p) => p.status === 'active').length,
-              lowStock: list.filter(
+              total: clientSideMode
+                ? current.length
+                : data.pagination?.total ?? current.length,
+              active: current.filter((p) => p.status === 'active').length,
+              lowStock: current.filter(
                 (p) => (p.totalStock ?? 0) > 0 && (p.totalStock ?? 0) <= 10
               ).length,
-              outOfStock: list.filter((p) => (p.totalStock ?? 0) === 0).length,
+              outOfStock: current.filter((p) => (p.totalStock ?? 0) === 0).length,
             });
           }
         } else {
@@ -198,6 +207,7 @@ export function useSubProducts(
       debouncedSearch,
       status,
       clientSideMode,
+      includeArchived,
     ]
   );
 
@@ -224,6 +234,7 @@ export function useSubProducts(
     debouncedSearch,
     status,
     clientSideMode,
+    includeArchived,
   ]);
 
   const setPage = useCallback((p: number) => setPageState(Math.max(1, p)), []);

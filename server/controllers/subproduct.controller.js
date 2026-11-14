@@ -39,6 +39,7 @@ const getMySubProducts = asyncHandler(async (req, res) => {
     warehouseId: req.query.warehouseId || null,
     fresh: req.query.refresh === 'true',
     view: req.query.view === 'list' ? 'list' : undefined,
+    includeArchived: req.query.includeArchived === 'true',
   });
 
   res.status(200).json({
@@ -158,6 +159,40 @@ const deleteSubProduct = asyncHandler(async (req, res) => {
   res.status(200).json({
     success: true,
     message: 'Product removed from your catalog successfully',
+  });
+});
+
+/**
+ * @desc    Check whether a SubProduct can be hard-deleted
+ * @route   GET /api/subproducts/:id/deletion
+ * @access  Private (Tenant admin or Super admin)
+ *
+ * Returns { canDelete, blockers, message } so the UI can swap the delete
+ * action for archive when the listing has order/inventory history.
+ */
+const getSubProductDeletionStatus = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const tenantId = getTenantId(req);
+
+  if (!/^[0-9a-fA-F]{24}$/.test(id)) {
+    throw new ValidationError('Invalid SubProduct ID');
+  }
+
+  const subProduct = await SubProduct.findOne({ _id: id, tenant: tenantId });
+  if (!subProduct) {
+    throw new NotFoundError('Product not found in your catalog');
+  }
+
+  const { assessSubProductDeletionHistory } = require('../services/subproduct-deletion');
+  const status = await assessSubProductDeletionHistory(subProduct, tenantId);
+
+  res.status(200).json({
+    success: true,
+    data: {
+      canDelete: status.allowed,
+      blockers: status.blockers,
+      message: status.reason || 'This product can be deleted safely.',
+    },
   });
 });
 
@@ -850,6 +885,7 @@ module.exports = {
   getSubProductStats,
   updateSubProduct,
   deleteSubProduct,
+  getSubProductDeletionStatus,
   adminSetStatus,
   updateStockBulk,
   bulkCreate,

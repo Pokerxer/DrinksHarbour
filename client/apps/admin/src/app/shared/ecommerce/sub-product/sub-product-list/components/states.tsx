@@ -258,11 +258,11 @@ export function EmptyState({
       </motion.div>
 
       <Text className="mb-3 text-2xl font-bold text-gray-700">
-        {isTrueEmpty ? 'No products yet' : 'No sub-products found'}
+        {isTrueEmpty ? 'No current sub-products' : 'No sub-products found'}
       </Text>
       <Text className="mx-auto mb-8 max-w-md text-lg text-gray-500">
         {isTrueEmpty
-          ? 'Your store is empty. Add a product to your catalog to start selling — link an existing one or create a new central product.'
+          ? 'Add a product to your catalog, or use the Archived filter to find archived listings.'
           : "We couldn't find any products matching your criteria."}
       </Text>
 

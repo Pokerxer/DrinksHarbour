@@ -480,13 +480,27 @@ export interface SubProductFilterInput {
   searchChips?: SearchChip[];
   /** Keys such as 'featured', 'low_stock', 'needs_reorder' (SP quick filters). */
   quickFilters?: Iterable<string>;
+  includeArchived?: boolean;
   /**
    * Caller-compiled custom-rule predicate (built around applyRule in
-   * CustomFilterModal). Returning true keeps the item. Include/exclude-archived
-   * semantics belong to the caller's predicate.
+   * CustomFilterModal). Returning true keeps the item.
    */
   customMatch?: ((p: SubProductListItem) => boolean) | null;
   advancedFilters?: FilterConfig;
+}
+
+export function includesArchivedListings({
+  statusFilter,
+  quickFilters,
+  advancedFilters,
+  includeArchived,
+}: SubProductFilterInput): boolean {
+  return Boolean(
+    includeArchived ||
+    statusFilter === 'archived' ||
+    advancedFilters?.status?.includes('archived') ||
+    (quickFilters && Array.from(quickFilters).includes('archived'))
+  );
 }
 
 export function filterSubProducts(
@@ -503,14 +517,18 @@ export function filterSubProducts(
     advancedFilters,
   } = input;
 
-  let result = items;
+  const quickFilterKeys = Array.from(quickFilters ?? []);
+  let result = includesArchivedListings({ ...input, quickFilters: quickFilterKeys })
+    ? items
+    : items.filter((p) => p.status !== 'archived');
 
   // Lifecycle status pills use the saved listing status.
   if (['active', 'archived', 'discontinued'].includes(statusFilter))
     result = result.filter((p) => p.status === statusFilter);
-  else if (statusFilter === 'low_stock') result = result.filter(isLowStock);
+  else if (statusFilter === 'low_stock')
+    result = result.filter((p) => p.status !== 'archived' && isLowStock(p));
   else if (statusFilter === 'out_of_stock')
-    result = result.filter((p) => (p.totalStock ?? 0) === 0);
+    result = result.filter((p) => p.status !== 'archived' && (p.totalStock ?? 0) === 0);
 
   // Visibility dropdown
   if (visibilityFilter === 'published')
@@ -530,11 +548,8 @@ export function filterSubProducts(
   }
 
   // Quick filters (all active keys must pass)
-  if (quickFilters) {
-    const keys = Array.from(quickFilters);
-    if (keys.length > 0)
-      result = result.filter((p) => keys.every((k) => matchesQuickFilter(p, k)));
-  }
+  if (quickFilterKeys.length > 0)
+    result = result.filter((p) => quickFilterKeys.every((k) => matchesQuickFilter(p, k)));
 
   // Custom rule engine (predicate compiled by the caller)
   if (customMatch) result = result.filter(customMatch);
@@ -629,22 +644,23 @@ export function computeStats(
 ): Stats {
   // published/draft aren't returned by server stats, so always derive them
   // from the fetched catalog.
-  const published = all.filter((p) => p.isPublished).length;
-  const draft = all.length - published;
-  const archived = all.filter((p) => p.status === 'archived').length;
-  const discontinued = all.filter((p) => p.status === 'discontinued').length;
+  const current = all.filter((p) => p.status !== 'archived');
+  const published = current.filter((p) => p.isPublished).length;
+  const draft = current.length - published;
+  const archived = all.length - current.length;
+  const discontinued = current.filter((p) => p.status === 'discontinued').length;
 
   if (serverStats && serverStats.total != null) {
     return { ...serverStats, total: serverStats.total!, published, draft, archived, discontinued } as Stats;
   }
 
   return {
-    total: all.length,
-    active: all.filter((p) => p.status === 'active').length,
+    total: current.length,
+    active: current.filter((p) => p.status === 'active').length,
     archived,
     discontinued,
-    lowStock: all.filter(isLowStock).length,
-    outOfStock: all.filter((p) => (p.totalStock ?? 0) === 0).length,
+    lowStock: current.filter(isLowStock).length,
+    outOfStock: current.filter((p) => (p.totalStock ?? 0) === 0).length,
     published,
     draft,
   };

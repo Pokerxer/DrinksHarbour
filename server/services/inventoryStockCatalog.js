@@ -6,7 +6,7 @@ const { computeStockFlags } = require('./warehouseStock.helpers');
 // An explicit tenant-owned product warehouse can label a zero-unit placeholder;
 // a missing ledger alone never authorizes assigning stock to a real location.
 async function includeUnstockedRows(rows, tenantId, settings = {}) {
-  const products = await SubProduct.find({ tenant: tenantId })
+  const products = await SubProduct.find({ tenant: tenantId, status: { $ne: 'archived' } })
     .select('sku product sizes costPrice baseSellingPrice warehouse imagesOverride')
     .populate({
       path: 'product',

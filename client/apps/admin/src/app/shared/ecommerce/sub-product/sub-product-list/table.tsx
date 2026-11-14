@@ -67,6 +67,7 @@ import {
   activeFilterCount,
   computeStats,
   filterSubProducts,
+  includesArchivedListings,
   groupSubProducts,
   sortSubProducts,
   initialFilters,
@@ -100,9 +101,10 @@ async function runWithConcurrency<T>(
   items: T[],
   limit: number,
   task: (item: T) => Promise<void>
-): Promise<{ ok: number; failed: number }> {
+): Promise<{ ok: number; failed: number; errors: string[] }> {
   let ok = 0;
   let failed = 0;
+  const errors: string[] = [];
   let index = 0;
   const workers = Array.from(
     { length: Math.min(limit, items.length) },
@@ -112,14 +114,15 @@ async function runWithConcurrency<T>(
         try {
           await task(item);
           ok++;
-        } catch {
+        } catch (err) {
           failed++;
+          errors.push(err instanceof Error ? err.message : String(err));
         }
       }
     }
   );
   await Promise.all(workers);
-  return { ok, failed };
+  return { ok, failed, errors };
 }
 
 /** Max in-flight requests for bulk operations (keeps API load bounded). */
@@ -216,6 +219,13 @@ export default function SubProductsTable({
   // SP quick-filters, search chips, custom rules, sort and pagination — is
   // applied in-memory. This keeps a single, consistent code path so a filter
   // can never silently no-op the way a half-wired server/client hybrid did.
+  const includeArchived = activeCustomRules?.includeArchived === true;
+  const archiveFilterEnabled = includesArchivedListings({
+    statusFilter,
+    advancedFilters,
+    quickFilters: spActiveFilters,
+    includeArchived,
+  });
   const {
     items: allSubProducts,
     isLoading,
@@ -226,6 +236,7 @@ export default function SubProductsTable({
   } = useSubProducts(session?.user?.token, {
     initialPageSize: pageSize,
     clientSideMode: true,
+    includeArchived: archiveFilterEnabled,
   });
 
   // ── Outside-click handlers ─────────────────────────────────────────────────
@@ -290,9 +301,8 @@ export default function SubProductsTable({
   // rule engine (applyRule) belongs to CustomFilterModal.
   const customMatch = useMemo(() => {
     if (!activeCustomRules || activeCustomRules.rules.length === 0) return null;
-    const { matchMode, includeArchived } = activeCustomRules;
+    const { matchMode } = activeCustomRules;
     return (p: SubProductListItem) => {
-      if (!includeArchived && p.status === 'archived') return false;
       return matchMode === 'any'
         ? activeCustomRules.rules.some((r: CustomRule) => applyRule(p, r))
         : activeCustomRules.rules.every((r: CustomRule) => applyRule(p, r));
@@ -307,6 +317,7 @@ export default function SubProductsTable({
         searchQuery,
         searchChips,
         quickFilters: spActiveFilters,
+        includeArchived,
         customMatch,
         advancedFilters,
       }),
@@ -318,6 +329,7 @@ export default function SubProductsTable({
       searchQuery,
       searchChips,
       spActiveFilters,
+      includeArchived,
       customMatch,
       advancedFilters,
     ]
@@ -461,15 +473,22 @@ export default function SubProductsTable({
           if (!session?.user?.token) return;
           const token = session.user.token;
           const ids = rows.map((r) => r._id || r.id);
-          const { ok, failed } = await runWithConcurrency(
+          const { ok, failed, errors } = await runWithConcurrency(
             ids,
             BULK_CONCURRENCY,
             (id) => subproductService.deleteSubProduct(id, token)
           );
           table.resetRowSelection();
           refresh();
-          if (failed) toast.error(`Deleted ${ok}, failed ${failed}`);
-          else toast.success(`Deleted ${ok} item${ok !== 1 ? 's' : ''}`);
+          if (failed) {
+            // e.g. the server's "has history — archive instead" refusal; the
+            // first message is usually enough to explain every failure.
+            toast.error(
+              `Deleted ${ok}, failed ${failed}${errors[0] ? ` — ${errors[0]}` : ''}`
+            );
+          } else {
+            toast.success(`Deleted ${ok} item${ok !== 1 ? 's' : ''}`);
+          }
         },
         handleArchiveRow: async (row: SubProductListItem) => {
           if (!session?.user?.token) return;
@@ -703,7 +722,7 @@ export default function SubProductsTable({
       <div className="space-y-4 pb-24">
       <BusinessListView business={business} onChange={setBusiness} count={filteredSubProducts.length} />
         <SubProductsHeader
-          total={allSubProducts.length}
+          total={catalogStats.total}
           lowStock={catalogStats.lowStock}
           onNew={goCreateSubProduct}
           onAddProduct={goAddProduct}
@@ -740,43 +759,12 @@ export default function SubProductsTable({
     );
   }
 
-  if (allSubProducts.length === 0 && !isLoading) {
-    return (
-      <div className="space-y-6 pb-24">
-      <BusinessListView business={business} onChange={setBusiness} count={filteredSubProducts.length} />
-        <SubProductsHeader
-          total={catalogStats.total}
-          lowStock={catalogStats.lowStock}
-          onNew={goCreateSubProduct}
-          onAddProduct={goAddProduct}
-        />
-        <StatsHeader
-          stats={stats}
-          activeFilter={statusFilter}
-          onFilterChange={handleStatusFilter}
-          trends={trends}
-          onRetry={refresh}
-          unavailable={Boolean(error)}
-          refreshing={isRefreshing || isFetching}
-          resultCount={filteredSubProducts.length}
-        />
-        <EmptyState
-          variant="empty"
-          hasActiveFilters={activeFilterCountValue > 0}
-          onClear={handleResetFilters}
-          onAddProduct={goAddProduct}
-          onCreateSubProduct={goCreateSubProduct}
-        />
-      </div>
-    );
-  }
-
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-4 pb-24">
       <BusinessListView business={business} onChange={setBusiness} count={filteredSubProducts.length} />
       <SubProductsHeader
-        total={allSubProducts.length}
+        total={catalogStats.total}
         lowStock={catalogStats.lowStock}
         onNew={goCreateSubProduct}
         onAddProduct={goAddProduct}
@@ -969,7 +957,11 @@ export default function SubProductsTable({
             { id: '', label: 'All', count: stats.total },
             { id: 'active', label: 'Active', count: stats.active },
             { id: 'discontinued', label: 'Discontinued', count: stats.discontinued },
-            { id: 'archived', label: 'Archived', count: stats.archived },
+            {
+              id: 'archived',
+              label: 'Archived',
+              count: archiveFilterEnabled ? stats.archived : undefined,
+            },
             { id: 'low_stock', label: 'Low Stock', count: stats.lowStock },
             {
               id: 'out_of_stock',
@@ -980,6 +972,7 @@ export default function SubProductsTable({
             <button
               key={f.id}
               type="button"
+              aria-pressed={statusFilter === f.id}
               onClick={() => handleStatusFilter(f.id)}
               className={cn(
                 'flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition-all',
@@ -989,16 +982,18 @@ export default function SubProductsTable({
               )}
             >
               {f.label}
-              <span
-                className={cn(
-                  'rounded-full px-1.5 py-px text-[10px] font-bold tabular-nums',
-                  statusFilter === f.id
-                    ? 'bg-white/20'
-                    : 'bg-white text-gray-500'
-                )}
-              >
-                {f.count}
-              </span>
+              {f.count != null && (
+                <span
+                  className={cn(
+                    'rounded-full px-1.5 py-px text-[10px] font-bold tabular-nums',
+                    statusFilter === f.id
+                      ? 'bg-white/20'
+                      : 'bg-white text-gray-500'
+                  )}
+                >
+                  {f.count}
+                </span>
+              )}
             </button>
           ))}
 
@@ -1015,7 +1010,7 @@ export default function SubProductsTable({
           )}
 
           <span className="ml-auto text-xs text-gray-400">
-            {filteredSubProducts.length} of {allSubProducts.length} products
+            {filteredSubProducts.length} products shown
             {isFetching && ' · fetching…'}
           </span>
         </div>
@@ -1044,11 +1039,17 @@ export default function SubProductsTable({
       </AnimatePresence>
 
       {/* ── Main content ── */}
-      {filteredSubProducts.length === 0 && allSubProducts.length > 0 ? (
+      {filteredSubProducts.length === 0 ? (
         <EmptyState
-          variant="no-results"
+          variant={
+            archiveFilterEnabled || allSubProducts.length > 0
+              ? 'no-results'
+              : 'empty'
+          }
+          hasActiveFilters={archiveFilterEnabled || activeFilterCountValue > 0}
           onClear={handleResetFilters}
-          onAddProduct={() => router.push(routes.eCommerce.createProduct)}
+          onAddProduct={goAddProduct}
+          onCreateSubProduct={goCreateSubProduct}
         />
       ) : viewMode === 'grid' || viewMode === 'compact' ? (
         /* ═══════════════ Grid View ═══════════════ */

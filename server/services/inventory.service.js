@@ -22,6 +22,7 @@ const SubProduct        = require('../models/SubProduct');
 const Size              = require('../models/Size');
 const InventoryMovement = require('../models/InventoryMovement');
 const Warehouse         = require('../models/Warehouse');
+const WarehouseStock    = require('../models/WarehouseStock');
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -922,6 +923,7 @@ async function getNextPONumber(tenantId) {
 async function getLowStockItems(tenantId) {
   return SubProduct.find({
     tenant: tenantId,
+    status: { $ne: 'archived' },
     $or: [{ stockStatus: 'low_stock' }, { stockStatus: 'out_of_stock' }],
   })
     .populate('product', 'name')
@@ -944,7 +946,8 @@ async function getInventoryValuation(tenantId) {
   const tenant = await Tenant.findById(tId).select('warehouseSettings').lean();
   const rows = await warehouseService.getAllStock(tId, tenant?.warehouseSettings || {});
 
-  if (rows.length > 0) {
+  // An archived-only ledger still exists, so keep its current valuation at zero.
+  if (rows.length > 0 || await WarehouseStock.exists({ tenant: tId })) {
     const products = new Set();
     let totalUnits = 0;
     let totalValue = 0;
@@ -967,7 +970,7 @@ async function getInventoryValuation(tenantId) {
   // Fallback for tenants with no WarehouseStock lines yet: value SubProduct
   // totals directly.
   const [agg] = await SubProduct.aggregate([
-    { $match: { tenant: tId, totalStock: { $gt: 0 } } },
+    { $match: { tenant: tId, status: { $ne: 'archived' }, totalStock: { $gt: 0 } } },
     {
       $group: {
         _id: null,

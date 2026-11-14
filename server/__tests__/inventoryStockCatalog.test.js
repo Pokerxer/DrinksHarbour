@@ -25,7 +25,7 @@ function fixture(t) {
   t.mock.method(WarehouseBatch, 'find', () => cursor([]));
   const seen = [];
   t.mock.method(SubProduct, 'find', (query) => {
-    assert.deepEqual(query, { tenant: 'tenant' });
+    assert.deepEqual(query, { tenant: 'tenant', status: { $ne: 'archived' } });
     const q = cursor([
       {
         _id: 'existing',

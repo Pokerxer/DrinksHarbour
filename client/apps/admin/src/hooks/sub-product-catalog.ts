@@ -47,11 +47,13 @@ const catalogResponseSchema = z.object({
 export async function loadSubProductCatalog(
   token: string,
   fresh: boolean,
-  isCurrent: () => boolean
+  isCurrent: () => boolean,
+  includeArchived = false
 ): Promise<CatalogResponse | null> {
   const params = {
     limit: 5000,
     view: 'list',
+    ...(includeArchived ? { includeArchived: 'true' } : {}),
     ...(fresh ? { refresh: 'true' } : {}),
   };
   const first = catalogResponseSchema.parse(

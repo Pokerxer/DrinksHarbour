@@ -11,6 +11,7 @@ async function getProductStock(productId, tenantId) {
     throw new NotFoundError('Product not found');
   const listings = await SubProduct.find({
     product: productId,
+    status: { $ne: 'archived' },
     ...(tenantId ? { tenant: tenantId } : {}),
   })
     .select(
