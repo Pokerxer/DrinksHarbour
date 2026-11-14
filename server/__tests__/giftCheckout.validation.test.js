@@ -97,3 +97,13 @@ test('normalizeGiftSubdoc clamps the message to the 500-char cap', () => {
   });
   assert.equal(gift.message.length, 500);
 });
+
+test('the recipient phone stays separate from the buyer contact and normalizes for staff', () => {
+  const gift = {
+    isGift: true, from: 'Ada', to: 'Chinedu',
+    requestedDeliveryDate: lagosOffsetDate(2),
+  };
+  assert.equal(normalizeGiftSubdoc({ ...gift, recipientPhone: '+234 803 123 4567' }).recipientPhone, '+2348031234567');
+  assert.equal(normalizeGiftSubdoc(gift).recipientPhone, undefined);
+  assert.equal(normalizeGiftSubdoc({ ...gift, recipientPhone: 'call my office' }).recipientPhone, undefined);
+});

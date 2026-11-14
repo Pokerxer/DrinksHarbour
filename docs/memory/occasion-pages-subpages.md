@@ -96,3 +96,19 @@ agent contract: docs/superpowers/plans/2026-10-27-occasion-pages-plan.md.
 - Later ideas (not requested): explorer card links to subpages; wedding-style
   channel so Planning tools add straight into the request bottle list; tune
   CalcConfig serving assumptions.
+
+## 2026-11-14 party storefront
+
+The existing `/occasions/house-parties` URL is the Abuja parties storefront.
+PartyStorefront renders the hero, shopping categories and priced public
+catalogue examples from the shared occasion offer loader. The hero links to
+the original staff form at `#occasion-planner`; the guest calculator, cocktail
+tool and birthday and cocktail guides remain in the same route family.
+The marketplace homepage and main navigation, including mobile, link to the
+page, as do both city delivery guides.
+
+The existing canonical now has Abuja party search copy, a dedicated social
+image, visible collection links in structured data and a sitemap lastmod.
+Prices apply to the listed size and seller. Staff can confirm quantities and
+delivery for fixed dates through the existing form. After deployment, inspect
+the canonical in Search Console and review queries and party enquiry activity.

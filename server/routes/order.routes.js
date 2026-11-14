@@ -9,7 +9,7 @@ const { protect, optionalProtect, attachTenant, superAdminOnly, tenantAdminOrSup
 const { validate } = require('../middleware/validation.middleware');
 const { body, param, query, validationResult } = require('express-validator');
 const { ACCEPTED_PAYMENT_METHODS } = require('../utils/paymentMethods');
-const { assertRequestedDeliveryDate } = require('../config/giftPackaging');
+const { assertRequestedDeliveryDate, normalizeRecipientPhone } = require('../config/giftPackaging');
 const { ValidationError } = require('../utils/errors');
 
 const createOrderValidation = [
@@ -101,6 +101,10 @@ const createOrderValidation = [
     .trim()
     .isLength({ min: 1, max: 80 })
     .withMessage('Gift "to" must be between 1 and 80 characters'),
+  body('gift.recipientPhone')
+    .optional()
+    .custom((value) => Boolean(normalizeRecipientPhone(value)))
+    .withMessage('Enter a valid phone number for the gift recipient'),
   body('gift.message')
     .if(body('gift').exists())
     .optional({ checkFalsy: true })

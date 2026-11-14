@@ -463,6 +463,7 @@ const orderSchema = new Schema(
         isGift:                { type: Boolean, required: true },
         from:                  { type: String, trim: true, maxlength: 80, default: '' },
         to:                    { type: String, trim: true, maxlength: 80, default: '' },
+        recipientPhone:        { type: String, trim: true, maxlength: 16 },
         message:               { type: String, trim: true, maxlength: 500, default: '' },
         requestedDeliveryDate: { type: String },
         packagingRequested:    { type: Boolean, default: false },

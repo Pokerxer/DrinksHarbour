@@ -230,7 +230,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     // Occasion landing pages plus every registered subpage — subpages relied
     // on SubpageNav alone for discovery before this sitemap expansion.
     ...occasionPages.flatMap(page => [
-      { url: `${BASE_URL}${page.path}`, changeFrequency: 'monthly' as const, priority: 0.6 },
+      { url: `${BASE_URL}${page.path}`, changeFrequency: 'monthly' as const, priority: 0.6, ...((page.slug !== 'corporate') ? { lastModified: '2026-11-14' } : {}) },
       ...getOccasionSubpages(page.slug).map(sub => ({ url: `${BASE_URL}${page.path}/${sub.slug}`, changeFrequency: 'monthly' as const, priority: 0.5 })),
     ]),
     { url: `${BASE_URL}/sustainability`,              changeFrequency: "monthly", priority: 0.4 },

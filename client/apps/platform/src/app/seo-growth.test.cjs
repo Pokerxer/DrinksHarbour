@@ -90,6 +90,7 @@ test('product buying content is the same for shoppers and crawlers, and 0% ABV s
         ...load('../../../packages/commerce-core/src/default-variant.ts'),
         ...load('../../../packages/commerce-core/src/commerce-policy.ts'),
       },
+      'next/headers': { headers: async () => new Headers() },
       './ProductClient': { __esModule: true, default: () => null },
       '@/components/Banner/product-page-banner-data': { fetchProductBannerSeed: async () => ({}) },
       '@/lib/crawlerRequest': { isCrawlerRequest: async () => crawler },
@@ -233,4 +234,88 @@ test('review invitation appears only after delivery and links each purchased bot
   assert.match(html, /Reviews/);
   assert.match(html, /honest feedback/i);
   assert.equal(renderToStaticMarkup(React.createElement(Request, { status: 'delivered', items: [{ product: null }] })), '');
+});
+
+test('Abuja gifting presents crawlable shopping paths and one canonical storefront', async () => {
+  const route = load('app/occasions/[occasion]/page.tsx');
+  const props = { params: Promise.resolve({ occasion: 'gifting' }) };
+  const meta = await route.generateMetadata(props);
+  assert.match(meta.title.absolute, /gift delivery in Abuja/i);
+  assert.match(meta.openGraph.description, /personal message/i);
+  assert.match(String(meta.alternates.canonical), /\/occasions\/gifting$/);
+  const html = renderToStaticMarkup(await route.default(props));
+  assert.match(html, /Send a drinks gift in Abuja/);
+  for (const category of ['champagne', 'whisky', 'non-alcoholic']) {
+    assert(html.includes(`href="/shop?category=${category}"`), category);
+  }
+  assert.match(html, /href="#shop-gifts"/);
+  assert.match(html, /href="#occasion-chat"/);
+  assert.match(html, /href="\/delivery\/abuja"/);
+  const schemas = [...html.matchAll(/<script[^>]*>(.*?)<\/script>/g)].map(match => JSON.parse(match[1]));
+  assert(schemas.some(schema => schema['@type'] === 'CollectionPage'));
+  assert(!schemas.some(schema => schema['@type'] === 'Product'));
+});
+
+test('gift storefront only suggests buyable catalog offers and keeps a verified alcohol-free option', async () => {
+  const original = global.fetch;
+  global.fetch = async url => {
+    const category = new URL(url).searchParams.get('category');
+    const offer = {
+      _id: 'offer-1', tenant: { _id: 'seller-1', name: 'Sample seller' },
+      sizes: [{ _id: 'size-1', size: '75cl', stock: 3, pricing: { websitePrice: 25000 } }],
+    };
+    const product = { _id: category, slug: category, name: category, availableAt: [offer] };
+    const products = category === 'non-alcoholic'
+      ? [{ ...product, abv: 5, slug: 'unsuitable' }, { ...product, abv: 0 }]
+      : [{ ...product, slug: 'packaging', isGiftPackaging: true }, product];
+    return { ok: true, json: async () => ({ data: { products } }) };
+  };
+  try {
+    const offers = await load('components/Occasions/gifting/giftCatalogue.ts').loadGiftOffers();
+    assert.deepEqual(offers.map(offer => offer.product.slug), ['champagne', 'whisky', 'non-alcoholic']);
+    assert(offers.every(offer => offer.price === 25000 && offer.size._id === 'size-1'));
+  } finally {
+    global.fetch = original;
+  }
+});
+
+test('wedding storefront shows shopping and wedding briefs on the established canonical', async () => {
+  const route = load('app/occasions/[occasion]/page.tsx');
+  const props = { params: Promise.resolve({ occasion: 'weddings' }) };
+  const meta = await route.generateMetadata(props);
+  assert.match(meta.title.absolute, /Wedding drinks in Abuja/i);
+  assert.match(String(meta.alternates.canonical), /\/occasions\/weddings$/);
+  assert.match(meta.openGraph.images[0].url, /wedding-drinks-abuja/);
+  const html = renderToStaticMarkup(await route.default(props));
+  assert.match(html, /href="#shop-wedding-drinks"/);
+  assert.match(html, /href="#occasion-planner"/);
+  for (const category of ['champagne', 'wine', 'beer', 'non-alcoholic']) {
+    assert(html.includes(`href="/shop?category=${category}"`), category);
+  }
+  const schemas = [...html.matchAll(/<script[^>]*>(.*?)<\/script>/g)].map(match => JSON.parse(match[1]));
+  assert(schemas.some(schema => schema['@type'] === 'CollectionPage'));
+  assert(schemas.some(schema => schema['@type'] === 'BreadcrumbList'));
+  assert(!schemas.some(schema => schema['@type'] === 'Product'));
+});
+
+test('Abuja party storefront keeps the party canonical and direct shopping and brief links', async () => {
+  const route = load('app/occasions/[occasion]/page.tsx');
+  const props = { params: Promise.resolve({ occasion: 'house-parties' }) };
+  const meta = await route.generateMetadata(props);
+  assert.match(meta.title.absolute, /Party drinks in Abuja/i);
+  assert.match(String(meta.alternates.canonical), /\/occasions\/house-parties$/);
+  assert.match(meta.openGraph.images[0].url, /party-drinks-abuja/);
+  const html = renderToStaticMarkup(await route.default(props));
+  assert.match(html, /href="#shop-party-drinks"/);
+  assert.match(html, /href="#occasion-planner"/);
+  assert.match(html, /id="occasion-planner"/);
+  assert.match(html, /\/occasions\/house-parties\/birthday/);
+  assert.match(html, /\/occasions\/house-parties\/cocktails/);
+  for (const category of ['beer', 'gin', 'wine', 'non-alcoholic']) {
+    assert(html.includes(`href="/shop?category=${category}"`), category);
+  }
+  const schemas = [...html.matchAll(/<script[^>]*>(.*?)<\/script>/g)].map(match => JSON.parse(match[1]));
+  assert(schemas.some(schema => schema['@type'] === 'CollectionPage'));
+  assert(schemas.some(schema => schema['@type'] === 'BreadcrumbList'));
+  assert(!schemas.some(schema => schema['@type'] === 'Product'));
 });

@@ -11,11 +11,13 @@ test('secondary navigation remains reachable in Browse and closes on Escape and 
  m.require=name=>name==='next/link'?{__esModule:true,default:({children,...props})=>React.createElement('a',props,children)}:require(name);
  m._compile(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true}}).outputText,file);
  const root=createRoot(document.getElementById('root'));
- const links=[{name:'Shop',href:'/shop'},{name:'Brands',href:'/brands'},{name:'Sale',href:'/deals',sale:true}];
+ const links=[{name:'Shop',href:'/shop'},{name:'Send a gift',href:'/occasions/gifting',primary:true},{name:'Brands',href:'/brands'},{name:'Sale',href:'/deals',sale:true}];
  try{
   await React.act(async()=>root.render(React.createElement(m.exports.HeaderNav,{navLinks:links,variant:'default',getTextColor:()=>'',pathname:'/brands'})));
   const details=document.querySelector('details');assert.ok(details,'secondary links should use a compact disclosure');
   assert.ok(details.querySelector('a[href="/brands"]'));
+  const giftLink = document.querySelector('a[href="/occasions/gifting"]');
+  assert.ok(giftLink && !details.contains(giftLink), 'gift shopping is visible in primary navigation');
   details.open=true;await React.act(async()=>document.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})));
   assert.equal(details.open,false);
   assert.equal(document.activeElement,details.querySelector('summary'));

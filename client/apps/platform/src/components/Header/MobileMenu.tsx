@@ -48,6 +48,9 @@ const SUPPORT_LINKS = [
 const NAV_ICONS: Record<string, React.ElementType> = {
   "Home":         Icon.PiHouse,
   "Shop":         Icon.PiStorefront,
+  "Send a gift":  Icon.PiGift,
+  "Weddings":     Icon.PiChampagne,
+  "Parties":      Icon.PiConfetti,
   "New Arrivals": Icon.PiSparkle,
   "Sale":         Icon.PiTag,
   "Vendors":      Icon.PiHandshake,

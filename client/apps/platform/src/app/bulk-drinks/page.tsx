@@ -8,7 +8,7 @@ export const metadata = guideMetadata(bulkPage.path, bulkPage.title, bulkPage.de
 
 const steps = [
   { Icon: PiListChecksBold, title: 'List what you need', text: 'Write down the bottles, bottle sizes and quantities you have in mind. Include water and non-alcoholic choices so the plan covers every person in the room.', href: '/shop', label: 'Browse the drinks shop' },
-  { Icon: PiPackageBold, title: 'Compare packs, not just prices', text: 'Open each product and read the pack details before comparing costs. When quantity pricing is available, its purchase panel shows the tiers you can select.', href: '/occasions/weddings', label: 'Occasion planning guidance' },
+  { Icon: PiPackageBold, title: 'Compare packs, not just prices', text: 'Open each product and read the pack details before comparing costs. When quantity pricing is available, its purchase panel shows the tiers you can select.', href: '/occasions/weddings', label: 'Shop wedding drinks' },
   { Icon: PiTruckBold, title: 'Confirm stock and delivery', text: 'Send your list with the delivery city and required date. Our team checks availability across selected sellers and the delivery options with you before you pay.', href: '/shipping-info', label: 'Delivery fees & timings' },
 ];
 

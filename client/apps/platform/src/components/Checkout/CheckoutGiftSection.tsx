@@ -160,6 +160,7 @@ const inputCls = (err?: string) =>
 const FIELD_INPUT_IDS: Array<[keyof GiftDetails, string]> = [
   ['from', 'gift-from'],
   ['to', 'gift-to'],
+  ['recipientPhone', 'gift-phone'],
   ['message', 'gift-message'],
   ['requestedDeliveryDate', 'gift-date'],
 ];
@@ -274,6 +275,17 @@ export default function CheckoutGiftSection({
                   />
                   {errorLine('to')}
                 </div>
+              </div>
+
+              <div>
+                <label htmlFor="gift-phone" className="mb-1.5 block text-xs font-semibold text-gray-600">
+                  Recipient’s phone <span className="text-red-500">*</span>
+                </label>
+                <input id="gift-phone" type="tel" maxLength={32} aria-required="true"
+                  value={details.recipientPhone ?? ''} onChange={e => onChange({ recipientPhone: e.target.value })}
+                  placeholder="0803 123 4567" className={inputCls(errors.recipientPhone)} {...errProps('recipientPhone')} />
+                {errorLine('recipientPhone')}
+                <p className="mt-1 text-xs text-gray-500">For the delivery team to arrange the handover.</p>
               </div>
 
               {/* Message */}

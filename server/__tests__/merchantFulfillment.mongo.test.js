@@ -156,8 +156,13 @@ test(
       paymentStatus: "paid",
       paymentDetails: { method: "stripe", reference: "pi_fulfillment_test" },
       status: "confirmed",
+      gift: {
+        isGift: true, from: "Buyer", to: "Gift recipient",
+        recipientPhone: "+2348031234567", message: "Enjoy your gift",
+      },
       shippingAddress: {
         fullName: "Buyer",
+        phone: "+2348098765432",
         email: "buyer@example.test",
         addressLine1: "Synthetic",
         city: "Abuja",
@@ -212,6 +217,9 @@ test(
     assert.equal(list.status, 200);
     assert.equal(list.body.data.orders.length, 1);
     assert.equal(list.body.data.orders[0].totalMinor, 2000);
+    assert.equal(list.body.data.orders[0].recipient.fullName, "Gift recipient");
+    assert.equal(list.body.data.orders[0].recipient.phone, "+2348031234567");
+    assert(!JSON.stringify(list.body).includes("+2348098765432"));
     assert.equal(
       JSON.stringify(list.body).includes(String(items[1].product)),
       false,

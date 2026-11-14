@@ -34,7 +34,7 @@ async function views(rows) {
   const [parents, products, offers, sizes] = await Promise.all([
     Order.find({ _id: { $in: [...new Set(rows.map((row) => id(row.order)))] } })
       .select(
-        'orderNumber shippingAddress.fullName shippingAddress.phone shippingAddress.addressLine1 shippingAddress.addressLine2 shippingAddress.city shippingAddress.state shippingAddress.country shippingAddress.postalCode shippingAddress.landmark shippingAddress.additionalInstructions items.fulfillmentLineId items.tenant items.warehouse items.product items.subproduct items.size'
+        'orderNumber gift.isGift gift.to gift.recipientPhone shippingAddress.fullName shippingAddress.phone shippingAddress.addressLine1 shippingAddress.addressLine2 shippingAddress.city shippingAddress.state shippingAddress.country shippingAddress.postalCode shippingAddress.landmark shippingAddress.additionalInstructions items.fulfillmentLineId items.tenant items.warehouse items.product items.subproduct items.size'
       )
       .lean(),
     require('../../models/Product')
@@ -66,6 +66,10 @@ async function views(rows) {
     if (!parent) return view;
     view.orderNumber = parent.orderNumber;
     view.recipient = pick(parent.shippingAddress, recipientFields);
+    if (parent.gift?.isGift && parent.gift.recipientPhone) {
+      view.recipient.fullName = parent.gift.to;
+      view.recipient.phone = parent.gift.recipientPhone;
+    }
     const ownLines = new Map(
       (parent.items || [])
         .filter(

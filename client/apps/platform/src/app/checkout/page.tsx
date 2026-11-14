@@ -152,7 +152,7 @@ export default function CheckoutPage() {
 
   // ── Gift checkout (order-level `gift` object) ──────────────────────────────
   const [giftEnabled,    setGiftEnabled]    = useState(false);
-  const [gift,           setGift]           = useState<GiftDetails>({ from: '', to: '', message: '', requestedDeliveryDate: '', packagingRequested: false });
+  const [gift,           setGift]           = useState<GiftDetails>({ from: '', to: '', recipientPhone: '', message: '', requestedDeliveryDate: '', packagingRequested: false });
   const [giftErrors,     setGiftErrors]     = useState<GiftFieldErrors>({});
   const [giftSubmitTick, setGiftSubmitTick] = useState(0);
   const giftPackaging    = useGiftPackaging();
@@ -169,7 +169,14 @@ export default function CheckoutPage() {
   const handleGiftToggle = () => {
     const next = !giftEnabled;
     setGiftEnabled(next);
-    if (next) return;
+    if (next) {
+      if (selectedAddrId) {
+        setSelectedAddrId(null);
+        setAddressDetails(null);
+        setForm(current => ({ ...current, address: '', state: '', lga: '', zipCode: '' }));
+      }
+      return;
+    }
     // Turning the gift off removes the packaging line again.
     if (gift.packagingRequested && giftPackaging.inCart) giftPackaging.setRequested(false);
     setGift(g => ({ ...g, packagingRequested: false }));
@@ -252,7 +259,8 @@ export default function CheckoutPage() {
       return;
     }
     setMounted(true);
-    if (!isMainSite || new URLSearchParams(window.location.search).get('gift') !== '1') loadServerCart();
+    const enteringGiftCheckout = isMainSite && new URLSearchParams(window.location.search).get('gift') === '1';
+    if (!enteringGiftCheckout) loadServerCart();
     // Fetch saved addresses
     fetchWithAuth(`${API_URL}/api/addresses`)
       .then(r => r.json())
@@ -261,7 +269,7 @@ export default function CheckoutPage() {
         setSavedAddresses(raw);
         // Auto-select default shipping address
         const def = raw.find((a: any) => a.isDefaultShipping) || raw[0];
-        if (def) applyAddressToForm(def);
+        if (def && !enteringGiftCheckout) applyAddressToForm(def);
       })
       .catch(() => {});
     fetchWithAuth(`${API_URL}/api/wallet`)
@@ -1028,7 +1036,7 @@ export default function CheckoutPage() {
                 <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
                   <div className="flex items-center gap-2.5 px-5 py-4 border-b border-gray-100 bg-gradient-to-r from-gray-900 to-red-950">
                     <Icon.PiUserBold size={16} className="text-red-400" />
-                    <h2 className="text-sm font-black text-white">Customer Information</h2>
+                    <h2 className="text-sm font-black text-white">{giftEnabled ? 'Your contact details' : 'Customer Information'}</h2>
                   </div>
                   <div className="p-5 grid sm:grid-cols-2 gap-4">
                     <Field label="First Name"    name="firstName" icon={Icon.PiUserBold}     value={form.firstName} error={errors.firstName} onChange={handleChange} />
@@ -1054,11 +1062,11 @@ export default function CheckoutPage() {
                 <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
                   <div className="flex items-center gap-2.5 px-5 py-4 border-b border-gray-100 bg-gradient-to-r from-gray-900 to-red-950">
                     <Icon.PiTruckBold size={16} className="text-red-400" />
-                    <h2 className="text-sm font-black text-white">Delivery Address</h2>
+                    <h2 className="text-sm font-black text-white">{giftEnabled ? 'Recipient’s delivery address' : 'Delivery Address'}</h2>
                   </div>
                   <div className="p-5 space-y-4">
                     {/* Saved address picker */}
-                    {savedAddresses.length > 0 && (
+                    {savedAddresses.length > 0 && !giftEnabled && (
                       <div>
                         <p className="text-xs font-semibold text-gray-600 mb-2 flex items-center gap-1.5">
                           <Icon.PiBookmarkSimpleBold size={12} className="text-red-600" /> Saved Addresses

@@ -9,6 +9,7 @@ export interface OrderGift {
   isGift: true;
   from: string; // trim, 1..80 — validated server-side
   to: string; // trim, 1..80
+  recipientPhone?: string;
   message?: string; // gift note, 0..500; customer content — never interpreted as HTML
   /** 'YYYY-MM-DD', >= tomorrow (Africa/Lagos), <= +180 days */
   requestedDeliveryDate: string;

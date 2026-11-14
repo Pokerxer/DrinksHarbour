@@ -126,7 +126,7 @@ export function GiftOffer({ disabled, onGift }: { disabled: boolean; onGift: () 
         </p>
       </div>
       <button type="button" disabled={disabled} onClick={onGift}
-        className={styles.button}>Add as a gift</button>
+        className={styles.button}>Send as a gift</button>
     </div>
   );
 }

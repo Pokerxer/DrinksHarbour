@@ -9,7 +9,7 @@ function slugifySection(slug: string, index: number) {
 }
 import GuideStructuredData from './GuideStructuredData';
 
-export default function CommercialGuide({ page, body, below, children }: { page: CommercialPage; body?: ReactNode; below?: ReactNode; children?: ReactNode }) {
+export default function CommercialGuide({ page, hero, collectionItems, body, below, children }: { page: CommercialPage; hero?: ReactNode; collectionItems?: { name: string; url: string }[]; body?: ReactNode; below?: ReactNode; children?: ReactNode }) {
   const phone = process.env.NEXT_PUBLIC_WHATSAPP_PHONE || '2347048004020';
   const message = `Hi DrinksHarbour, I would like to enquire about ${page.label.toLowerCase()}. I can share my bottle list, quantities, delivery city, budget and required date. Please confirm stock, pricing and delivery options.`;
   // Subpages sit two levels under /occasions: keep the parent occasion link so
@@ -18,8 +18,8 @@ export default function CommercialGuide({ page, body, below, children }: { page:
   const isOccasionSubpage = Boolean(occasion && page.path !== occasion.path);
   return (
     <article className="bg-[#fcfaf8] text-gray-900">
-      <GuideStructuredData path={page.path} name={page.heading} description={page.description} />
-      <header className="border-b border-rose-100 bg-[#f7efeb]" style={{ backgroundImage: 'repeating-linear-gradient(135deg, rgba(53,16,20,0.05) 0px, rgba(53,16,20,0.05) 1px, transparent 1px, transparent 9px)' }}>
+      <GuideStructuredData path={page.path} name={page.heading} description={page.description} collectionItems={collectionItems} />
+      {hero ?? <header className="border-b border-rose-100 bg-[#f7efeb]" style={{ backgroundImage: 'repeating-linear-gradient(135deg, rgba(53,16,20,0.05) 0px, rgba(53,16,20,0.05) 1px, transparent 1px, transparent 9px)' }}>
         <div className="container mx-auto px-4 py-10 sm:py-14">
           <nav aria-label="Breadcrumb" className="mb-6 text-sm text-gray-600"><Link href="/" className="underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#7c1d1d]">Home</Link> / {page.slug !== 'bulk' && <><Link href="/occasions" className="underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#7c1d1d]">Occasions</Link> / </>}{isOccasionSubpage && <><Link href={occasion!.path} className="underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#7c1d1d]">{occasion!.label}</Link> / </>}{page.label}</nav>
           <p className="flex items-center gap-3 text-xs font-bold uppercase tracking-[0.18em] text-[#7c1d1d]"><span className="h-px w-8 bg-[#d5b26b]" aria-hidden="true" />DrinksHarbour · Plan your order</p>
@@ -27,7 +27,7 @@ export default function CommercialGuide({ page, body, below, children }: { page:
           <p className="mt-5 max-w-3xl text-lg leading-8 text-gray-700">{page.intro}</p>
           <nav aria-label="Browse drinks for this occasion" className="mt-7 flex flex-wrap gap-3">{page.shelves.map(link => <Link key={link.href} href={link.href} className="inline-flex min-h-11 items-center rounded-full border border-rose-200 bg-white px-5 py-3 text-sm font-semibold text-[#7c1d1d] hover:border-[#7c1d1d] hover:bg-[#fff8ec] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#7c1d1d]">{link.label}</Link>)}</nav>
         </div>
-      </header>
+      </header>}
       {children}
       <div className="container mx-auto grid items-start gap-10 px-4 py-10 lg:grid-cols-[1.6fr_1fr]">
         <div className="space-y-8">{body ?? (

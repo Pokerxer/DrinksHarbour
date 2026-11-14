@@ -159,3 +159,11 @@ test('lagosTodayISO shifts at the UTC+1 boundary', () => {
   assert.equal(lagosTodayISO(new Date('2026-12-31T23:30:00Z')), '2027-01-01');
   assert.equal(lagosTodayISO(new Date('2026-06-15T00:00:00Z')), '2026-06-15');
 });
+
+test('recipient phone is checked and normalized for the order payload', () => {
+  const result = validateGiftDetails({ ...validInput(), recipientPhone: '+234 803 123 4567' }, TODAY);
+  assert.equal(result.ok, true);
+  assert.equal(buildGiftPayload(result.value).recipientPhone, '+2348031234567');
+  assert.ok(validateGiftDetails({ ...validInput(), recipientPhone: '' }, TODAY).errors.recipientPhone);
+  assert.ok(validateGiftDetails({ ...validInput(), recipientPhone: 'not a phone' }, TODAY).errors.recipientPhone);
+});

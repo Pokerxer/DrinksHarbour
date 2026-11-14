@@ -10,14 +10,15 @@ import HomeCategoryDrawer from "@/components/Home1/HomeCategoryDrawer";
 import HomeFlashSale from "@/components/Home1/HomeFlashSale";
 import HomeSections from "@/components/Home1/HomeSections";
 import CommerceDiscovery from '@/components/CommerceGuides/CommerceDiscovery';
+import OccasionHomeLinks from '@/components/Occasions/OccasionHomeLinks';
 
 export const metadata = homeMetadata;
 // Tenant resolution reads request headers, so this route remains dynamic.
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
+  const slug = (await headers()).get('x-tenant-slug');
   if (process.env.VENUE_EXPERIENCE_ENABLED === 'true') {
-    const slug = (await headers()).get('x-tenant-slug');
     if (slug) {
       const published = await publicVenueGet<{ items: unknown[] }>(`/${encodeURIComponent(slug)}?limit=1`);
       if (published.items.length) redirect(`/venues/${encodeURIComponent(slug)}`);
@@ -34,6 +35,7 @@ export default async function Home() {
         <Suspense fallback={<div className="w-full aspect-[2/1] max-h-[80vh] bg-[#1A1A2E]" role="status" aria-label="Loading promotions" />}>
           <HomeHero />
         </Suspense>
+        {!slug && <OccasionHomeLinks />}
         <div className="sr-only"><MarketplaceIntro /></div>
         <Suspense fallback={
           <section className="bg-gradient-to-r from-red-500 via-orange-500 to-red-500 py-5 text-white" role="status" aria-label="Loading sale offers">

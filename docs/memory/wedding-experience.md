@@ -24,3 +24,20 @@ Resume: docs/superpowers/specs/RESUME-wedding-experience.md.
 
 Bottle-list continuation adds catalogue/custom entries, quantities, sizes/units,
 download and validated enquiry transfer. See docs/memory/wedding-bottle-list.md.
+
+## 2026-11-14 wedding storefront
+
+The canonical `/occasions/weddings` leads with Abuja wedding drinks, a reception
+hero, category shopping and a separate brief action. The marketplace home,
+desktop and mobile navigation, city delivery guides and bulk drinks link to it.
+The original brief, bottle list, quantities, delivery guidance and both
+subpages remain accessible. The public catalogue supplies up to three real
+single-unit examples and their prices. Categories and planning remain usable
+when catalogue requests fail. Bulk quantities and the venue handover window
+are confirmed through the existing staff enquiry workflow.
+
+Search metadata and social imagery match the page. The collection and
+breadcrumb data describe the visible page and its shopping links. The existing
+sitemap route carries the update date. After deployment, verify the canonical
+in Search Console and measure wedding enquiries alongside relevant search
+clicks. Production delivery and indexing require post-deployment verification.

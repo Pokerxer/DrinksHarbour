@@ -14,7 +14,7 @@ function load(relative) {
     m.require = request => {
       if (request === '@/context/AuthContext') return { useAuth: () => ({ isAuthenticated: true, isLoading: false, user: { role: 'customer' } }) };
       if (request === 'next/link') return { __esModule: true, default: ({ children, ...props }) => React.createElement('a', props, children) };
-      if (request === 'next/image') return { __esModule: true, default: props => React.createElement('img', props) };
+      if (request === 'next/image') return { __esModule: true, default: ({ fill, preload, ...props }) => React.createElement('img', props) };
       if (request === '@/app/fonts') return { fraunces: { className: 'test-display-font' } };
       if (request.startsWith('@/') || request.startsWith('.')) {
         const base = request.startsWith('@/') ? path.join(sourceRoot, request.slice(2)) : path.resolve(path.dirname(filename), request);

@@ -2,7 +2,7 @@
 import React, { useEffect, useRef } from "react";
 import Link from "next/link";
 import { PiCaretDown, PiLightningFill } from "react-icons/pi";
-interface NavLink { name: string; href: string; sale?: boolean }
+interface NavLink { name: string; href: string; sale?: boolean; primary?: boolean }
 interface HeaderNavProps {
   navLinks: NavLink[];
   variant: "default" | "transparent" | "dark";
@@ -13,8 +13,9 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({ navLinks, variant, pathnam
   const disclosure = useRef<HTMLDetailsElement>(null);
   const summary = useRef<HTMLElement>(null);
   const isDark = variant === "dark";
-  const primary = navLinks.filter(link => link.name === "Shop" || link.sale);
-  const secondary = navLinks.filter(link => link.name !== "Shop" && !link.sale);
+  const isPrimary = (link: NavLink) => link.name === "Shop" || link.sale || link.primary;
+  const primary = navLinks.filter(isPrimary);
+  const secondary = navLinks.filter(link => !isPrimary(link));
   const active = (link: NavLink) => pathname === link.href ||
     (!link.href.includes("?") && link.href !== "/" && pathname?.startsWith(link.href + "/"));
   useEffect(() => {

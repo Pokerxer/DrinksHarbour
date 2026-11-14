@@ -29,6 +29,7 @@ interface OrderItem {
 }
 
 interface Order {
+  gift?: { isGift?: boolean };
   _id: string;
   orderNumber: string;
   status: string;
@@ -213,7 +214,7 @@ function OrderConfirmationContent() {
     const purchase = buildPaidPurchaseEvent(order);
     if (!purchase) return;
     purchaseFired.current = order.orderNumber;
-    purchaseEvent(purchase);
+    purchaseEvent({ ...purchase, is_gift: order.gift?.isGift === true });
 
     firePurchase({
       value: order.totalAmount,

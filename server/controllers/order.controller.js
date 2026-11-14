@@ -543,12 +543,13 @@ exports.createOrder = asyncHandler(async (req, res) => {
           const tenant = await Tenant.findById(tenantId);
           if (!tenant) continue;
 
-          // orderAccess.project whitelists fields for the tenant scope and
-          // strips order.gift; the gift block is customer content (not
-          // tenant-sensitive), so it is re-attached here so staff alerts can
-          // surface it (see the gift section in email/whatsapp services).
           const tenantView = orderAccess.project(order, { _id: tenant._id, tenant: tenant._id, role: 'tenant_admin' });
-          if (order.gift) tenantView.gift = order.gift;
+          // Staff alerts need packing instructions. Delivery contact stays on the
+          // platform order and the authorised merchant handover view.
+          if (order.gift) {
+            const { isGift, from, to, message, requestedDeliveryDate, packagingRequested } = order.gift;
+            tenantView.gift = { isGift, from, to, message, requestedDeliveryDate, packagingRequested };
+          }
 
           // Realtime — push this tenant's slice of the order into their POS
           // order room (terminals + KDS auto-join at connection). Same

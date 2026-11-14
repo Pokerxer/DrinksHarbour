@@ -56,6 +56,7 @@ function project(order, actor) {
     }
   }
   view.shippingAddress = pick(raw.shippingAddress, ['fullName', 'email', 'phone', 'addressLine1', 'addressLine2', 'city', 'state', 'country', 'postalCode', 'landmark', 'additionalInstructions']);
+  if (scope === 'customer' && raw.gift?.isGift) view.gift = { isGift: true };
   if (['customer', 'guest'].includes(scope)) view.shippingInfo = pick(raw.shippingInfo, ['zone', 'zoneLabel', 'estimatedDelivery']);
   if (scope === 'tenant') {
     // Marketplace customers belong to the PLATFORM. A tenant fulfilling

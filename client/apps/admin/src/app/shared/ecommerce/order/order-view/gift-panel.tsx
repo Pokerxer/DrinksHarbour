@@ -16,6 +16,7 @@ export default function GiftPanel({ order }: { order: Order }) {
       <div className="space-y-2.5">
         <Field label="From" value={gift.from} />
         <Field label="To" value={gift.to} />
+        {gift.recipientPhone && <Field label="Recipient phone" value={gift.recipientPhone} />}
         {gift.message && (
           <Field
             label="Message"

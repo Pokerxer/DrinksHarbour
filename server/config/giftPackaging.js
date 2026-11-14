@@ -58,6 +58,13 @@ const assertRequestedDeliveryDate = (value) => {
  * Returns undefined when anything essential is missing, so the controller
  * persists gift data only when it is complete and well-formed.
  */
+const normalizeRecipientPhone = (value) => {
+  const phone = typeof value === 'string' && value.length <= 32
+    ? value.trim().replace(/[\s().-]/g, '')
+    : '';
+  return /^\+?[0-9]{10,15}$/.test(phone) ? phone : undefined;
+};
+
 const normalizeGiftSubdoc = (gift) => {
   if (!gift || typeof gift !== 'object' || gift.isGift !== true) return undefined;
   const from = typeof gift.from === 'string' ? gift.from.trim() : '';
@@ -67,10 +74,12 @@ const normalizeGiftSubdoc = (gift) => {
       ? gift.requestedDeliveryDate
       : '';
   if (!from || !to || !requestedDeliveryDate) return undefined;
+  const recipientPhone = normalizeRecipientPhone(gift.recipientPhone);
   return {
     isGift: true,
     from,
     to,
+    ...(recipientPhone ? { recipientPhone } : {}),
     message: typeof gift.message === 'string' ? gift.message.slice(0, 500) : '',
     requestedDeliveryDate,
     packagingRequested: gift.packagingRequested === true,
@@ -140,6 +149,7 @@ module.exports = {
   getGiftPackagingSku,
   clearGiftPackagingCache,
   normalizeGiftSubdoc,
+  normalizeRecipientPhone,
   assertRequestedDeliveryDate,
   lagosDayStart,
   GIFT_DATE_MAX_DAYS,

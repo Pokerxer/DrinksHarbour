@@ -20,6 +20,7 @@
 export interface GiftDetails {
   from: string;
   to: string;
+  recipientPhone?: string;
   message: string;
   /** 'YYYY-MM-DD'. At least tomorrow, at most +180 days, Africa/Lagos. */
   requestedDeliveryDate: string;
@@ -98,6 +99,7 @@ export function validateGiftDetails(
 
   const from = (input?.from ?? '').trim();
   const to = (input?.to ?? '').trim();
+  const recipientPhone = input?.recipientPhone?.trim().replace(/[\s().-]/g, '') ?? '';
   const message = input?.message ?? '';
   const date = (input?.requestedDeliveryDate ?? '').trim();
 
@@ -106,6 +108,10 @@ export function validateGiftDetails(
 
   if (!to) errors.to = 'Required';
   else if (to.length > GIFT_TO_MAX) errors.to = `Max ${GIFT_TO_MAX} characters`;
+
+  if (input?.recipientPhone !== undefined && !/^\+?[0-9]{10,15}$/.test(recipientPhone)) {
+    errors.recipientPhone = 'Enter a valid phone number for the recipient';
+  }
 
   if (message.length > GIFT_MESSAGE_MAX) {
     errors.message = `Max ${GIFT_MESSAGE_MAX} characters — trim the note a little`;
@@ -129,6 +135,7 @@ export function validateGiftDetails(
     value: {
       from,
       to,
+      ...(recipientPhone ? { recipientPhone } : {}),
       message,
       requestedDeliveryDate: date,
       packagingRequested: input?.packagingRequested === true,
@@ -142,6 +149,7 @@ export function buildGiftPayload(value: GiftDetails): GiftPayload {
     isGift: true,
     from: value.from,
     to: value.to,
+    ...(value.recipientPhone ? { recipientPhone: value.recipientPhone } : {}),
     message: value.message,
     requestedDeliveryDate: value.requestedDeliveryDate,
     packagingRequested: value.packagingRequested === true,

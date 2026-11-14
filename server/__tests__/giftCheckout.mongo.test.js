@@ -35,17 +35,20 @@ test('gift checkout: validation edges, packaging cross-check and persistence', {
   const packagingSp = oid();
   const regularProduct = oid();
   const regularSp = oid();
+  const warehouse = oid();
+  const regularSize = oid();
+  const packagingSize = oid();
 
   await require('../models/Tenant').collection.insertOne({
     _id: tenant, name: 'Gift fixture merchant', status: 'approved', isActive: true,
-    subscriptionStatus: 'active', revenueModel: 'markup', markupPercentage: 25, commissionPercentage: 12,
+    subscriptionStatus: 'active', revenueModel: 'commission', markupPercentage: 25, commissionPercentage: 12,
   });
   await require('../models/Product').collection.insertOne({
-    _id: packagingProduct, name: 'Gift packaging', slug: 'gift-packaging-fixture', type: 'accessory',
+    _id: packagingProduct, name: 'Gift packaging', slug: 'gift-packaging-fixture', type: 'accessory', tracksBatch: false,
     isAlcoholic: false, isGiftPackaging: true, status: 'pending', isPublished: false, platformMarkup: 15,
   });
   await require('../models/Product').collection.insertOne({
-    _id: regularProduct, name: 'Fixture bottle', type: 'beer', isAlcoholic: false,
+    _id: regularProduct, name: 'Fixture bottle', type: 'beer', tracksBatch: false, isAlcoholic: false,
     status: 'approved', isPublished: true, platformMarkup: 15,
   });
   const SP = require('../models/SubProduct');
@@ -62,6 +65,17 @@ test('gift checkout: validation edges, packaging cross-check and persistence', {
     availableStock: 50, totalStock: 50, reservedStock: 0,
   });
 
+  await require('../models/Warehouse').create({
+    _id: warehouse, tenant, name: 'Gift location', code: 'GIFT', isActive: true, isDefault: true,
+  });
+  for (const [subproduct, size, sellingPrice] of [[regularSp, regularSize, 1000], [packagingSp, packagingSize, 5000]]) {
+    await require('../models/Size').collection.insertOne({
+      _id: size, tenant, subproduct, size: 'Single', sellingPrice, stock: 100, availableStock: 100,
+    });
+    await require('../models/WarehouseStock').create({
+      tenant, warehouse, subProduct: subproduct, size, currentQuantity: 100, reservedQuantity: 0,
+    });
+  }
   const app = require('express')();
   app.use(require('express').json());
   app.use('/orders', require('../routes/order.routes'));
@@ -73,7 +87,7 @@ test('gift checkout: validation edges, packaging cross-check and persistence', {
   const shipping = { address: '1 Harbour Way', city: 'Abuja', state: 'FCT', zipCode: '900001', country: 'Nigeria' };
   const basePayload = {
     customer, shipping, paymentMethod: 'cash_on_delivery',
-    items: [{ productId: String(regularProduct), subProductId: String(regularSp), quantity: 1, price: 600 }],
+    items: [{ productId: String(regularProduct), subProductId: String(regularSp), sizeId: String(regularSize), quantity: 1, price: 600 }],
     subtotal: 600, shippingFee: 3000, total: 3600,
   };
   const call = async (body, key = `gift-key-${Math.random().toString(36).slice(2)}`) => {
@@ -88,7 +102,7 @@ test('gift checkout: validation edges, packaging cross-check and persistence', {
     ...basePayload, ...(items ? { items } : {}), gift,
     subtotal: 5600, total: 8600,
   });
-  const packagingItem = { productId: String(packagingProduct), subProductId: String(packagingSp), quantity: 1, price: 5000 };
+  const packagingItem = { productId: String(packagingProduct), subProductId: String(packagingSp), sizeId: String(packagingSize), quantity: 1, price: 5000 };
 
   // ── SKU must be resolvable via the cache for most cases; case A first proves
   // the unconfigured-SKU rejection through a bogus tenant pin + cleared cache.
@@ -109,6 +123,7 @@ test('gift checkout: validation edges, packaging cross-check and persistence', {
     ['today is not allowed', { isGift: true, from: 'Ada', to: 'Chinedu', requestedDeliveryDate: lagosDate(0), packagingRequested: false }],
     ['date beyond 180 days', { isGift: true, from: 'Ada', to: 'Chinedu', requestedDeliveryDate: lagosDate(181), packagingRequested: false }],
     ['impossible calendar date', { isGift: true, from: 'Ada', to: 'Chinedu', requestedDeliveryDate: '2026-02-31', packagingRequested: false }],
+    ['invalid recipient phone', { isGift: true, from: 'Ada', to: 'Chinedu', recipientPhone: 'call the office', requestedDeliveryDate: lagosDate(3), packagingRequested: false }],
     ['missing to', { isGift: true, from: 'Ada', to: '', requestedDeliveryDate: lagosDate(3), packagingRequested: false }],
     ['from over 80 chars', { isGift: true, from: 'x'.repeat(81), to: 'Chinedu', requestedDeliveryDate: lagosDate(3), packagingRequested: false }],
     ['message over 500 chars', { isGift: true, from: 'Ada', to: 'Chinedu', message: 'y'.repeat(501), requestedDeliveryDate: lagosDate(3), packagingRequested: false }],
@@ -127,7 +142,7 @@ test('gift checkout: validation edges, packaging cross-check and persistence', {
 
   // ── packagingRequested WITH the SKU cart line → 201, gift persisted ───────
   const withLine = await call(giftPayload(
-    { isGift: true, from: '  Ada  ', to: 'Chinedu', message: 'Happy birthday!', requestedDeliveryDate: lagosDate(3), packagingRequested: true },
+    { isGift: true, from: '  Ada  ', to: 'Chinedu', recipientPhone: '+234 803 123 4567', message: 'Happy birthday!', requestedDeliveryDate: lagosDate(3), packagingRequested: true },
     [...basePayload.items, packagingItem],
   ));
   assert.equal(withLine.status, 201, JSON.stringify(withLine.body));
@@ -136,10 +151,15 @@ test('gift checkout: validation edges, packaging cross-check and persistence', {
     isGift: true,
     from: 'Ada',
     to: 'Chinedu',
+    recipientPhone: '+2348031234567',
     message: 'Happy birthday!',
     requestedDeliveryDate: lagosDate(3),
     packagingRequested: true,
   });
+
+  assert.equal(saved.shippingAddress.phone, customer.phone);
+  const updates = await require('../utils/orderUtils').resolveOrderRecipient(saved);
+  assert.equal(updates.phone, customer.phone);
 
   // ── Gift WITHOUT packaging → 201, packagingRequested false, no SKU needed ──
   const noPackaging = await call(giftPayload({ isGift: true, from: 'Ada', to: 'Chinedu', requestedDeliveryDate: lagosDate(3), packagingRequested: false }));

@@ -666,7 +666,7 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
                 <PremiumOffer product={productData} related={relatedProducts} sellerId={selectedVendor.tenant._id}
                   unitPrice={displayPrice} volume={selectedVolumeMl} />
               )}
-              {marketplaceOffers && selectedVendor && inStock && /wine|champagne|spirit|whisk|cognac|gin|rum|tequila|vodka/i.test(productData.type ?? '') && (
+              {marketplaceOffers && selectedVendor && inStock && !productData.isGiftPackaging && (
                 <GiftOffer disabled={purchaseBlocked || isAddingToCart} onGift={() => void handleAddToCart(true)} />
               )}
 

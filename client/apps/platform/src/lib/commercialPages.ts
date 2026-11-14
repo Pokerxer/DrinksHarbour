@@ -33,10 +33,10 @@ export const bulkPage: CommercialPage = {
 export const occasionPages: CommercialPage[] = [
   {
     slug: 'weddings', path: '/occasions/weddings', label: 'Weddings',
-    title: 'Wedding Drinks & Bulk Wine in Nigeria',
-    heading: 'Wedding drinks and bulk wine in Nigeria',
-    description: 'Plan wedding drinks in Nigeria. Choose wine, champagne and non-alcoholic options, compare bottle quantities, and enquire about stock and event delivery.',
-    intro: 'Build a wedding drinks list around your guests, menu and budget. Explore wine, champagne and non-alcoholic options, then confirm the bottles, quantities and delivery arrangements for your venue.',
+    title: 'Wedding Drinks in Abuja | Reception & Bulk Orders',
+    heading: 'Wedding drinks in Abuja',
+    description: 'Shop champagne, wine, beer and non-alcoholic drinks for your Abuja wedding. Share your guest count and venue for help with bulk quantities and delivery.',
+    intro: 'Shop drinks for the toast, the reception and the traditional engagement. Share your guest list size, budget and venue for help with quantities, stock and delivery.',
     sections: [
       { heading: 'Separate the toast from the meal', text: 'A toast and a full reception need different drinks plans. Choose sparkling wine or champagne for the toast, then match red, white or rosé wine to your menu and guest preferences. Compare the exact labels and bottle sizes.' },
       { heading: 'Include every guest', text: 'Set aside a separate budget for water, soft drinks and non-alcoholic choices. Agree serving arrangements with your venue or caterer. Guest numbers alone do not determine how much alcohol to buy; duration, preferences and the service format matter.' },
@@ -61,10 +61,10 @@ export const occasionPages: CommercialPage[] = [
   },
   {
     slug: 'house-parties', path: '/occasions/house-parties', label: 'House parties',
-    title: 'House Party Drinks in Nigeria',
-    heading: 'Plan your house party drinks in Nigeria',
-    description: 'Shop drinks for house parties in Nigeria. Plan beer, wine, cocktail bottles and non-alcoholic choices, compare seller prices, and check delivery before ordering.',
-    intro: 'Make a drinks list that fits your gathering, from a few bottles for dinner to a larger party order. Compare sizes and seller prices, include non-alcoholic choices, and check delivery before your guests arrive.',
+    title: 'Party Drinks in Abuja | Birthdays & House Parties',
+    heading: 'Party drinks in Abuja',
+    description: 'Shop beer, wine, cocktail spirits and soft drinks for Abuja house parties and birthdays. Compare prices or send a drinks brief for help with quantities and delivery.',
+    intro: 'Stock the cooler, set up a cocktail table or shop for a birthday toast. Buy drinks for your house party or share your guest count, budget and date with our team.',
     sections: [
       { heading: 'Choose a simple serving plan', text: 'A small wine and beer selection is easier to organise than a large cocktail menu. If you are mixing drinks, choose the recipes first so you can budget for the required spirits and mixers without buying unrelated bottles.' },
       { heading: 'Check what the order includes', text: 'Product prices cover the selected drinks and quantities. Ice, cups, chilling, bartending and equipment are not included unless specifically agreed. Plan those separately and follow each bottle’s storage guidance.' },
@@ -75,10 +75,10 @@ export const occasionPages: CommercialPage[] = [
   },
   {
     slug: 'gifting', path: '/occasions/gifting', label: 'Gifting',
-    title: 'Wine & Spirits Gifts in Nigeria',
-    heading: 'Choose a drinks gift in Nigeria',
-    description: 'Choose wine, champagne or whisky gifts in Nigeria. Compare available bottles, confirm packaging and recipient details, and check delivery before payment.',
-    intro: 'Choose a bottle around the recipient’s taste, occasion and budget. Compare wine, champagne and whisky, then confirm the packaging and delivery details before placing your gift order.',
+    title: 'Drinks Gift Delivery in Abuja',
+    heading: 'Send a drinks gift in Abuja',
+    description: 'Shop wine, champagne, whisky and non-alcoholic gifts in Abuja. Add a personal message and check gift packaging and delivery options before you pay.',
+    intro: 'Choose something they’ll love, add a personal message and send it to their door. Shop wine, champagne, whisky and non-alcoholic drinks for birthdays, thank-yous and celebrations.',
     sections: [
       { heading: 'Match the recipient’s preferences', text: 'Start with the styles they enjoy. Check the bottle’s origin, tasting notes and ABV where supplied. If you are unsure about alcohol preferences, consider a non-alcoholic option rather than assuming a spirit is appropriate.' },
       { heading: 'Check packaging explicitly', text: 'A bottle image does not guarantee a gift box, hamper or wrapping. Ask support what packaging is included with the exact offer and whether a message can be added. Personalisation and special presentation depend on confirmation.' },

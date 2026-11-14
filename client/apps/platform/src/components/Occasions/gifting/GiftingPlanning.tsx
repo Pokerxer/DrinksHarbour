@@ -1,11 +1,8 @@
-import type { CommercialPage } from '@/lib/commercialPages';
 import Link from 'next/link';
 import GiftChecklist from './GiftChecklist';
 import GiftFinder from './GiftFinder';
 import GiftingToolkit from './GiftingToolkit';
 import OccasionShelf from '../planning/OccasionShelf';
-
-type Props = { page: CommercialPage };
 
 const LINK_STYLE = 'font-semibold text-[#7c1d1d] underline underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#7c1d1d]';
 
@@ -27,7 +24,7 @@ function Bullet({ title, children }: { title: string; children: React.ReactNode 
  * here are deterministic: no AI, no prices, quantities and categories only.
  */
 /** Story for the CommercialGuide body slot: gift thinking plus its tools. */
-export function GiftingPlanningBody({ page }: Props) {
+export function GiftingPlanningBody() {
   return <div className="space-y-8">
     <PlanningSection heading="Match the gift to the recipient">
       <p>
@@ -38,11 +35,11 @@ export function GiftingPlanningBody({ page }: Props) {
 
     <PlanningSection heading="Check the packaging explicitly">
       <p>
-        The pictures on {page.label.toLowerCase()} pages show bottles, not presentation. A product image does not imply a gift box, hamper basket, ribbon, wrapping or message card — none of those are included by default. Ask our team what the packaging includes for the exact bottles you select, whether a card can carry your wording, and how any special presentation is arranged. Confirm it in writing before you pay. For a multi-bottle gift delivery, the <Link href="/occasions/gifting/hampers" className={LINK_STYLE}>hamper guide</Link> walks through packaging, substitutions and handover care.
+        Gift packaging is an optional add-on when available. Check the price in your cart. For a particular box, ribbon or hamper, confirm the presentation and any substitutions with the team before paying. For a multi-bottle gift delivery, the <Link href="/occasions/gifting/hampers" className={LINK_STYLE}>hamper guide</Link> walks through packaging, substitutions and handover care.
       </p>
       <ul className="list-disc space-y-2 pl-5 text-gray-700">
         <Bullet title="Gift box or hamper">only when confirmed for the specific order.</Bullet>
-        <Bullet title="Message card">agree the wording and that a card is available at all.</Bullet>
+        <Bullet title="Gift message">add your wording in the cart or at checkout.</Bullet>
         <Bullet title="Substitutions">agree acceptable swaps in writing so no unchosen bottle arrives.</Bullet>
       </ul>
       <GiftChecklist />
@@ -75,9 +72,9 @@ export function GiftingPlanningBelow() {
  * those. All tools here are deterministic: no AI, no prices, quantities and
  * categories only.
  */
-export default function GiftingPlanning({ page }: Props) {
+export default function GiftingPlanning() {
   return <div className="space-y-8">
-    <GiftingPlanningBody page={page} />
+    <GiftingPlanningBody />
     <GiftingPlanningBelow />
   </div>;
 }

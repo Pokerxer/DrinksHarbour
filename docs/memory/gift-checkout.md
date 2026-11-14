@@ -1,5 +1,7 @@
 # Gift checkout (order-level gifting)
 
+2026-11-14. [Gifting service proposal](gifting-service.md) records the Abuja storefront offer and fulfillment checks before launch.
+
 2026-10-28. Implemented by three parallel agents (server / client / admin) on
 disjoint file sets plus main-agent integration. Spec/contract:
 docs/superpowers/specs/2026-10-27-gift-checkout-design.md (+ server report
@@ -67,3 +69,12 @@ preserved.
   carrier-panel.test.tsx TS2351 from concurrent other-session work.
 - Search suites after the allow-list fix: 22/22 (searchOutOfStock, chatbot
   catalog, catalogue smart/proximity/brand/auth).
+
+## 2026-11-14 recipient contact
+
+The storefront sends a validated optional API field `gift.recipientPhone`. The
+updated checkout requires it when gift mode is on. Older gift orders and API
+clients can omit it. The platform gift panel and merchant handover use it for
+delivery. Buyer notifications continue to use the buyer’s shipping contact
+snapshot. See [gifting service](gifting-service.md) for the storefront entry
+points and production checks.

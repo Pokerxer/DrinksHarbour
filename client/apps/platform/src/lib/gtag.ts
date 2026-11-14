@@ -50,6 +50,7 @@ export function purchaseEvent(params: {
   tax?: number;
   shipping?: number;
   coupon?: string;
+  is_gift?: boolean;
   items: GTagItem[];
 }): void {
   gtagEvent('purchase', {
@@ -59,6 +60,7 @@ export function purchaseEvent(params: {
     tax: params.tax,
     shipping: params.shipping,
     coupon: params.coupon,
+    is_gift: params.is_gift,
     items: params.items,
   });
 }
