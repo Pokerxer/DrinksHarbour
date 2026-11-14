@@ -50,7 +50,10 @@ export default function ProductPickerModal({ open, onClose, token, onAdd }: {
     setLoading(true); setError('');
     const t = setTimeout(async () => {
       try {
-        const params = new URLSearchParams({ page: '1', limit: '20', status: 'active', search, sort: 'createdAt', order: 'desc' });
+        // limit 60: the newest 20 subproducts are frequently all out of stock,
+        // which would render the picker as empty — 60 reliably includes
+        // sellable listings, and search narrows beyond that.
+        const params = new URLSearchParams({ page: '1', limit: '60', status: 'active', search, sort: 'createdAt', order: 'desc' });
         const res = await fetch(`${API_URL}/api/subproducts?${params}`, {
           headers: { Authorization: `Bearer ${token}` }, cache: 'no-store',
         });
