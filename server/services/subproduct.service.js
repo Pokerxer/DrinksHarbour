@@ -2104,8 +2104,8 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
           const barcode = typeof sizeData.barcode === 'string'
             ? sizeData.barcode.trim()
             : sizeData.barcode;
-          const barcodeChanged = barcode && barcode !== existingSize.barcode;
-          if (barcodeChanged) {
+          const barcodeChanged = barcode !== undefined && barcode !== existingSize.barcode;
+          if (barcodeChanged && barcode) {
             await prepareSizeBarcode({
               tenant: tenantObjectId,
               barcode,
@@ -2185,11 +2185,11 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
           // Avoid writing back a barcode that another request may have released
           // since this edit loaded its size rows.
           const sizeFields = { ...existingSize };
-          if (barcodeChanged) sizeFields.barcode = barcode;
-          else delete sizeFields.barcode;
+          delete sizeFields.barcode;
+          if (barcodeChanged && barcode) sizeFields.barcode = barcode;
           const updated = await Size.findOneAndUpdate(
             { _id: existingSize._id, subproduct: subProductId, tenant: tenantObjectId },
-            sizeFields,
+            { $set: sizeFields, ...(barcodeChanged && !barcode ? { $unset: { barcode: 1 } } : {}) },
             { new: true }
           );
           updatedSizeIds.push(updated._id);
@@ -5023,6 +5023,7 @@ const updateSize = async (subProductId, sizeId, updateData, tenantId, user = nul
     updateData.packaging = normalizePackaging(updateData.packaging);
   }
   Object.assign(size, updateData, variantImageFields(updateData));
+  if (Object.hasOwn(updateData, 'barcode') && !size.barcode) size.barcode = undefined;
   await size.save();
 
   return size;

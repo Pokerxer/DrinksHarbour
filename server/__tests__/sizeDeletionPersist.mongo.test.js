@@ -73,7 +73,7 @@ test('updateSubProduct deletes no-stock size rows omitted from the payload', { s
   assert.notEqual(String(reloaded.defaultSize || ''), String(dropped._id), 'defaultSize must not point at the deleted size');
 });
 
-test('deleteSize deletes a no-stock size from the database and refuses a size with stock', { skip: !uri }, async t => {
+test('deleteSize removes an unused size and protects current stock and past stock movements', { skip: !uri }, async t => {
   await connectVenueMongo(t, 'size_delete_endpoint');
   const oid = () => new mongoose.Types.ObjectId();
   const tenant = oid();
@@ -98,14 +98,16 @@ test('deleteSize deletes a no-stock size from the database and refuses a size wi
 
   const empty = await Size.create({ subproduct: sp._id, product, tenant, size: '35cl', displayName: '35cl', stock: 0, reservedStock: 0, availableStock: 0, sellingPrice: 1000, costPrice: 500 });
   const stocked = await Size.create({ subproduct: sp._id, product, tenant, size: '75cl', displayName: '75cl', stock: 4, reservedStock: 0, availableStock: 4, sellingPrice: 1800, costPrice: 900 });
-  await SubProduct.updateOne({ _id: sp._id }, { sizes: [empty._id, stocked._id] });
+  const previouslyStocked = await Size.create({ subproduct: sp._id, product, tenant, size: '1L', stock: 0, sellingPrice: 2000, costPrice: 1000 });
+  await require('../models/WarehouseMovement').collection.insertOne({ tenant, subProduct: sp._id, size: previouslyStocked._id });
+  await SubProduct.updateOne({ _id: sp._id }, { sizes: [empty._id, stocked._id, previouslyStocked._id] });
 
   // Allowed: no stock, no history — the edit page's immediate delete may run.
   await service.deleteSize(String(sp._id), String(empty._id), String(tenant), actor);
   assert.equal(await Size.exists({ _id: empty._id }), null, 'Size document must be deleted from the database');
   assert.equal(await WarehouseStock.exists({ size: empty._id }), null);
   const afterDelete = await SubProduct.findById(sp._id).lean();
-  assert.deepEqual(afterDelete.sizes.map(String), [String(stocked._id)], 'subProduct.sizes must drop the deleted size');
+  assert.deepEqual(afterDelete.sizes.map(String), [String(stocked._id), String(previouslyStocked._id)]);
 
   // Blocked: the stocked size must survive its delete attempt.
   await assert.rejects(
@@ -113,4 +115,9 @@ test('deleteSize deletes a no-stock size from the database and refuses a size wi
     /Cannot delete/
   );
   assert.ok(await Size.exists({ _id: stocked._id }), 'Stocked size must remain in the database');
+  await assert.rejects(
+    () => service.deleteSize(String(sp._id), String(previouslyStocked._id), String(tenant), actor),
+    /WarehouseMovement/
+  );
+  assert.ok(await Size.exists({ _id: previouslyStocked._id }));
 });

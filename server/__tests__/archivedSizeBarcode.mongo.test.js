@@ -104,6 +104,28 @@ test('archived listing sizes release a reused barcode without moving stock or id
     assert.equal(String((await Size.findOne({ tenant, barcode: code })).subproduct), id(created));
   });
 
+  await t.test('the listing editor replaces and clears a barcode while omitted fields preserve it', async () => {
+    const parent = await listing();
+    const original = '0000090000001';
+    const replacement = '0000090000002';
+    const size = await add(parent, original);
+    const save = barcode => service.updateSubProduct(id(parent), {
+      sizes: [{ ...sizeInput(barcode), _id: id(size) }],
+    }, tenantId);
+
+    await save(` ${replacement} `);
+    assert.equal((await archivedCopy(size)).barcode, replacement);
+    await save(undefined);
+    assert.equal((await archivedCopy(size)).barcode, replacement);
+    await save('   ');
+    assert.equal((await archivedCopy(size)).barcode, undefined);
+    assert.equal((await add(await listing(), replacement)).barcode, replacement);
+
+    await service.updateSize(id(parent), id(size), { barcode: original }, tenantId);
+    await service.updateSize(id(parent), id(size), { barcode: '' }, tenantId);
+    assert.equal((await archivedCopy(size)).barcode, undefined);
+  });
+
   await t.test('a transactional size write can reuse a barcode', async () => {
     const oldListing = await listing('archived');
     const replacement = await listing();
