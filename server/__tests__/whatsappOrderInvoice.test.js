@@ -73,6 +73,7 @@ test('issueInvoice mints a token, initializes a bound charge and stores the invo
   const out = await svc.issueInvoice(String(order._id), ADMIN);
 
   assert.strictEqual(initArgs.extra.orderId, String(order._id), 'charge must carry orderId metadata');
+  assert.ok(String(initArgs.extra.callbackUrl).includes('/invoice/'), 'gateway redirect must return to the hosted invoice page');
   assert.strictEqual(initArgs.amount, 4500);
   assert.match(initArgs.requestKey, /^dhwo-/);
   assert.ok(order.invoice.token && order.invoice.token.length >= 48, 'unguessable token minted');

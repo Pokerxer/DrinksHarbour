@@ -48,7 +48,8 @@ async function initialize(provider, actor, amount, currency, email, metadata = {
   try {
     const service = require('./payment.service');
     const result = provider === 'stripe' ? await service.createStripePaymentIntent(Number(amount), currency, trusted)
-      : await (provider === 'paystack' ? service.createPaystackTransaction : service.createKorapayCharge)(Number(amount), email, trusted, { reference });
+      : await (provider === 'paystack' ? service.createPaystackTransaction : service.createKorapayCharge)(Number(amount), email, trusted,
+          { reference, ...(extraMetadata?.callbackUrl ? { callbackUrl: extraMetadata.callbackUrl } : {}) });
     if (provider === 'stripe') {
       // Stripe assigns the identity; retain the initialized reference as trusted metadata.
       await Claim.create({ ...row.toObject(), _id: key(provider, result.paymentIntentId), reference: result.paymentIntentId, state: 'ready', initialization: result });

@@ -111,7 +111,12 @@ async function issueInvoice(orderId, actor, { force = false } = {}) {
     order.shippingAddress?.email, {
       customerName: order.shippingAddress?.fullName,
       customerPhone: order.shippingAddress?.phone,
-    }, requestKey, { orderId: String(order._id) },
+    }, requestKey, {
+      orderId: String(order._id),
+      callbackUrl: order.invoice.token
+        ? `${require('../utils/frontendUrl').frontendBaseUrl()}/invoice/${order._id}?token=${order.invoice.token}`
+        : undefined,
+    },
   );
 
   // Bind the claim to THIS order (webhook + verification both assert it) and
