@@ -29,6 +29,7 @@ const {
   NotFoundError,
   ValidationError,
   ForbiddenError,
+  ConflictError,
 } = require("../utils/errors");
 const {
   sanitizePurchaseOrderLines,
@@ -497,6 +498,14 @@ const getPurchaseOrder = asyncHandler(async (req, res) => {
   // Surface each line's parent-product batch-tracking flags so the receiving UI
   // can conditionally prompt for batch number + expiry date.
   const data = withDocumentCreatorName(purchaseOrder);
+  if (["confirmed", "partially_received", "received", "validated", "done", "billed", "cancelled"].includes(data.status)) {
+    const activeVendorBill = await VendorBill.findOne({
+      tenant: tenantId,
+      purchaseOrder: purchaseOrder._id,
+      status: { $ne: "cancelled" },
+    }).select("billNumber").lean();
+    if (activeVendorBill) data.activeVendorBill = activeVendorBill;
+  }
   data.items = (data.items || []).map((item) => {
     const product = item.subProductId && item.subProductId.product;
     return {
@@ -567,20 +576,85 @@ const getPurchaseOrders = asyncHandler(async (req, res) => {
   });
 });
 
-// @desc    Update purchase order fields (draft/confirmed only)
+const noReceiptActivity = {
+  isPartiallyReceived: { $ne: true },
+  fullyReceivedDate: null,
+  "partialReceipts.0": { $exists: false },
+  items: {
+    $not: {
+      $elemMatch: {
+        $or: [
+          { receivedQty: { $gt: 0 } },
+          { postedQty: { $gt: 0 } },
+          { returnedQty: { $gt: 0 } },
+        ],
+      },
+    },
+  },
+};
+
+const editableDraft = {
+  ...noReceiptActivity,
+  status: "draft",
+  isLocked: { $ne: true },
+  rfqStatus: { $nin: ["converted", "cancelled"] },
+};
+
+const closedRFQStatuses = ["converted", "cancelled"];
+
+async function cancelUnreceivedPurchase(scope, order) {
+  if (order.status === "cancelled") return order;
+
+  const cancelled = await PurchaseOrder.findOneAndUpdate(
+    {
+      ...scope,
+      ...noReceiptActivity,
+      rfqStatus: { $ne: "converted" },
+      $or: [{ status: "draft" }, { status: "confirmed", type: "rfq" }],
+    },
+    {
+      $set: {
+        status: "cancelled",
+        ...(order.type === "rfq" && { rfqStatus: "cancelled" }),
+      },
+    },
+    { returnDocument: "after" },
+  );
+  if (!cancelled) {
+    throw new ConflictError("Only an unreceived quotation or draft purchase can be cancelled.");
+  }
+  return cancelled;
+}
+
+async function savePurchaseTransition(order, conditions) {
+  order.$where = { tenant: order.tenant, ...conditions };
+  try {
+    await order.save();
+  } catch (error) {
+    if (error instanceof mongoose.Error.DocumentNotFoundError || error instanceof mongoose.Error.VersionError) {
+      throw new ConflictError("This purchase changed. Reopen it before trying again.");
+    }
+    throw error;
+  }
+}
+
+async function rejectUnavailableDraft(scope) {
+  if (!(await PurchaseOrder.exists(scope))) {
+    throw new NotFoundError("Purchase Order not found");
+  }
+  throw new ConflictError("Only unlocked drafts without receipt activity or RFQ conversion can be edited or deleted.");
+}
+
+// @desc    Update purchase order fields while the order is an editable draft
 // @route   PATCH /api/purchase-orders/:id
 // @access  Private (Tenant admin)
 const updatePurchaseOrder = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const tenantId = await resolveTenantId(req);
 
-  const po = await PurchaseOrder.findOne({ _id: id, tenant: tenantId });
-  if (!po) throw new NotFoundError("Purchase Order not found");
-
-  if (po.isLocked) throw new ForbiddenError("Purchase Order is locked and cannot be edited");
-  if (po.status === "done" || po.status === "cancelled") {
-    throw new ForbiddenError("Cannot edit a locked or cancelled Purchase Order");
-  }
+  const scope = { _id: id, tenant: tenantId };
+  const po = await PurchaseOrder.findOne({ ...scope, ...editableDraft });
+  if (!po) await rejectUnavailableDraft(scope);
 
   const {
     vendor,
@@ -633,7 +707,16 @@ const updatePurchaseOrder = asyncHandler(async (req, res) => {
     po.items = await enrichPOItems(items, tenantId);
   }
 
-  await po.save();
+  // Recheck the draft state in the save query after validating the edit.
+  po.$where = { tenant: po.tenant, ...editableDraft };
+  try {
+    await po.save();
+  } catch (error) {
+    if (error instanceof mongoose.Error.DocumentNotFoundError || error instanceof mongoose.Error.VersionError) {
+      throw new ConflictError("This purchase order changed. Reopen it before editing.");
+    }
+    throw error;
+  }
 
   res.status(200).json({ success: true, data: po });
 });
@@ -649,13 +732,19 @@ const updatePurchaseOrderStatus = asyncHandler(async (req, res) => {
   const { receivedItems, warehouseId } = req.body;
   const tenantId = await resolveTenantId(req);
 
-  const purchaseOrder = await PurchaseOrder.findOne({
-    _id: id,
-    tenant: tenantId,
-  });
+  const scope = { _id: id, tenant: tenantId };
+  const purchaseOrder = await PurchaseOrder.findOne(scope);
 
   if (!purchaseOrder) {
     throw new NotFoundError("Purchase Order not found");
+  }
+
+  if (status === "cancelled") {
+    const data = await cancelUnreceivedPurchase(scope, purchaseOrder);
+    return res.status(200).json({ success: true, data });
+  }
+  if (closedRFQStatuses.includes(purchaseOrder.rfqStatus)) {
+    throw new ValidationError("This quotation is closed");
   }
 
   // Check if PO requires approval before confirming (tenant-configurable)
@@ -678,15 +767,15 @@ const updatePurchaseOrderStatus = asyncHandler(async (req, res) => {
   // Validate status transition. A partially_received PO stays open and remains
   // receivable (and validatable) until every line's outstanding hits zero.
   const validTransitions = {
-    draft: ["confirmed", "partially_received", "received", "cancelled"],
-    confirmed: ["partially_received", "received", "cancelled"],
-    partially_received: ["partially_received", "received", "validated", "cancelled"],
-    received: ["partially_received", "validated", "cancelled"],
-    validated: ["cancelled"],
+    draft: ["confirmed", "partially_received", "received"],
+    confirmed: ["partially_received", "received"],
+    partially_received: ["partially_received", "received", "validated"],
+    received: ["partially_received", "validated"],
+    validated: [],
     cancelled: [],
   };
 
-  if (!validTransitions[purchaseOrder.status].includes(status)) {
+  if (!validTransitions[purchaseOrder.status]?.includes(status)) {
     throw new ValidationError(
       `Cannot transition from ${purchaseOrder.status} to ${status}`,
     );
@@ -997,7 +1086,14 @@ const updatePurchaseOrderStatus = asyncHandler(async (req, res) => {
     } // end close-only steps (fullyReceived)
   }
 
-  await purchaseOrder.save();
+  if (status === "validated") {
+    await purchaseOrder.save();
+  } else {
+    await savePurchaseTransition(purchaseOrder, {
+      status: previousStatus,
+      rfqStatus: { $nin: closedRFQStatuses },
+    });
+  }
 
   // Accounting and input VAT are recognized on validated vendor bills.
 
@@ -1023,8 +1119,8 @@ const receivePurchaseOrder = asyncHandler(async (req, res) => {
 
   const po = await PurchaseOrder.findOne({ _id: id, tenant: tenantId });
   if (!po) throw new NotFoundError("Purchase Order not found");
-  if (po.status === "cancelled") {
-    throw new ValidationError("Cannot receive against a cancelled purchase order");
+  if (["cancelled", "cancel"].includes(po.status) || closedRFQStatuses.includes(po.rfqStatus)) {
+    throw new ValidationError("Cannot receive against a closed purchase document");
   }
   if (po.status === "validated") {
     throw new ValidationError("Purchase order is fully validated and closed");
@@ -1033,6 +1129,7 @@ const receivePurchaseOrder = asyncHandler(async (req, res) => {
     throw new ValidationError("No receipt lines provided");
   }
 
+  const previousStatus = po.status;
   const settings = await getTenantPurchaseSettings(tenantId);
   const allowOverReceipt = !!settings.allowOverReceipt;
 
@@ -1126,7 +1223,10 @@ const receivePurchaseOrder = asyncHandler(async (req, res) => {
   if (derived) po.status = derived;
   po.isPartiallyReceived = derived === "partially_received";
 
-  await po.save();
+  await savePurchaseTransition(po, {
+    status: previousStatus,
+    rfqStatus: { $nin: closedRFQStatuses },
+  });
 
   const postedUnits = lines.reduce((s, l) => s + l.delta, 0);
   res.status(200).json({
@@ -1142,22 +1242,12 @@ const receivePurchaseOrder = asyncHandler(async (req, res) => {
 const deletePurchaseOrder = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const tenantId = await resolveTenantId(req);
-
-  const purchaseOrder = await PurchaseOrder.findOne({
-    _id: id,
-    tenant: tenantId,
+  const scope = { _id: id, tenant: tenantId };
+  const deleted = await PurchaseOrder.findOneAndDelete({
+    ...scope,
+    ...editableDraft,
   });
-
-  if (!purchaseOrder) {
-    throw new NotFoundError("Purchase Order not found");
-  }
-
-  // Don't allow deletion of confirmed/received/validated POs
-  if (["confirmed", "received", "validated"].includes(purchaseOrder.status)) {
-    throw new ValidationError("Cannot delete confirmed purchase order");
-  }
-
-  await PurchaseOrder.findByIdAndDelete(id);
+  if (!deleted) await rejectUnavailableDraft(scope);
 
   res.status(200).json({
     success: true,
@@ -1859,7 +1949,7 @@ const approvePO = asyncHandler(async (req, res) => {
     throw new NotFoundError("Purchase Order not found");
   }
 
-  if (po.approvalStatus && po.approvalStatus !== "pending") {
+  if (po.status !== "draft" || (po.approvalStatus && po.approvalStatus !== "pending")) {
     throw new ValidationError("PO has already been processed");
   }
 
@@ -1869,12 +1959,11 @@ const approvePO = asyncHandler(async (req, res) => {
   po.approvedAt = new Date();
   po.approvalNotes = notes;
   
-  // Also confirm the PO (Odoo-style: draft -> confirmed on approval)
-  if (po.status === "draft") {
-    po.status = "confirmed";
-  }
-  
-  await po.save();
+  po.status = "confirmed";
+  await savePurchaseTransition(po, {
+    status: "draft",
+    approvalStatus: { $in: ["pending", null] },
+  });
 
 
   res.status(200).json({
@@ -1903,7 +1992,7 @@ const rejectPO = asyncHandler(async (req, res) => {
     throw new NotFoundError("Purchase Order not found");
   }
 
-  if (po.approvalStatus && po.approvalStatus !== "pending") {
+  if (po.status !== "draft" || (po.approvalStatus && po.approvalStatus !== "pending")) {
     throw new ValidationError("PO has already been processed");
   }
 
@@ -1912,12 +2001,12 @@ const rejectPO = asyncHandler(async (req, res) => {
   po.approvedAt = new Date();
   po.approvalNotes = notes;
   
-  // Also cancel the PO when rejected (Odoo-style)
-  if (po.status === "draft") {
-    po.status = "cancelled";
-  }
-  
-  await po.save();
+  po.status = "cancelled";
+  await savePurchaseTransition(po, {
+    ...noReceiptActivity,
+    status: "draft",
+    approvalStatus: { $in: ["pending", null] },
+  });
 
   res.status(200).json({
     success: true,
@@ -2078,7 +2167,6 @@ const createBillFromPO = asyncHandler(async (req, res) => {
   const po = await PurchaseOrder.findOne({
     _id: id,
     tenant: tenantId,
-    type: "po",
   }).populate('vendor');
 
   if (!po) {
@@ -2089,7 +2177,9 @@ const createBillFromPO = asyncHandler(async (req, res) => {
     throw new ValidationError("PO must have a vendor to create a bill");
   }
 
-  if (!["confirmed", "received", "validated"].includes(po.status)) {
+  if (closedRFQStatuses.includes(po.rfqStatus) ||
+      !["confirmed", "received", "validated"].includes(po.status) ||
+      (po.type === "rfq" && po.status === "confirmed")) {
     throw new ValidationError(
       `Cannot bill a ${po.status} purchase order — confirm it first`
     );
@@ -2184,6 +2274,11 @@ const sendPOToVendor = asyncHandler(async (req, res) => {
     throw new NotFoundError("Purchase Order not found");
   }
 
+  if (!["draft", "confirmed"].includes(po.status) ||
+      [...closedRFQStatuses, "rejected", "expired"].includes(po.rfqStatus)) {
+    throw new ValidationError("This purchase is no longer available to send");
+  }
+
   if (!po.vendor) {
     throw new ValidationError("PO must have a vendor to send");
   }
@@ -2202,9 +2297,13 @@ const sendPOToVendor = asyncHandler(async (req, res) => {
   await sendPurchaseOrderToVendor(po, po.vendor, tenant);
 
   if (po.type === 'rfq') {
-    po.rfqStatus = 'sent';
+    const previousRFQStatus = po.rfqStatus;
+    if (!po.rfqStatus || po.rfqStatus === 'draft') po.rfqStatus = 'sent';
     po.sentAt = new Date();
-    await po.save();
+    await savePurchaseTransition(po, {
+      status: po.status,
+      rfqStatus: previousRFQStatus ?? { $exists: false },
+    });
   }
 
   res.status(200).json({

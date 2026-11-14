@@ -41,6 +41,7 @@ import {
   fmtAmount,
   packsLabel,
   refIdOf,
+  canModifyPurchaseDraft,
 } from './types';
 import type { Vendor, PurchaseOrder } from './types';
 import BaseCurrencyEquivalent from './base-currency-equivalent';
@@ -1105,8 +1106,7 @@ export default function PurchasesEdit({ id }: { id: string }) {
     );
   }
 
-  // Guard: only draft POs can be edited
-  if (po.status !== 'draft') {
+  if (!canModifyPurchaseDraft(po)) {
     return (
       <div className="pb-24">
         <div className="mb-4 flex items-center gap-2 text-sm text-gray-500">
@@ -1125,9 +1125,9 @@ export default function PurchasesEdit({ id }: { id: string }) {
             This order cannot be edited
           </h2>
           <p className="mt-1 max-w-sm text-sm text-gray-500">
-            Only purchase orders in <strong>Draft / RFQ</strong> status can be
-            edited. This order is currently{' '}
-            <strong className="capitalize">{po.status}</strong>.
+            Editing is available for unlocked drafts before any receipt or RFQ
+            conversion. This order is currently{' '}
+            <strong>{po.isLocked ? 'locked' : po.status.replaceAll('_', ' ')}</strong>.
           </p>
           <Link
             href={routes.eCommerce.purchaseDetails(id)}

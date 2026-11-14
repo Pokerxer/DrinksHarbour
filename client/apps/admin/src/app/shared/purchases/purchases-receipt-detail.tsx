@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import {
   PiArrowLeft,
@@ -27,6 +27,7 @@ import {
 import { warehouseService, type Warehouse } from '@/services/warehouse.service';
 import { pickSeedWarehouse } from './warehouse-select-helpers';
 import type { PurchaseOrder } from './types';
+import { getPurchaseWorkflow, outstandingPurchaseQuantity } from './purchase-workflow-state';
 
 type RowStatus = 'done' | 'receiving-all' | 'partial' | 'pending';
 
@@ -39,6 +40,7 @@ function getRowStatus(remaining: number, receiving: number): RowStatus {
 
 export default function PurchasesReceiptDetail({ id }: { id: string }) {
   const router = useRouter();
+  const validateOnly = useSearchParams().get('mode') === 'validate';
   const { data: session } = useSession();
   const token = (session?.user as { token?: string })?.token ?? '';
 
@@ -63,7 +65,7 @@ export default function PurchasesReceiptDetail({ id }: { id: string }) {
       const init: Record<string, number> = {};
       data.items.forEach((item, idx) => {
         const key = (item as any)._id?.toString() ?? String(idx);
-        init[key] = Math.max(0, item.quantity - item.receivedQty);
+        init[key] = validateOnly ? 0 : outstandingPurchaseQuantity(item);
       });
       setReceivedQtys(init);
     } catch (err: unknown) {
@@ -71,7 +73,7 @@ export default function PurchasesReceiptDetail({ id }: { id: string }) {
     } finally {
       setLoading(false);
     }
-  }, [id, token]);
+  }, [id, token, validateOnly]);
 
   useEffect(() => {
     load();
@@ -131,7 +133,7 @@ export default function PurchasesReceiptDetail({ id }: { id: string }) {
       const key = (item as any)._id?.toString() ?? String(idx);
       const qty = receivedQtys[key] ?? 0;
       const unitCost = item.unitCost ?? item.unitPrice ?? 0;
-      const remaining = item.quantity - item.receivedQty;
+      const remaining = outstandingPurchaseQuantity(item);
       const shortfall = remaining - qty;
       unitsReceiving += qty;
       estimatedCost += qty * unitCost;
@@ -161,8 +163,13 @@ export default function PurchasesReceiptDetail({ id }: { id: string }) {
         )
       : 0;
 
+  const workflow = po ? getPurchaseWorkflow(po) : null;
+  const canProcessReceipt = workflow &&
+    (workflow.canValidate || (!validateOnly && workflow.canReceive));
+  const pendingUnits = po?.items.reduce((sum, line) =>
+    sum + Math.max(0, line.receivedQty - (line.postedQty ?? 0)), 0) ?? 0;
   const allAlreadyReceived = po
-    ? po.items.every((item) => item.quantity - item.receivedQty === 0)
+    ? po.items.every((item) => outstandingPurchaseQuantity(item) === 0)
     : false;
 
   function receiveAll() {
@@ -170,7 +177,7 @@ export default function PurchasesReceiptDetail({ id }: { id: string }) {
     const next: Record<string, number> = {};
     po.items.forEach((item, idx) => {
       const key = (item as any)._id?.toString() ?? String(idx);
-      next[key] = Math.max(0, item.quantity - item.receivedQty);
+      next[key] = outstandingPurchaseQuantity(item);
     });
     setReceivedQtys(next);
   }
@@ -196,7 +203,7 @@ export default function PurchasesReceiptDetail({ id }: { id: string }) {
 
   function handleValidateClick() {
     const hasChanges = Object.values(receivedQtys).some((v) => v !== 0);
-    if (!hasChanges && !allAlreadyReceived) {
+    if (!hasChanges && !workflow?.canValidate) {
       toast.error('Enter at least one unit to process');
       return;
     }
@@ -209,7 +216,7 @@ export default function PurchasesReceiptDetail({ id }: { id: string }) {
   }
 
   async function handleValidate() {
-    if (!po) return;
+    if (!po || !canProcessReceipt) return;
 
     // Perishable (non-alcoholic) batch-tracked lines being received now must
     // carry an expiry date; alcoholic tracked lines may leave it blank.
@@ -262,11 +269,10 @@ export default function PurchasesReceiptDetail({ id }: { id: string }) {
         'validated',
         token,
         undefined,
-        warehouseId
+        validateOnly ? undefined : warehouseId
       );
-      const destName =
-        warehouses.find((w) => w._id === warehouseId)?.name ?? 'inventory';
-      toast.success(`Receipt validated — stock added to ${destName}`);
+      const destination = validateOnly ? undefined : warehouses.find((w) => w._id === warehouseId)?.name;
+      toast.success(destination ? `Receipt validated. Stock added to ${destination}.` : 'Receipt validated. Stock added to inventory.');
       router.push(routes.eCommerce.purchaseDetails(id));
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Validation failed');
@@ -282,6 +288,17 @@ export default function PurchasesReceiptDetail({ id }: { id: string }) {
     return (
       <div className="py-20 text-center text-sm text-gray-500">Not found</div>
     );
+
+  if (!canProcessReceipt) {
+    return (
+      <div className="flex flex-col items-center gap-3 py-16 text-sm">
+        <p className="text-gray-600">There is no receipt to process at this purchase stage.</p>
+        <Link href={routes.eCommerce.purchaseDetails(id)} className="font-medium text-[#b20202] underline">
+          Back to {po.poNumber}
+        </Link>
+      </div>
+    );
+  }
 
   const isOverdue =
     po.expectedArrival && new Date(po.expectedArrival) < new Date();
@@ -309,7 +326,7 @@ export default function PurchasesReceiptDetail({ id }: { id: string }) {
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-semibold text-gray-900">
-              Receive: {po.poNumber}
+              {validateOnly ? 'Validate Receipt' : 'Receive Products'} · {po.poNumber}
             </h1>
             {isOverdue && (
               <span className="flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
@@ -318,10 +335,11 @@ export default function PurchasesReceiptDetail({ id }: { id: string }) {
             )}
           </div>
           <p className="mt-0.5 text-sm text-gray-500">
-            Record the quantities you are receiving now
+            {validateOnly ? 'Review and post the receipt already recorded for this purchase.' : 'Record the quantities you are receiving now.'}
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {!validateOnly && <>
           <button
             type="button"
             onClick={resetAll}
@@ -337,6 +355,7 @@ export default function PurchasesReceiptDetail({ id }: { id: string }) {
           >
             Receive All
           </button>
+          </>}
           <Link
             href={routes.eCommerce.purchaseDetails(id)}
             className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
@@ -476,7 +495,7 @@ export default function PurchasesReceiptDetail({ id }: { id: string }) {
             <tbody className="divide-y divide-gray-100">
               {po.items.map((item, idx) => {
                 const key = (item as any)._id?.toString() ?? String(idx);
-                const remaining = item.quantity - item.receivedQty;
+                const remaining = outstandingPurchaseQuantity(item);
                 const receiving = receivedQtys[key] ?? 0;
                 const unitCost = item.unitCost ?? item.unitPrice ?? 0;
                 const lineCost = receiving * unitCost;
@@ -582,7 +601,9 @@ export default function PurchasesReceiptDetail({ id }: { id: string }) {
                       {item.receivedQty}
                     </td>
                     <td className="px-4 py-3">
-                      {rowStatus === 'done' ? (
+                      {validateOnly ? (
+                        <p className="text-center text-gray-500">—</p>
+                      ) : rowStatus === 'done' ? (
                         <div className="flex justify-center">
                           <span className="flex items-center gap-1 rounded-full bg-green-100 px-3 py-1 text-xs font-medium text-green-700">
                             <PiCheck className="h-3 w-3" /> Done
@@ -690,14 +711,14 @@ export default function PurchasesReceiptDetail({ id }: { id: string }) {
           <p className="mb-3 text-sm text-gray-600">
             This will add{' '}
             <b className="text-gray-900">
-              {totals.unitsReceiving} unit
-              {totals.unitsReceiving !== 1 ? 's' : ''}
+              {totals.unitsReceiving + pendingUnits} unit
+              {totals.unitsReceiving + pendingUnits !== 1 ? 's' : ''}
             </b>{' '}
             to inventory and cannot be undone.
             {totals.backorderUnits > 0 && (
               <>
                 {' '}
-                A backorder will be created for{' '}
+                The purchase stays open for{' '}
                 <b className="text-amber-700">
                   {totals.backorderUnits} unit
                   {totals.backorderUnits !== 1 ? 's' : ''}
@@ -707,7 +728,7 @@ export default function PurchasesReceiptDetail({ id }: { id: string }) {
               </>
             )}
           </p>
-          {warehouses.length === 0 ? (
+          {validateOnly ? null : warehouses.length === 0 ? (
             <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">
               No warehouses exist yet. You must{' '}
               <Link
@@ -754,7 +775,7 @@ export default function PurchasesReceiptDetail({ id }: { id: string }) {
             <button
               type="button"
               onClick={handleValidate}
-              disabled={validating || warehouses.length === 0 || !warehouseId}
+              disabled={validating || (!validateOnly && (warehouses.length === 0 || !warehouseId))}
               className="flex items-center gap-1.5 rounded-lg bg-[#b20202] px-5 py-2 text-sm font-semibold text-white hover:bg-[#9a0101] disabled:opacity-50"
             >
               <PiCheck className="h-4 w-4" />
@@ -771,11 +792,11 @@ export default function PurchasesReceiptDetail({ id }: { id: string }) {
             <div className="flex items-center gap-1.5 text-gray-500">
               <PiTruck className="h-4 w-4" />
               <span>
-                Receiving{' '}
+                {validateOnly ? 'To validate' : 'Receiving'}{' '}
                 <span className="font-semibold text-gray-900">
-                  {totals.unitsReceiving}
+                  {validateOnly ? pendingUnits : totals.unitsReceiving}
                 </span>{' '}
-                unit{totals.unitsReceiving !== 1 ? 's' : ''}
+                unit{(validateOnly ? pendingUnits : totals.unitsReceiving) !== 1 ? 's' : ''}
               </span>
             </div>
             {totals.estimatedCost > 0 && (

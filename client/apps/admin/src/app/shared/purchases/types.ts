@@ -34,6 +34,7 @@ export type AgreementType = 'blanket_order' | 'call_for_tender' | 'none';
 
 export interface POItem {
   subProductId: string;
+  subProductName?: string;
   productName: string;
   sku: string;
   size?: string;
@@ -64,6 +65,9 @@ export interface POItem {
    * it — declaring it here removes those casts.
    */
   unitCost?: number;
+  lineType?: 'product' | 'section' | 'note';
+  name?: string;
+  description?: string;
   // Parent-product batch-tracking flags, surfaced by the single-PO endpoint so
   // the receiving UI can prompt for batch number + expiry on tracked lines.
   tracksBatch?: boolean;
@@ -117,10 +121,33 @@ export interface PurchaseOrder {
   lockedBy?: string;
   lockedByName?: string;
   lockReason?: string;
+  billControlPolicy?: 'ordered' | 'received';
+  activeVendorBill?: { _id: string; billNumber: string };
+  isPartiallyReceived?: boolean;
+  fullyReceivedDate?: string | null;
+  partialReceipts?: unknown[];
   purchaseAgreement?:
     | string
     | { _id: string; agreementNumber?: string; name?: string; status?: string };
   agreementType?: AgreementType;
+}
+
+export function canModifyPurchaseDraft(order: PurchaseOrder): boolean {
+  return (
+    order.status === 'draft' &&
+    !order.isLocked &&
+    order.rfqStatus !== 'converted' &&
+    order.rfqStatus !== 'cancelled' &&
+    !order.isPartiallyReceived &&
+    order.fullyReceivedDate == null &&
+    !order.partialReceipts?.length &&
+    !order.items?.some(
+      (line) =>
+        line.receivedQty > 0 ||
+        (line.postedQty ?? 0) > 0 ||
+        (line.returnedQty ?? 0) > 0
+    )
+  );
 }
 
 export interface VendorBill {

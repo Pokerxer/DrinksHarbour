@@ -71,7 +71,11 @@ export default function PurchasesBillCreate() {
 
   const policy = policyOverride ?? po?.billControlPolicy ?? 'received';
   const poBillable =
-    !!po && ['confirmed', 'received', 'validated'].includes(po.status);
+    !!po &&
+    ['confirmed', 'received', 'validated'].includes(po.status) &&
+    po.rfqStatus !== 'cancelled' &&
+    po.rfqStatus !== 'converted' &&
+    !(po.type === 'rfq' && po.status === 'confirmed');
 
   const lines: BillableLine[] = (po?.items ?? [])
     .filter((item: POItem) =>
@@ -106,6 +110,7 @@ export default function PurchasesBillCreate() {
       toast.error('No purchase order selected');
       return;
     }
+    if (!poBillable) return;
     if (lines.length === 0) {
       toast.error(
         policy === 'received'
@@ -174,8 +179,7 @@ export default function PurchasesBillCreate() {
         <div className="mb-5 flex items-start gap-3 rounded-xl border border-yellow-200 bg-yellow-50 px-4 py-3 text-sm text-yellow-800">
           <PiWarning className="mt-0.5 h-4 w-4 shrink-0" />
           <span>
-            This purchase order is <strong>{po.status}</strong> — it must be
-            confirmed before it can be billed.{' '}
+            Billing is unavailable at this purchase stage.{' '}
             <Link
               href={routes.eCommerce.purchaseDetails(po._id)}
               className="font-medium underline"

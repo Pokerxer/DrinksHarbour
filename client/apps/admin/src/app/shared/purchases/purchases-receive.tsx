@@ -19,6 +19,7 @@ import { routes } from '@/config/routes';
 import { purchaseOrderService } from '@/services/purchaseOrder.service';
 import { lineSizeLabel, populatedSizeIdentity } from '@/utils/size-variant-label';
 import type { PurchaseOrder } from './types';
+import { getPurchaseWorkflow } from './purchase-workflow-state';
 
 type FilterKey = 'all' | 'overdue' | 'partial';
 
@@ -69,18 +70,13 @@ export default function PurchasesReceive() {
     if (!token) return;
     setLoading(true);
     try {
-      const [confirmedRes, receivedRes] = await Promise.all([
-        purchaseOrderService.getPurchaseOrders(token, { status: 'confirmed' }),
-        purchaseOrderService.getPurchaseOrders(token, { status: 'received' }),
-      ]);
-      const confirmed: PurchaseOrder[] =
-        confirmedRes.data ?? [];
-      const received: PurchaseOrder[] =
-        receivedRes.data ?? [];
-      const partiallyReceived = received.filter((o) =>
-        o.items.some((i) => i.receivedQty < i.quantity)
+      const responses = await Promise.all(
+        ['confirmed', 'partially_received', 'received'].map((status) =>
+          purchaseOrderService.getPurchaseOrders(token, { status })
+        )
       );
-      const all = [...confirmed, ...partiallyReceived];
+      const all = responses.flatMap((response) => response.data ?? [])
+        .filter((order) => getPurchaseWorkflow(order).canReceive);
       // Sort: overdue first, then by expected arrival ascending
       all.sort((a, b) => {
         if (isOverdue(a) && !isOverdue(b)) return -1;

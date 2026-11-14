@@ -52,6 +52,7 @@ import {
 import {
   STATUS_BADGE,
   statusLabel,
+  canModifyPurchaseDraft,
   type PurchaseOrder,
 } from './types';
 import {
@@ -276,8 +277,7 @@ function OrderCard({
   const router = useRouter();
   const { tenant } = useTenant();
   const total = orderTotal(order);
-  const canEdit = order.status === 'draft' && !order.isLocked;
-  const canDelete = order.status === 'draft';
+  const canModify = canModifyPurchaseDraft(order);
   const ageDays = showBillNow
     ? daysSince(order.arrivalDate ?? order.updatedAt)
     : 0;
@@ -388,7 +388,7 @@ function OrderCard({
           >
             <PiEye className="h-4 w-4" />
           </Link>
-          {canEdit && (
+          {canModify && (
             <Link
               href={routes.eCommerce.editPurchase(order._id)}
               title="Edit"
@@ -397,7 +397,7 @@ function OrderCard({
               <PiPencilSimple className="h-4 w-4" />
             </Link>
           )}
-          {canDelete && (
+          {canModify && (
             <button
               type="button"
               title="Delete"
@@ -1681,8 +1681,7 @@ export default function PurchasesOrders() {
               ) : (
                 filtered.map((order) => {
                   const total = orderTotal(order);
-                  const canEdit = order.status === 'draft' && !order.isLocked;
-                  const canDelete = order.status === 'draft';
+                  const canModify = canModifyPurchaseDraft(order);
                   const isDeleting = deletingId === order._id;
                   const isConfirming = confirmDeleteId === order._id;
                   const isOutstanding = activeTab === 'to_bill';
@@ -1840,7 +1839,7 @@ export default function PurchasesOrders() {
                               >
                                 <PiEye className="h-4 w-4" />
                               </Link>
-                              {canEdit && (
+                              {canModify && (
                                 <Link
                                   href={routes.eCommerce.editPurchase(
                                     order._id
@@ -1851,7 +1850,7 @@ export default function PurchasesOrders() {
                                   <PiPencilSimple className="h-4 w-4" />
                                 </Link>
                               )}
-                              {canDelete && (
+                              {canModify && (
                                 <button
                                   type="button"
                                   title="Delete"
