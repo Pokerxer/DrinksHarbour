@@ -12,7 +12,7 @@ function fingerprint(data) {
     subproduct: String(i.subproduct), size: String(i.size || ''), quantity: i.quantity, price: i.priceAtPurchase,
   })), amount: data.totalAmount, currency: data.currency, shipping: data.shippingAddress, coupon: String(data.coupon || ''), channelSnapshot: data.channelSnapshot })).digest('hex');
 }
-async function initialize(provider, actor, amount, currency, email, metadata = {}, requestKey) {
+async function initialize(provider, actor, amount, currency, email, metadata = {}, requestKey, extraMetadata = null) {
   if (!actor?._id || !Number.isFinite(Number(amount)) || Number(amount) <= 0 || minor(amount) <= 0) throw new ValidationError('Invalid payment amount');
   currency = String(currency || 'NGN').toUpperCase();
   if (currency !== 'NGN') throw new ValidationError('Marketplace checkout currently requires NGN');
@@ -41,6 +41,10 @@ async function initialize(provider, actor, amount, currency, email, metadata = {
   }
   const trusted = { customerName: metadata.customerName, customerPhone: metadata.customerPhone,
     kind: 'marketplace_order', userId: String(actor._id), paymentAccount: 'platform', reference };
+  // Manual-intake invoices bind the charge to an existing order so both the
+  // redirect return and the webhook can find it. Only orderId is honoured —
+  // kind/userId/paymentAccount stay trust-controlled.
+  if (extraMetadata && extraMetadata.orderId) trusted.orderId = String(extraMetadata.orderId);
   try {
     const service = require('./payment.service');
     const result = provider === 'stripe' ? await service.createStripePaymentIntent(Number(amount), currency, trusted)
@@ -193,4 +197,4 @@ async function attach(order, details, actor) {
   await require('./accounting.orders').captureOrderAccounting(saved);
   return saved;
 }
-module.exports = { initialize, evidence, createOrder, attach, fingerprint };
+module.exports = { initialize, evidence, createOrder, attach, claimReceipt, fingerprint };
