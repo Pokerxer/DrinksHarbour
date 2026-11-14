@@ -26,6 +26,7 @@ const cartRoutes             = require('./routes/cart.routes');
 const productRoutes          = require('./routes/product.routes');
 const merchandisingPairingRoutes = require('./routes/merchandisingPairing.routes');
 const adCampaignRoutes        = require('./routes/adCampaign.routes');
+const adClickRoutes           = require('./routes/adClick.routes');
 const userRoutes             = require('./routes/user.routes');
 const roleRoutes             = require('./routes/role.routes');
 const couponRoutes           = require('./routes/coupon.routes');
@@ -225,6 +226,8 @@ app.use('/api/cart',               cartRoutes);
 app.use('/api/products',           productRoutes);
 app.use('/api/merchandising/pairings', merchandisingPairingRoutes);
 app.use('/api/ads/campaigns',       adCampaignRoutes);
+// Public click/impression endpoints for sponsored placements (Task 9):
+app.use('/api/ads',                 adClickRoutes);
 app.use('/api/reviews',            reviewRoutes);
 app.use('/api/users',              userRoutes);
 app.use('/api/roles',              roleRoutes);
