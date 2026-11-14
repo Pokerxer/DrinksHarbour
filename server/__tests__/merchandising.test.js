@@ -97,3 +97,36 @@ test('getCrossSells: OTHER-family type never queries pairings, goes straight to 
 
   assert.equal(items[0].source, 'semantic');
 });
+
+test('getUpSells: price band 1.2x–3x wins and tags source', async (t) => {
+  t.mock.method(merchandising, 'upSellPriceBand', async () => [card('f')]);
+  t.mock.method(merchandising, 'upSellBrandPremium', async () => {
+    throw new Error('brand tier must not run when price band exists');
+  });
+
+  const priced = { ...VIEWED, averageSellingPrice: 10000 };
+  const items = await merchandising.getUpSells(priced._id, priced, { limit: 4 });
+
+  assert.equal(items[0].source, 'price_band');
+});
+
+test('getUpSells: zero-price product skips price band, uses brand premium', async (t) => {
+  t.mock.method(merchandising, 'upSellPriceBand', async () => {
+    throw new Error('price band must not run without a current price');
+  });
+  t.mock.method(merchandising, 'upSellBrandPremium', async () => [card('g')]);
+
+  const items = await merchandising.getUpSells(VIEWED._id, VIEWED, { limit: 4 });
+
+  assert.equal(items[0].source, 'brand_premium');
+});
+
+test('getUpSells: falls back to semantic-above when both tiers empty', async (t) => {
+  t.mock.method(merchandising, 'upSellPriceBand', async () => []);
+  t.mock.method(merchandising, 'upSellBrandPremium', async () => []);
+  t.mock.method(merchandising, 'semanticFallback', async () => [card('e')]);
+
+  const items = await merchandising.getUpSells(VIEWED._id, VIEWED, { limit: 4 });
+
+  assert.equal(items[0].source, 'semantic');
+});

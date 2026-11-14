@@ -206,6 +206,76 @@ const getCrossSells = async (productId, product, { limit = 4, tenantId } = {}) =
   }));
 };
 
+// ─── Up-sells ───────────────────────────────────────────────────────────────
+
+// Tier 1: same beverage family, priced 1.2×–3× the source product's average
+// selling price, cheapest premium option first (spec §Tiered hybrid).
+const upSellPriceBand = async (product, { limit, tenantId } = {}) => {
+  const current = product.averageSellingPrice || 0;
+  if (current <= 0) return [];
+  const types = typesForFamilies([familyForType(product.type)]);
+  if (!types.length) return [];
+
+  const query = {
+    _id: { $ne: product._id },
+    status: 'approved',
+    isPublished: true,
+    type: { $in: types },
+    averageSellingPrice: { $gte: current * 1.2, $lte: current * 3 },
+  };
+  if (!tenantId) Object.assign(query, marketplaceGate());
+
+  return Product.find(query)
+    .select('-embedding')
+    .populate(CARD_POPULATE)
+    .sort({ averageSellingPrice: 1 })
+    .limit(limit)
+    .lean();
+};
+
+// Tier 2: same brand, any beverage type, meaningfully dearer than the source.
+const upSellBrandPremium = async (product, { limit, tenantId } = {}) => {
+  const current = product.averageSellingPrice || 0;
+  const brandId = product.brand?._id ?? product.brand;
+  if (!brandId) return [];
+
+  const query = {
+    _id: { $ne: product._id },
+    status: 'approved',
+    isPublished: true,
+    brand: brandId,
+  };
+  if (current > 0) query.averageSellingPrice = { $gt: current * 1.2 };
+  if (!tenantId) Object.assign(query, marketplaceGate());
+
+  return Product.find(query)
+    .select('-embedding')
+    .populate(CARD_POPULATE)
+    .sort({ averageSellingPrice: 1 })
+    .limit(limit)
+    .lean();
+};
+
+const getUpSells = async (productId, product, { limit = 4, tenantId } = {}) => {
+  if (!isMongoId(productId)) throw new ValidationError('Invalid product ID');
+
+  // Tier 1: family price band (skipped entirely without a current price).
+  if ((product.averageSellingPrice || 0) > 0) {
+    const band = await module.exports.upSellPriceBand(product, { limit, tenantId });
+    if (band.length > 0) return band.map((p) => ({ ...p, source: 'price_band' }));
+  }
+
+  // Tier 2: brand premium.
+  const premium = await module.exports.upSellBrandPremium(product, { limit, tenantId });
+  if (premium.length > 0) return premium.map((p) => ({ ...p, source: 'brand_premium' }));
+
+  // Tier 3: semantic similarity (any price) — a "more like this" fallback.
+  return (await module.exports.semanticFallback(product, { limit, tenantId })).map((p) => ({
+    ...p,
+    source: 'semantic',
+  }));
+};
+
 module.exports = {
   hydrateCards,
   sellableForTenant,
@@ -214,5 +284,8 @@ module.exports = {
   getBoughtTogether,
   getCrossSells,
   semanticFallback,
+  getUpSells,
+  upSellPriceBand,
+  upSellBrandPremium,
   familyForType, // re-exported for the Task 4 test convenience
 };
