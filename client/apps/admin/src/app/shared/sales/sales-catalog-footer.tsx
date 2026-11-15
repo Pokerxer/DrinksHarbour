@@ -5,11 +5,15 @@ export default function CatalogueFooter({
   pagination,
   busy,
   summary,
+  showCreateProduct = true,
+  documentLabel = 'order',
   onPage,
   onClose,
 }: {
   pagination?: CataloguePage['pagination'];
   busy: boolean;
+  showCreateProduct?: boolean;
+  documentLabel?: 'order' | 'transfer';
   summary: { lines: number; units: number };
   onPage: (delta: number) => void;
   onClose: () => void;
@@ -49,19 +53,22 @@ export default function CatalogueFooter({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-sm font-semibold text-gray-900">
-            {summary.lines} line{summary.lines !== 1 ? 's' : ''} in order{' '}
+            {summary.lines} line{summary.lines !== 1 ? 's' : ''} in{' '}
+            {documentLabel}{' '}
             <span className="text-xs font-normal text-gray-500">
               · {summary.units} units
             </span>
           </p>
-          <a
-            href={routes.eCommerce.createSubProduct}
-            target="_blank"
-            rel="noreferrer"
-            className="mt-1 inline-flex min-h-7 items-center gap-1 text-xs font-medium text-brand hover:underline"
-          >
-            <PiPlus /> Create product
-          </a>
+          {showCreateProduct && documentLabel === 'order' && (
+            <a
+              href={routes.eCommerce.createSubProduct}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-1 inline-flex min-h-7 items-center gap-1 text-xs font-medium text-brand hover:underline"
+            >
+              <PiPlus /> Create product
+            </a>
+          )}
         </div>
         <button
           type="button"

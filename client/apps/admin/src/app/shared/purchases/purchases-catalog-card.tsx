@@ -23,6 +23,8 @@ export interface PurchasesCatalogCardProps {
   product: CatalogProduct;
   currency?: string;
   quantity?: number;
+  documentLabel?: 'order' | 'transfer';
+  priceLabel?: 'Cost' | 'Wholesale';
   sizeQuantities?: Record<string, number>;
   onAdd: (selection: ProductLineSelection) => void;
   onSetQty: (selection: ProductLineSelection, quantity: number) => void;
@@ -31,11 +33,15 @@ export interface PurchasesCatalogCardProps {
 
 function Quantity({
   name,
+  documentLabel,
+  maxStock,
   qty,
   onChange,
   onRemove,
 }: {
   name: string;
+  documentLabel: 'order' | 'transfer';
+  maxStock?: number;
   qty: number;
   onChange: (qty: number) => void;
   onRemove: () => void;
@@ -43,7 +49,7 @@ function Quantity({
   const button =
     'flex h-9 w-9 shrink-0 items-center justify-center rounded-md hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand disabled:opacity-30';
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex flex-wrap items-center gap-1">
       <div className="flex min-w-0 items-center rounded-lg border border-gray-200 bg-white">
         <button
           type="button"
@@ -80,11 +86,16 @@ function Quantity({
       <button
         type="button"
         className={`${button} text-gray-400 hover:text-red-600`}
-        aria-label={`Remove ${name} from order`}
+        aria-label={`Remove ${name} from ${documentLabel}`}
         onClick={onRemove}
       >
         <PiTrash />
       </button>
+      {maxStock != null && qty > maxStock && (
+        <p className="w-full text-xs font-medium text-amber-700">
+          Quantity exceeds source stock
+        </p>
+      )}
     </div>
   );
 }
@@ -93,6 +104,8 @@ function Quantity({
 export default function PurchasesCatalogCard({
   product,
   currency = 'NGN',
+  documentLabel = 'order',
+  priceLabel = 'Cost',
   quantity = 0,
   sizeQuantities = {},
   onAdd,
@@ -139,7 +152,8 @@ export default function PurchasesCatalogCard({
         </span>
         {selected > 0 && (
           <span className="absolute bottom-2 left-2 inline-flex items-center gap-1 rounded-md bg-brand px-2 py-1 text-[11px] font-semibold text-white">
-            <PiCheck /> {selected} on order
+            <PiCheck /> {selected}{' '}
+            {documentLabel === 'transfer' ? 'in transfer' : 'on order'}
           </span>
         )}
       </div>
@@ -159,13 +173,19 @@ export default function PurchasesCatalogCard({
           </a>
         </div>
         <p className="mt-1 truncate text-xs text-gray-500">
-          {product.brand || product.category || 'Beverage'}
-          {product.sku ? ` · ${product.sku}` : ''}
+          {[
+            product.brand ||
+              product.category ||
+              (documentLabel === 'order' ? 'Beverage' : ''),
+            product.sku,
+          ]
+            .filter(Boolean)
+            .join(' · ')}
         </p>
         <div className="mt-auto pt-3">
           <p className="mb-3 text-base font-bold text-gray-900">
             <span className="mr-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
-              Cost
+              {priceLabel}
             </span>
             {hasSizes && (
               <span className="mr-1 text-xs font-normal text-gray-500">
@@ -178,6 +198,8 @@ export default function PurchasesCatalogCard({
             (quantity > 0 ? (
               <Quantity
                 name={product.name}
+                documentLabel={documentLabel}
+                maxStock={documentLabel === 'transfer' ? stock : undefined}
                 qty={quantity}
                 onChange={(qty) => onSetQty(selection, qty)}
                 onRemove={() => onRemove(selection)}
@@ -188,7 +210,7 @@ export default function PurchasesCatalogCard({
                 onClick={() => onAdd(selection)}
                 className="flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-brand px-3 text-sm font-semibold text-white hover:bg-brand-dark disabled:bg-gray-100 disabled:text-gray-400"
               >
-                <PiPlus /> Add to order
+                <PiPlus /> Add to {documentLabel}
               </button>
             ))}
           {hasSizes && (
@@ -209,6 +231,10 @@ export default function PurchasesCatalogCard({
                     const selectedSize = purchaseSizeSelection(product, size);
                     const qty = sizeQuantities[size.size] || 0;
                     const name = `${product.name} ${size.displayName || size.size}`;
+                    const controlName =
+                      documentLabel === 'transfer' && size.sku
+                        ? name + ' · ' + size.sku
+                        : name;
                     return (
                       <div key={size.size} className="space-y-2">
                         <div className="flex flex-wrap items-start justify-between gap-1 text-xs">
@@ -219,6 +245,11 @@ export default function PurchasesCatalogCard({
                             {size.availableStock ?? 0} in stock
                           </span>
                         </div>
+                        {documentLabel === 'transfer' && size.sku && (
+                          <p className="break-all text-xs text-gray-500">
+                            {size.sku}
+                          </p>
+                        )}
                         <p className="text-sm font-semibold text-gray-800">
                           {fmtCur(size.costPrice, currency)}
                           {(size.unitsPerPack || 1) > 1 && (
@@ -229,7 +260,13 @@ export default function PurchasesCatalogCard({
                         </p>
                         {qty > 0 ? (
                           <Quantity
-                            name={name}
+                            name={controlName}
+                            documentLabel={documentLabel}
+                            maxStock={
+                              documentLabel === 'transfer'
+                                ? size.availableStock
+                                : undefined
+                            }
                             qty={qty}
                             onChange={(value) => onSetQty(selectedSize, value)}
                             onRemove={() => onRemove(selectedSize)}
@@ -237,7 +274,7 @@ export default function PurchasesCatalogCard({
                         ) : (
                           <button
                             type="button"
-                            aria-label={`Add ${name}`}
+                            aria-label={`Add ${controlName}`}
                             onClick={() => onAdd(selectedSize)}
                             className="min-h-9 w-full rounded-lg bg-gray-900 px-3 text-xs font-semibold text-white hover:bg-brand disabled:bg-gray-100 disabled:text-gray-400"
                           >

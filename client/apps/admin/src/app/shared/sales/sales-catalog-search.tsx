@@ -4,9 +4,11 @@ import { PiMagnifyingGlass, PiX } from 'react-icons/pi';
 export default function CatalogueSearch({
   value,
   onChange,
+  placeholder = 'Search products, SKU or barcode…',
 }: {
   value: string;
   onChange: (value: string) => void;
+  placeholder?: string;
 }) {
   const parts = value.split(/[,;\n]/);
   const draft = (parts.pop() || '').trimStart();
@@ -52,11 +54,7 @@ export default function CatalogueSearch({
               update(terms.slice(0, -1), '');
             }
           }}
-          placeholder={
-            terms.length
-              ? 'Add another product…'
-              : 'Search products, SKU or barcode…'
-          }
+          placeholder={terms.length ? 'Add another product…' : placeholder}
           className="min-h-9 min-w-40 flex-1 border-0 bg-transparent p-0 text-sm text-gray-900 placeholder:text-gray-400 focus:ring-0"
         />
         {value && (

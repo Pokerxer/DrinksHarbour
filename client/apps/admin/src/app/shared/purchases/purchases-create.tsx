@@ -19,10 +19,8 @@ import {
   PiWarning,
   PiCaretRight,
   PiStorefront,
-  PiCamera,
   PiBookmarkSimple,
   PiTextT,
-  PiSquaresFour,
   PiDotsSixVertical,
 } from 'react-icons/pi';
 import dynamic from 'next/dynamic';
@@ -43,6 +41,7 @@ import {
 import type { Vendor } from './types';
 import BaseCurrencyEquivalent from './base-currency-equivalent';
 import PackSizeInput from './pack-size-input';
+import PurchaseLineActions from './purchase-line-actions';
 import NumberInput from '@/components/ui/number-input';
 import { moveItem } from './line-dnd';
 import WarehouseSelect, {
@@ -1471,52 +1470,14 @@ export default function PurchasesCreate() {
               })}
             </div>
 
-            {/* Action bar — mirrors the sales create form (Add a product /
-                section / note / Catalogue / Scan & Match). */}
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-gray-100 px-5 py-3">
-              <button
-                type="button"
-                onClick={addItem}
-                disabled={hasEmptyProductRow}
-                title={
-                  hasEmptyProductRow
-                    ? 'Select a product on the empty row first'
-                    : undefined
-                }
-                className="flex items-center gap-1.5 text-xs font-medium text-[#b20202] hover:underline disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                <PiPlus className="h-3.5 w-3.5" /> Add a product
-              </button>
-              <button
-                type="button"
-                onClick={() => addPresentationLine('section')}
-                className="flex items-center gap-1.5 text-xs font-medium text-[#b20202] hover:underline"
-              >
-                <PiBookmarkSimple className="h-3.5 w-3.5" /> Add a section
-              </button>
-              <button
-                type="button"
-                onClick={() => addPresentationLine('note')}
-                className="flex items-center gap-1.5 text-xs font-medium text-[#b20202] hover:underline"
-              >
-                <PiTextT className="h-3.5 w-3.5" /> Add a note
-              </button>
-              <button
-                type="button"
-                onClick={() => setCatalogOpen(true)}
-                className="flex items-center gap-1.5 text-xs font-medium text-[#b20202] hover:underline"
-              >
-                <PiSquaresFour className="h-3.5 w-3.5" /> Catalogue
-              </button>
-              <button
-                type="button"
-                onClick={() => setScanOpen(true)}
-                title="Photograph, upload or paste a vendor quotation"
-                className="flex items-center gap-1.5 text-xs font-medium text-[#b20202] hover:underline"
-              >
-                <PiCamera className="h-3.5 w-3.5" /> Scan &amp; Match
-              </button>
-            </div>
+            <PurchaseLineActions
+              hasEmptyProductRow={hasEmptyProductRow}
+              onAddProduct={addItem}
+              onAddPresentationLine={addPresentationLine}
+              onOpenCatalogue={() => setCatalogOpen(true)}
+              onOpenScan={() => setScanOpen(true)}
+              scanTitle="Photograph, upload or paste a vendor quotation"
+            />
           </div>
         </div>
 

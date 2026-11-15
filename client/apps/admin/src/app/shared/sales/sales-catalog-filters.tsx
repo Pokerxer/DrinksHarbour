@@ -127,22 +127,10 @@ export default function SalesCatalogueFilters({
             <PiX /> Clear filters
           </button>
         )}
-        <label className="ml-auto flex items-center gap-2 text-xs text-gray-500">
-          Sort
-          <select
-            aria-label="Sort catalogue"
-            value={filters.sort}
-            onChange={(event) =>
-              onChange({ ...filters, sort: event.target.value as SortKey })
-            }
-            className="min-h-10 rounded-lg border-gray-200 bg-gray-50 py-2 text-xs text-gray-700 focus:border-brand focus:ring-brand"
-          >
-            <option value="name">Name A–Z</option>
-            <option value="priceAsc">Base price: low to high</option>
-            <option value="priceDesc">Base price: high to low</option>
-            <option value="stock">Availability: high to low</option>
-          </select>
-        </label>
+        <CatalogueSort
+          value={filters.sort}
+          onChange={(sort) => onChange({ ...filters, sort })}
+        />
       </div>
       {expanded && (
         <div
@@ -170,5 +158,30 @@ export default function SalesCatalogueFilters({
         </div>
       )}
     </div>
+  );
+}
+
+export function CatalogueSort({
+  value,
+  onChange,
+}: {
+  value: SortKey;
+  onChange: (value: SortKey) => void;
+}) {
+  return (
+    <label className="ml-auto flex items-center gap-2 text-xs text-gray-500">
+      Sort
+      <select
+        aria-label="Sort catalogue"
+        value={value}
+        onChange={(event) => onChange(event.target.value as SortKey)}
+        className="min-h-10 rounded-lg border-gray-200 bg-gray-50 py-2 text-xs text-gray-700 focus:border-brand focus:ring-brand"
+      >
+        <option value="name">Name A–Z</option>
+        <option value="priceAsc">Base price: low to high</option>
+        <option value="priceDesc">Base price: high to low</option>
+        <option value="stock">Availability: high to low</option>
+      </select>
+    </label>
   );
 }

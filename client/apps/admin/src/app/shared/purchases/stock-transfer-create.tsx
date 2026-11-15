@@ -8,7 +8,6 @@ import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import dynamic from 'next/dynamic';
 import {
-  PiPlus,
   PiTrash,
   PiMagnifyingGlass,
   PiFloppyDisk,
@@ -23,8 +22,6 @@ import {
   PiPaperPlaneTilt,
   PiBookmarkSimple,
   PiTextT,
-  PiSquaresFour,
-  PiCamera,
 } from 'react-icons/pi';
 import toast from 'react-hot-toast';
 import { routes } from '@/config/routes';
@@ -36,6 +33,7 @@ import { fmtCur } from './purchases-analytics-helpers';
 import { computeTransferTotals } from './transfer-money';
 import TransferTotalsCard from './transfer-totals-card';
 import PackSizeInput from './pack-size-input';
+import PurchaseLineActions from './purchase-line-actions';
 import { useWarehouseTransferPrefill, type PreparedWarehouseTransfer } from './use-warehouse-transfer-prefill';
 import {
   appendPresentationLine,
@@ -48,10 +46,11 @@ import {
   transferPayloadLines,
   type TransferLine,
 } from './stock-transfer-lines';
-import TransferCatalogModal, {
+import {
+  transferCataloguePrice,
+  transferStockKey,
   type TransferCatalogRow,
-} from './stock-transfer-catalog-modal';
-import PurchasesScanDrawer from './purchases-scan-drawer';
+} from './stock-transfer-catalog-data';
 import type { PurchaseLineDraft } from './purchases-scan-selection';
 
 const TransferCatalogModalDynamic = dynamic(
@@ -279,19 +278,6 @@ function WarehouseSelector({
   );
 }
 
-/** One selectable line from the source warehouse's stock. */
-interface StockRowOption {
-  subProductId: string;
-  sizeId?: string;
-  sizeName?: string;
-  name: string;
-  sku: string;
-  quantity: number;
-  unitsPerPack: number;
-  costPrice: number;
-  wholesalePrice: number;
-}
-
 /**
  * Product picker fed by the SOURCE WAREHOUSE's stock — only items the source
  * can actually ship are selectable. Rows come from getWarehouseStock, which
@@ -305,9 +291,9 @@ function SourceProductSearch({
   onSelect,
 }: {
   value: string;
-  rows: StockRowOption[];
+  rows: TransferCatalogRow[];
   loading: boolean;
-  onSelect: (row: StockRowOption) => void;
+  onSelect: (row: TransferCatalogRow) => void;
 }) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
@@ -420,11 +406,13 @@ export default function StockTransferCreate({
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [overIndex, setOverIndex] = useState<number | null>(null);
   const [stockMap, setStockMap] = useState<Record<string, number>>({});
-  const [stockRows, setStockRows] = useState<StockRowOption[]>([]);
+  const [stockRows, setStockRows] = useState<TransferCatalogRow[]>([]);
   // Mirror for stable callbacks (Scan & Match mapping should not re-create on
   // every stock refresh).
-  const stockRowsRef = useRef<StockRowOption[]>([]);
+  const stockRowsRef = useRef<TransferCatalogRow[]>([]);
   const [loadingStock, setLoadingStock] = useState(false);
+  const [stockError, setStockError] = useState(false);
+  const [stockRefresh, setStockRefresh] = useState(0);
   // Bulk pricing controls: seed/re-seed every line from the chosen source.
   const [priceMode, setPriceMode] = useState<'cost' | 'wholesale'>('cost');
   const [bulkTax, setBulkTax] = useState('');
@@ -548,26 +536,27 @@ export default function StockTransferCreate({
     (w) => !sourceWarehouse || w._id !== sourceWarehouse._id
   );
 
-  const stockKey = (subProductId: string, sizeId?: string) =>
-    `${subProductId}::${sizeId || ''}`;
-
   const fetchStock = useCallback(
-    async (warehouseId: string) => {
+    async (warehouseId: string, signal: AbortSignal) => {
       if (!token) return;
       setLoadingStock(true);
+      setStockError(false);
       try {
         const res = await fetch(
           `${API_URL}/api/warehouses/${warehouseId}/stock`,
           {
             headers: { Authorization: `Bearer ${token}` },
+            signal,
           }
         );
-        const json = await res.json() as {data?: unknown[]};
+        if (!res.ok) throw new Error('Unable to load source stock');
+        const json = await res.json() as { data?: unknown[] };
+        if (signal.aborted) return;
         const list: any[] = json?.data ?? [];
         const map: Record<string, number> = {};
         // Picker rows: one per stocked (subProduct, size) in the source
         // warehouse, with the name/sku/pack/cost fields the line needs.
-        const rowMap = new Map<string, StockRowOption>();
+        const rowMap = new Map<string, TransferCatalogRow>();
         for (const row of list) {
           const sp =
             typeof row.subProduct === 'object' && row.subProduct
@@ -580,7 +569,7 @@ export default function StockTransferCreate({
           const szId =
             sz?._id ?? (typeof row.size === 'string' ? row.size : undefined);
           const qty = row.currentQuantity || 0;
-          const k = stockKey(String(spId), szId ? String(szId) : undefined);
+          const k = transferStockKey(String(spId), szId ? String(szId) : undefined);
           map[k] = (map[k] || 0) + qty;
           const existing = rowMap.get(k);
           if (existing) {
@@ -593,6 +582,8 @@ export default function StockTransferCreate({
             sizeName: sz ? sizeVariantLabel(sz) : undefined,
             name: sp?.product?.name ?? sp?.sku ?? 'Product',
             sku: sz?.sku ?? sp?.sku ?? '',
+            productSku: sp?.sku,
+            image: sp?.imagesOverride?.[0]?.url || sp?.product?.images?.[0]?.url,
             quantity: qty,
             unitsPerPack:
               Number(sz?.unitsPerPack) > 0
@@ -609,31 +600,45 @@ export default function StockTransferCreate({
           prev.map((it) => ({
             ...it,
             sourceStock: it.subProductId
-              ? (map[stockKey(it.subProductId, it.sizeId)] ?? 0)
+              ? (map[transferStockKey(it.subProductId, it.sizeId)] ?? 0)
               : 0,
           }))
         );
       } catch {
-        toast.error('Failed to load source stock');
+        if (!signal.aborted) {
+          setStockError(true);
+          toast.error('Failed to load source stock');
+        }
       } finally {
-        setLoadingStock(false);
+        if (!signal.aborted) setLoadingStock(false);
       }
     },
     [token]
   );
 
+  const sourceWarehouseId = sourceWarehouse?._id;
   useEffect(() => {
-    if (sourceWarehouse) {
-      fetchStock(sourceWarehouse._id);
+    const controller = new AbortController();
+    if (sourceWarehouseId) {
+      fetchStock(sourceWarehouseId, controller.signal);
     } else {
+      setLoadingStock(false);
+      setStockError(false);
       setStockMap({});
       setStockRows([]);
+      stockRowsRef.current = [];
     }
-  }, [sourceWarehouse, fetchStock]);
+    return () => controller.abort();
+  }, [sourceWarehouseId, fetchStock, stockRefresh]);
 
   function handleSourceChange(w: Warehouse | null) {
     setSourceWarehouse(w);
     if (w?._id !== sourceWarehouse?._id) {
+      setStockMap({});
+      setStockRows([]);
+      stockRowsRef.current = [];
+      setStockError(false);
+      setLoadingStock(!!w);
       setItems((prev) => prev.map((it) => ({ ...it, sourceStock: 0 })));
     }
   }
@@ -689,8 +694,6 @@ export default function StockTransferCreate({
   // ── Source-stock catalogue → line list ─────────────────────────────────────
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [scanOpen, setScanOpen] = useState(false);
-  const transferStockKey = (subProductId: string, sizeId?: string) =>
-    `${subProductId}::${sizeId || ''}`;
   const catalogQuantities = useMemo(() => {
     const map: Record<string, number> = {};
     for (const it of items) {
@@ -701,13 +704,9 @@ export default function StockTransferCreate({
     return map;
   }, [items]);
 
-  const reseedPrice = (row: TransferCatalogRow) =>
-    priceMode === 'wholesale'
-      ? row.wholesalePrice || row.costPrice
-      : row.costPrice;
-
   const addFromCatalog = useCallback(
     (row: TransferCatalogRow) => {
+      const price = transferCataloguePrice(row, priceMode);
       setItems((p) =>
         appendTransferScannedLines(
           p,
@@ -719,11 +718,11 @@ export default function StockTransferCreate({
               sizeId: row.sizeId,
               sizeName: row.sizeName,
               quantity: 1,
-              costPrice: reseedPrice(row),
+              costPrice: price,
               costSourcePrice: row.costPrice,
               wholesalePrice: row.wholesalePrice,
               packSize: row.unitsPerPack,
-              priceSource: reseedPrice(row) > 0 ? priceMode : null,
+              priceSource: price > 0 ? priceMode : null,
               sourceStock: row.quantity,
             },
           ],
@@ -955,7 +954,7 @@ export default function StockTransferCreate({
         </div>
       )}
       {/* Header */}
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold text-gray-900">
             {editId ? 'Edit Stock Transfer' : 'New Stock Transfer'}
@@ -1002,7 +1001,7 @@ export default function StockTransferCreate({
         </div>
       </div>
 
-      <div className="space-y-6">
+      <div className="space-y-5">
         {/* Transfer Details */}
         <div className="rounded-xl border border-gray-200 bg-white p-5">
           <h2 className="mb-4 text-sm font-semibold text-gray-800">
@@ -1108,7 +1107,7 @@ export default function StockTransferCreate({
 
         {/* Transfer Lines */}
         <div className="rounded-xl border border-gray-200 bg-white">
-          <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 px-5 py-3">
             <h2 className="text-sm font-semibold text-gray-800">
               Transfer Lines
             </h2>
@@ -1335,7 +1334,7 @@ export default function StockTransferCreate({
 
                   {/* Line fields — presentation lines carry none. */}
                   {type === 'product' && (
-                  <div className="ml-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-8">
+                  <div className="grid grid-cols-2 gap-3 sm:ml-8 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-8">
                     <div>
                       <label className="mb-1 block text-[10px] font-medium text-gray-500">
                         SKU
@@ -1485,52 +1484,15 @@ export default function StockTransferCreate({
             })}
           </div>
 
-          <div className="border-t border-gray-100 px-5 py-3">
-            {/* Action bar — mirrors the PO/sales create forms (Add a product /
-                section / note / Catalogue / Scan & Match). */}
-            <button
-              type="button"
-              onClick={addItem}
-              disabled={hasEmptyProductRow}
-              title={
-                hasEmptyProductRow
-                  ? 'Select a product on the empty row first'
-                  : undefined
-              }
-              className="flex items-center gap-1.5 text-xs font-medium text-[#b20202] hover:underline disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              <PiPlus className="h-3.5 w-3.5" /> Add a product
-            </button>
-            <button
-              type="button"
-              onClick={() => addPresentationLine('section')}
-              className="flex items-center gap-1.5 text-xs font-medium text-[#b20202] hover:underline"
-            >
-              <PiBookmarkSimple className="h-3.5 w-3.5" /> Add a section
-            </button>
-            <button
-              type="button"
-              onClick={() => addPresentationLine('note')}
-              className="flex items-center gap-1.5 text-xs font-medium text-[#b20202] hover:underline"
-            >
-              <PiTextT className="h-3.5 w-3.5" /> Add a note
-            </button>
-            <button
-              type="button"
-              onClick={() => setCatalogOpen(true)}
-              className="flex items-center gap-1.5 text-xs font-medium text-[#b20202] hover:underline"
-            >
-              <PiSquaresFour className="h-3.5 w-3.5" /> Catalogue
-            </button>
-            <button
-              type="button"
-              onClick={() => setScanOpen(true)}
-              title="Photograph, upload or paste a line list"
-              className="flex items-center gap-1.5 text-xs font-medium text-[#b20202] hover:underline"
-            >
-              <PiCamera className="h-3.5 w-3.5" /> Scan &amp; Match
-            </button>
-          </div>
+          <PurchaseLineActions
+            hasEmptyProductRow={hasEmptyProductRow}
+            catalogueDisabled={!sourceWarehouse}
+            onAddProduct={addItem}
+            onAddPresentationLine={addPresentationLine}
+            onOpenCatalogue={() => setCatalogOpen(true)}
+            onOpenScan={() => setScanOpen(true)}
+            scanTitle="Photograph, upload or paste a line list"
+          />
         </div>
 
         {/* Summary */}
@@ -1609,19 +1571,23 @@ export default function StockTransferCreate({
         </div>
       </div>
 
-      <TransferCatalogModalDynamic
-        open={catalogOpen}
-        sourceName={sourceWarehouse?.name}
-        currency={currency}
-        priceMode={priceMode}
-        rows={stockRows}
-        loading={loadingStock}
-        qtyMap={catalogQuantities}
-        onClose={() => setCatalogOpen(false)}
-        onAdd={addFromCatalog}
-        onSetQty={setCatalogQty}
-        onRemove={removeCatalogLine}
-      />
+      {catalogOpen && sourceWarehouse && (
+        <TransferCatalogModalDynamic
+          open
+          sourceName={sourceWarehouse.name}
+          currency={currency}
+          priceMode={priceMode}
+          rows={stockRows}
+          loading={loadingStock}
+          error={stockError}
+          onRefresh={() => setStockRefresh((value) => value + 1)}
+          qtyMap={catalogQuantities}
+          onClose={() => setCatalogOpen(false)}
+          onAdd={addFromCatalog}
+          onSetQty={setCatalogQty}
+          onRemove={removeCatalogLine}
+        />
+      )}
 
       <PurchasesScanDrawerDynamic
         open={scanOpen}
