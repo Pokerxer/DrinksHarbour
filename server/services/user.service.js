@@ -995,7 +995,7 @@ const resetPassword = async (resetToken, newPassword) => {
   }
 
   // Check if new password is same as old
-  const isSamePassword = await bcrypt.compare(newPassword, user.passwordHash);
+  const isSamePassword = user.passwordHash && await bcrypt.compare(newPassword, user.passwordHash);
   if (isSamePassword) {
     throw new ValidationError('New password must be different from your previous password');
   }

@@ -5,7 +5,7 @@
 // builder. Same mechanics (scanService pairing/match, upload, Esc, scroll lock),
 // but rows resolve into per-tenant offers through BuilderTenantPicker instead of
 // an inline size picker: the AI match row carries the product id, and the
-// marketplace price only exists via fetchTenantOffers inside the picker.
+// marketplace price only exists via the checkout offer endpoint used by the picker.
 
 import {
   useCallback,

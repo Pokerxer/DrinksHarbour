@@ -4,6 +4,15 @@ const asyncHandler = require('../utils/asyncHandler');
 const { successResponse } = require('../utils/response');
 const { ValidationError } = require('../utils/errors');
 const svc = require('../services/whatsappOrderInvoice');
+const { getWhatsappOffers } = require('../services/whatsappCatalogueOffers');
+
+exports.getCatalogueOffers = asyncHandler(async (req, res) => {
+  const ids = typeof req.query.productIds === 'string' ? req.query.productIds.split(',') : [];
+  if (!ids.length || ids.length > 60 || ids.some(id => !/^[a-f0-9]{24}$/i.test(id))) {
+    throw new ValidationError('Provide between 1 and 60 valid product IDs');
+  }
+  successResponse(res, { offers: await getWhatsappOffers([...new Set(ids)]) }, 'Catalogue offers retrieved');
+});
 
 // POST /api/whatsapp-orders/:id/invoice — issue or re-send the invoice (super_admin)
 exports.issueInvoice = asyncHandler(async (req, res) => {
@@ -37,4 +46,16 @@ exports.verifyPayment = asyncHandler(async (req, res) => {
   }
   const saved = await svc.verifyAndAttach(req.params.id, reference);
   successResponse(res, { paid: true, orderNumber: saved.orderNumber, paymentStatus: saved.paymentStatus }, 'Payment confirmed');
+});
+
+const customers = require('../services/whatsappCustomers');
+exports.listCustomers = asyncHandler(async (req, res) => {
+  successResponse(res, { customers: await customers.listCustomers(req.query.search) }, 'Customers retrieved');
+});
+exports.saveCustomer = asyncHandler(async (req, res) => {
+  successResponse(res, { customer: await customers.saveCustomer(req.body) }, 'Customer saved');
+});
+
+exports.getCustomerContext = asyncHandler(async (req, res) => {
+  successResponse(res, await customers.getCustomerContext(req.params.customerId), 'Customer details retrieved');
 });

@@ -623,6 +623,7 @@ userSchema.methods.generatePasswordResetToken = function () {
  * @returns {Promise<boolean>}
  */
 userSchema.methods.comparePassword = async function (candidatePassword) {
+  if (!this.passwordHash) return false;
   const bcrypt = require('bcryptjs');
   return bcrypt.compare(candidatePassword, this.passwordHash);
 };

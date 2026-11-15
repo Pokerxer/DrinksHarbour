@@ -119,6 +119,11 @@ const PUBLIC_ALLOWLIST = new Set([
   'POST merchantCarrier.routes.js /webhooks/:account',
   'POST erm.routes.js /webhook',
 
+  // Guests return from the payment gateway without a session. Settlement
+  // requires a verified receipt with a payment claim bound to this invoice's
+  // order. The invoice token separately gates access to the invoice details.
+  'POST whatsappOrder.routes.js /:id/pay-verify',
+
   // Authentication entry points — by definition reachable without a session.
   'POST user.routes.js /register',
   'POST user.routes.js /login',

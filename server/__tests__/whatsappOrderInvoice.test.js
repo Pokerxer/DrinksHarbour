@@ -132,6 +132,30 @@ test('publicInvoice hides the pay button without a valid token', async (t) => {
 test('verifyAndAttach marks the order paid only with a claim bound to this order', async (t) => {
   const Order = require('../models/Order');
   const order = paidReadyOrder();
+  order.user = oid();
+  order.originChannel = 'whatsapp';
+  const User = require('../models/User');
+  const wallet = require('../models/PlatformLoyaltyTransaction');
+  const customerQuery = chain({ loyaltyTier: 'cork' });
+  customerQuery.select = () => customerQuery;
+  t.mock.method(User, 'findOne', filter => {
+    assert.equal(String(filter._id), String(order.user));
+    return customerQuery;
+  });
+  t.mock.method(User, 'findOneAndUpdate', (_, update, opts) => {
+    assert.equal(update.$inc.loyaltyPoints, 45);
+    assert.ok(opts.session);
+    return { select: async () => ({ loyaltyPoints: 45, loyaltyLifetimePoints: 45, loyaltyTier: 'cork' }) };
+  });
+  let awards = 0;
+  t.mock.method(wallet, 'create', async ([entry], opts) => {
+    assert.equal(String(entry.userId), String(order.user));
+    assert.equal(entry.relatedOrder, order._id);
+    assert.equal(entry.points, 45);
+    assert.ok(opts.session);
+    awards += 1;
+    return [entry];
+  });
   order.invoice = { token: 'secret'.repeat(8), provider: 'korapay', paymentReference: 'dhm-invoice-1', attempt: 1 };
   // Plain-object stand-in with the mongoose surface settleWithReceipt touches:
   // .set() (Object.assign), $locals (deferAccounting), .save().
@@ -179,7 +203,9 @@ test('verifyAndAttach marks the order paid only with a claim bound to this order
   assert.strictEqual(saved.paymentStatus, 'paid');
   assert.strictEqual(saved.status, 'confirmed');
   assert.strictEqual(saved.paymentReference, 'dhm-invoice-1');
+  await svc.settleFromWebhook(order, 'korapay', 'dhm-invoice-1');
   assert.strictEqual(claimReceiptCalled, 1);
+  assert.strictEqual(awards, 1);
 
   // A claim bound to ANOTHER order must be rejected fail-closed.
   const other = { ...claimRow, order: oid() };

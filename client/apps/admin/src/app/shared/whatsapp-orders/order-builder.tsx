@@ -7,7 +7,7 @@ import toast from 'react-hot-toast';
 import { useAuthorization } from '@/hooks/use-authorization';
 import { routes } from '@/config/routes';
 import BuilderHeader from './builder-header';
-import BuilderCustomerBar from './builder-customer-bar';
+import BuilderCustomerBar, { type CustomerDraft } from './builder-customer-bar';
 import BuilderReviewPanel from './builder-review-panel';
 import BuilderTotalsCard from './builder-totals-card';
 import BuilderLineTable from './builder-line-table';
@@ -17,6 +17,9 @@ import BuilderTenantPicker from './builder-tenant-picker';
 import { useBarcodeScanner } from '@/app/shared/point-of-sale/hooks/useBarcodeScanner';
 import useBuilderLines from './use-builder-lines';
 import DeliveryCard, { type DeliveryDraft } from './delivery-card';
+import useDeliveryQuote from './use-delivery-quote';
+import useCustomerContext from './use-customer-context';
+import CustomerDeliveryOptions from './customer-delivery-options';
 import { printOrderDocuments } from '@/utils/print/whatsapp-order-print';
 import {
   whatsappOrderService, type BuilderLine, type ManualPrintLine,
@@ -24,6 +27,7 @@ import {
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 const DRAFT_KEY = 'dh:wa-builder-draft-v2';
+const EMPTY_DELIVERY: DeliveryDraft = { address: '', lga: '', state: '', zipCode: '', country: 'Nigeria' };
 
 const fmtNgn = (n: number) =>
   new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 }).format(n);
@@ -40,7 +44,7 @@ function attemptKey(): string {
 function finishAttempt() { window.sessionStorage.removeItem('dh:wa-order-attempt'); }
 
 interface DraftShape {
-  customer: { firstName: string; lastName: string; email: string; phone: string };
+  customer: CustomerDraft;
   delivery: DeliveryDraft;
   lines: BuilderLine[];
 }
@@ -50,17 +54,15 @@ export default function OrderBuilder() {
   const token = user?.token || '';
 
   const [customer, setCustomer] = useState<DraftShape['customer']>({ firstName: '', lastName: '', email: '', phone: '' });
-  const [delivery, setDelivery] = useState<DeliveryDraft>({ address: '', lga: '', state: '', zipCode: '', country: 'Nigeria' });
+  const [delivery, setDelivery] = useState<DeliveryDraft>(EMPTY_DELIVERY);
+  const customerContext = useCustomerContext(token, customer._id);
   // Lines are owned by useBuilderLines (line mutators + live server-priced
   // preview). The draft below restores/saves through its setLines/lines.
   const {
     lines, setLines, addProductLine, addLines, addSection, addNote, remove, update, setQuantity, previewing,
   } = useBuilderLines([]);
-  const [shippingFee, setShippingFee] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [created, setCreated] = useState<{ orderId: string; orderNumber: string; totalAmount: number } | null>(null);
-  // Lifted customer-match status — BuilderCustomerBar's lookup effect reports it.
-  const [customerStatusText, setCustomerStatusText] = useState('Checking…');
   // Overlays mounted by Tasks 6–7 (catalogue modal, scan drawer).
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [scanOpen, setScanOpen] = useState(false);
@@ -118,12 +120,14 @@ export default function OrderBuilder() {
 
   const productLines = lines.filter((l) => l.lineType === 'product');
   const subtotal = productLines.reduce((s, l) => s + (l.unitPrice || 0) * l.quantity, 0);
+  const deliveryQuote = useDeliveryQuote(delivery, subtotal, productLines.flatMap(line => line.tenantId ? [line.tenantId] : []));
+  const shippingFee = deliveryQuote.fee;
   const total = subtotal + shippingFee;
   const canSubmit = Boolean(
-    customer.firstName.trim() && customer.phone.trim() && customer.email.trim() &&
+    customer._id && customer.firstName.trim() && customer.lastName.trim() && customer.phone.trim() && customer.email.trim() &&
     delivery.address.trim() && delivery.state.trim() && delivery.lga.trim() &&
-    productLines.length > 0 && token && !submitting &&
-    !productLines.some((l) => l.unitPrice == null)   // every product line has a server price
+    productLines.length > 0 && token && !submitting && deliveryQuote.hasFee &&
+    productLines.every((line) => line.subProductId && line.unitPrice != null && line.availableStock !== 0)
   );
 
   const submit = useCallback(async () => {
@@ -143,11 +147,13 @@ export default function OrderBuilder() {
       }));
       const order = await whatsappOrderService.createOrder(token, {
         customer: { firstName: customer.firstName.trim(), lastName: customer.lastName.trim(), email: customer.email.trim(), phone: customer.phone.trim() },
-        shipping: { address: delivery.address.trim(), city: delivery.lga, lga: delivery.lga, state: delivery.state, zipCode: delivery.zipCode, country: delivery.country },
+        shipping: { address: delivery.address.trim(), city: delivery.lga, lga: delivery.lga, state: delivery.state, zipCode: delivery.zipCode, country: delivery.country,
+          ...(delivery.pin ? { coordinates: { latitude: delivery.pin.lat, longitude: delivery.pin.lon } } : {}),
+        },
         paymentMethod: 'bank_transfer',
         items: productLines.map((l) => ({ subProductId: l.subProductId!, productId: l.productId, sizeId: l.sizeId!, quantity: l.quantity, price: l.unitPrice! })),
-        subtotal, shippingFee, total,
-        manualOrder: { originChannel: 'whatsapp', printLines },
+        subtotal, shippingFee, total, shippingInfo: deliveryQuote.info,
+        manualOrder: { originChannel: 'whatsapp', printLines, deliveryFeeOverride: deliveryQuote.override, customerId: customer._id },
       }, attemptKey());
       finishAttempt();
       sessionStorage.removeItem(DRAFT_KEY);
@@ -156,7 +162,7 @@ export default function OrderBuilder() {
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Could not create the order', { duration: 6000 });
     } finally { setSubmitting(false); }
-  }, [canSubmit, submitting, lines, customer, delivery, subtotal, shippingFee, total, token]);
+  }, [canSubmit, submitting, lines, customer, delivery, subtotal, shippingFee, total, token, deliveryQuote.info, deliveryQuote.override]);
 
   if (created) {
     return (
@@ -183,7 +189,7 @@ export default function OrderBuilder() {
             className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
             Print invoice
           </button>
-          <button onClick={() => { setCreated(null); setLines([]); setCustomer({ firstName: '', lastName: '', email: '', phone: '' }); setDelivery({ address: '', lga: '', state: '', zipCode: '', country: 'Nigeria' }); setShippingFee(0); }}
+          <button onClick={() => { setCreated(null); setLines([]); setCustomer({ firstName: '', lastName: '', email: '', phone: '' }); setDelivery(EMPTY_DELIVERY); }}
             className="rounded-lg px-4 py-2 text-sm font-semibold text-brand hover:bg-brand/5">
             Create another
           </button>
@@ -192,14 +198,24 @@ export default function OrderBuilder() {
     );
   }
 
-  const customerStatus = customerStatusText; // from BuilderCustomerBar lookup state, lifted here
+  const customerStatus = customer._id ? 'Saved marketplace customer' : 'Select or add a customer';
   return (
-    <div>
+    <div className="pb-24">
       <BuilderHeader customerStatus={customerStatus} busy={submitting} canSubmit={canSubmit}
         onSubmit={submit} onOpenCatalog={() => setCatalogOpen(true)} onOpenScan={() => setScanOpen(true)} />
-      <div className="grid min-w-0 grid-cols-1 gap-4 2xl:grid-cols-[minmax(0,1fr)_288px]">
-        <fieldset disabled={submitting} className="min-w-0 space-y-4">
-          <BuilderCustomerBar value={customer} onChange={setCustomer} token={token} onStatus={setCustomerStatusText} />
+      <div className="grid min-w-0 grid-cols-1 gap-5 2xl:grid-cols-[minmax(0,1fr)_288px]">
+        <fieldset disabled={submitting} className="min-w-0 space-y-5">
+          <BuilderCustomerBar
+            value={customer}
+            liveLoyalty={customerContext.context?.customer}
+            loyaltyLoading={customerContext.loading}
+            loyaltyUnavailable={customerContext.failed}
+            onChange={(next) => {
+              if (customer._id && customer._id !== next._id) setDelivery(EMPTY_DELIVERY);
+              setCustomer(next);
+            }}
+            token={token}
+          />
           <BuilderLineTable lines={lines} previewing={previewing}
             onAddProduct={() => addProductLine({})} onAddSection={addSection} onAddNote={addNote}
             onOpenCatalog={() => setCatalogOpen(true)} onOpenScan={() => setScanOpen(true)}
@@ -208,9 +224,10 @@ export default function OrderBuilder() {
           <div className="rounded-xl border border-gray-200 bg-white">
             <BuilderTotalsCard subtotal={subtotal} shippingFee={shippingFee} total={total} />
           </div>
-          <DeliveryCard value={delivery} onChange={setDelivery} subtotal={subtotal} onFee={setShippingFee} token={token} />
+          <DeliveryCard value={delivery} onChange={setDelivery} quote={deliveryQuote}
+            savedAddresses={<CustomerDeliveryOptions customer={customerContext} onApply={setDelivery} />} />
         </fieldset>
-        <aside className="min-w-0 space-y-4 2xl:sticky 2xl:top-4 2xl:self-start">
+        <aside className="min-w-0 space-y-5 2xl:sticky 2xl:top-4 2xl:self-start">
           <BuilderReviewPanel customerName={`${customer.firstName} ${customer.lastName}`.trim()}
             customerPhone={customer.phone} productCount={productLines.length}
             unitCount={productLines.reduce((s, l) => s + l.quantity, 0)}
@@ -221,7 +238,7 @@ export default function OrderBuilder() {
       {/* Catalog (Task 6) + scan drawer / barcode wedge (Task 7) overlays */}
       <BuilderCatalogModal open={catalogOpen} onClose={() => setCatalogOpen(false)} token={token}
         lines={lines}
-        onAdd={(ls) => { addLines(ls); setCatalogOpen(false); }} />
+        onAdd={addLines} />
       <BuilderScanDrawer open={scanOpen} onClose={() => setScanOpen(false)} token={token}
         onAdd={(ls) => { addLines(ls); setScanOpen(false); }} />
       <BuilderTenantPicker open={Boolean(barcodeTarget)} onClose={() => setBarcodeTarget(null)} token={token}

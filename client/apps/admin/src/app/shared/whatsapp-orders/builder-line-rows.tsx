@@ -7,8 +7,9 @@ import type { BuilderLine } from '@/services/whatsapp-order.service';
 const fmtNgn = (n: number) =>
   new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 }).format(n);
 
-export default function BuilderProductRow({ line: l, sectionSubtotal, onUpdate, onSetQuantity, onRemove }: {
+export default function BuilderProductRow({ line: l, sectionSubtotal, onOpenCatalog, onUpdate, onSetQuantity, onRemove }: {
   line: BuilderLine; sectionSubtotal?: number;
+  onOpenCatalog: () => void;
   onUpdate: (key: string, patch: Partial<BuilderLine>) => void;
   onSetQuantity: (key: string, q: number) => void; onRemove: (key: string) => void;
 }) {
@@ -45,7 +46,13 @@ export default function BuilderProductRow({ line: l, sectionSubtotal, onUpdate, 
   return (
     <tr className="border-t border-gray-50 align-top" data-label="Product">
       <td className="px-4 py-2" data-label="Product">
-        <p className="font-semibold text-gray-900">{l.productName || <span className="text-gray-400">Select from catalogue…</span>}</p>
+        {l.subProductId ? (
+          <p className="font-semibold text-gray-900">{l.productName}</p>
+        ) : (
+          <button type="button" onClick={onOpenCatalog} className="font-semibold text-brand hover:underline">
+            Select from catalogue…
+          </button>
+        )}
         <p className="text-xs text-gray-400">{[l.tenantName, l.sizeName].filter(Boolean).join(' · ')}{l.availableStock === 0 ? ' · out of stock' : ''}</p>
         <textarea value={l.description || ''} onChange={(e) => onUpdate(l.key, { description: e.target.value })}
           rows={1} placeholder="Add a line note (printed on the documents)…" data-label="Line note"

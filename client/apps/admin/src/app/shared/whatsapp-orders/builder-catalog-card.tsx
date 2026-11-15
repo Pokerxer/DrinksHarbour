@@ -2,6 +2,7 @@
 import { useMemo, useState } from 'react';
 import Image from 'next/image';
 import { PiPackage, PiPlus } from 'react-icons/pi';
+import type { TenantOffer } from '@/services/whatsapp-order.service';
 
 /** One cross-tenant catalogue row (SubProduct) as returned by
  *  GET /api/subproducts?status=active (super_admin/admin JWT — each row
@@ -9,9 +10,11 @@ import { PiPackage, PiPlus } from 'react-icons/pi';
 export interface BuilderCatalogRow {
   _id: string;
   sku?: string;
+  offers?: TenantOffer[];
   product?: {
     _id: string;
     name?: string;
+    type?: string;
     images?: { url?: string }[];
     isAlcoholic?: boolean;
     abv?: number;
@@ -39,10 +42,20 @@ export function catalogThumb(url?: string) {
     : url;
 }
 
-/** Sellable stock across the row's sizes (list rows carry only one tenant,
- *  so this is that tenant's stock for the product). */
+/** Checkout availability across this product's eligible offers. */
 export const rowStock = (row: BuilderCatalogRow) =>
-  (row.sizes || []).reduce((n, s) => n + (s.availableStock ?? s.stock ?? 0), 0);
+  (row.offers ?? []).reduce(
+    (total, offer) =>
+      total + offer.sizes.reduce((sum, size) => sum + size.availableStock, 0),
+    0
+  );
+
+export const rowPrice = (row: BuilderCatalogRow) =>
+  Math.min(
+    ...(row.offers ?? []).flatMap((offer) =>
+      offer.sizes.map((size) => size.marketplacePrice)
+    )
+  );
 
 export default function BuilderCatalogCard({
   row,
@@ -50,22 +63,28 @@ export default function BuilderCatalogCard({
 }: {
   row: BuilderCatalogRow;
   /** Always opens the tenant picker (even single-tenant — it doubles as the
-   *  size selector); marketplace prices only exist via fetchTenantOffers. */
+   *  size selector); marketplace prices come from the checkout offers endpoint. */
   onAdd: (row: BuilderCatalogRow) => void;
 }) {
   const [imageFailed, setImageFailed] = useState(false);
   const product = row.product;
   const name = product?.name || 'Unnamed product';
-  const image = useMemo(() => catalogThumb(product?.images?.[0]?.url), [product]);
-  const stock = useMemo(() => rowStock(row), [row]);
+  const image = useMemo(
+    () => catalogThumb(product?.images?.[0]?.url),
+    [product]
+  );
+  const stock = rowStock(row);
+  const offers = row.offers ?? [];
+  const price = rowPrice(row);
+  const tenantCount = new Set(offers.map((offer) => offer.tenantId)).size;
   const subtitle = useMemo(
     () =>
       [product?.brand?.name, product?.category?.name, row.sku]
         .filter(Boolean)
         .join(' · '),
-    [product, row.sku],
+    [product, row.sku]
   );
-  const selectable = Boolean(product?._id);
+  const selectable = Boolean(product?._id) && stock > 0;
 
   return (
     <article
@@ -90,7 +109,7 @@ export default function BuilderCatalogCard({
             stock > 0 ? 'bg-white text-emerald-700' : 'bg-white text-gray-500'
           }`}
         >
-          {stock > 0 ? `${stock} available` : 'Out of stock'}
+          {stock > 0 ? `${stock} available` : 'Unavailable for checkout'}
         </span>
         {product?.isAlcoholic && (
           <span className="absolute bottom-2 right-2 rounded bg-white/90 px-1.5 py-1 text-[10px] text-gray-600">
@@ -106,9 +125,23 @@ export default function BuilderCatalogCard({
           <p className="mt-1 truncate text-xs text-gray-500">{subtitle}</p>
         )}
         <p className="mt-0.5 truncate text-xs text-gray-400">
-          {row.tenant?.name ? `Offered by ${row.tenant.name}` : 'Tenant listings…'}
+          {row.tenant?.name
+            ? `Offered by ${row.tenant.name}`
+            : 'Tenant listings…'}
         </p>
         <div className="mt-auto pt-3">
+          {selectable && (
+            <p className="mb-3 text-base font-bold text-gray-900">
+              <span className="mr-1 text-xs font-normal text-gray-500">
+                From
+              </span>
+              {new Intl.NumberFormat('en-NG', {
+                style: 'currency',
+                currency: 'NGN',
+                maximumFractionDigits: 0,
+              }).format(price)}
+            </p>
+          )}
           <button
             type="button"
             disabled={!selectable}

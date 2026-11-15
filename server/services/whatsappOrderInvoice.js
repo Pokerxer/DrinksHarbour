@@ -253,6 +253,9 @@ async function settleWithReceipt(order, provider, reference) {
       });
       saved.$locals.deferAccounting = true;
       await saved.save({ session });
+      if (saved.source === 'manual' && saved.originChannel === 'whatsapp') {
+        await require('./platformLoyalty.service').earnPaidMarketplaceOrder(saved, { session });
+      }
     });
   } finally {
     await session.endSession();

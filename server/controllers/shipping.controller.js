@@ -1,6 +1,7 @@
 // controllers/shipping.controller.js
 const asyncHandler = require('express-async-handler');
 const naija        = require('naija-state-local-government');
+const { listDeliveryLgas } = require('../data/nigeriaDeliveryAreas');
 const {
   calculateShipping,
   calculateShippingByDistance,
@@ -24,19 +25,6 @@ function normaliseStateName(state) {
   if (/federal capital territory|fct/i.test(s) || /abuja/i.test(s)) return 'FCT - Abuja';
   return s;
 }
-
-function resolvePackageState(state) {
-  if (!state) return null;
-  const s = state.trim().toLowerCase();
-  if (['fct - abuja', 'fct', 'abuja', 'federal capital territory'].includes(s))
-    return 'Federal Capital Territory';
-  const all = naija.all();
-  return (
-    all.find(r => r.state.toLowerCase() === s) ||
-    all.find(r => r.state.toLowerCase() === s.replace(/\s+state$/i, '').trim())
-  )?.state || null;
-}
-
 
 /**
  * Fold the first-purchase delivery waiver into a quote.
@@ -187,14 +175,7 @@ const getShippingRate = asyncHandler(async (req, res) => {
  */
 const getLGAs = asyncHandler(async (req, res) => {
   const { state = '' } = req.query;
-  const pkgState = resolvePackageState(state);
-  if (!pkgState) return res.json({ success: true, data: [] });
-  try {
-    const entry = naija.lgas(pkgState);
-    res.json({ success: true, data: (entry?.lgas || []).slice().sort() });
-  } catch {
-    res.json({ success: true, data: [] });
-  }
+  res.json({ success: true, data: listDeliveryLgas(state) });
 });
 
 const getStates = asyncHandler(async (req, res) => {

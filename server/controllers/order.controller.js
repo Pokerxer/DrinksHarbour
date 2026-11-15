@@ -83,6 +83,10 @@ exports.createOrder = asyncHandler(async (req, res) => {
     throw new ForbiddenError('Only platform admins can create manual orders');
   }
   const isManual = Boolean(manualOrder);
+  const manualFee = manualOrder?.deliveryFeeOverride;
+  if (manualFee !== undefined && (!Number.isSafeInteger(manualFee) || manualFee < 0)) {
+    throw new ValidationError('Enter a non-negative whole-naira delivery fee');
+  }
   if (isManual) {
     if (manualOrder.originChannel !== 'whatsapp') throw new ValidationError('Unsupported manual order channel');
     if (canonicalPaymentMethod !== 'bank_transfer') throw new ValidationError('Manual orders are invoiced for bank transfer / card payment');
@@ -122,12 +126,7 @@ exports.createOrder = asyncHandler(async (req, res) => {
 
   let user = null;
   if (isManual) {
-    // Match the customer by email first, then phone. No match → guest order;
-    // the shippingAddress snapshot below keeps the customer's details either way.
-    const email = String(customer?.email || '').trim().toLowerCase();
-    const phone = String(customer?.phone || '').trim();
-    if (email) user = await User.findOne({ email });
-    if (!user && phone) user = await User.findOne({ phone });
+    user = await require('../services/whatsappCustomers').resolveOrderCustomer(customer, manualOrder.customerId);
   } else if (userId) {
     user = await User.findById(userId);
   }
@@ -355,26 +354,29 @@ exports.createOrder = asyncHandler(async (req, res) => {
   // reject an honest quote. Orders over the free-delivery threshold floor at 0.
   const zoneQuote = calculateShipping(deliveryState, deliveryLga, calculatedSubtotal);
   const feeFloor  = zoneQuote.isFree ? 0 : Math.min(zoneQuote.fee, DISTANCE_MIN_FEE);
-  if (quotedBaseFee < feeFloor) {
+  if (manualFee === undefined && quotedBaseFee < feeFloor) {
     return res.status(400).json({
       success: false,
       message: 'Delivery fee could not be verified. Please refresh your delivery address and try again.',
     });
   }
 
-  const perk = await resolveFirstOrderPerk({
+  const perk = manualFee === undefined ? await resolveFirstOrderPerk({
     user:     isManual ? (user || null) : req.user,
     subtotal: calculatedSubtotal,
     state:    deliveryState,
     baseFee:  quotedBaseFee,
-  });
+  }) : null;
 
   // Did the browser already charge the customer a discounted delivery fee?
   const clientClaimedWaiver = quotedBaseFee - clientShippingFee > 0;
 
   let resolvedShippingFee;
   let deliveryWaiver;
-  if (perk.eligible) {
+  if (manualFee !== undefined) {
+    resolvedShippingFee = manualFee;
+    deliveryWaiver = { applied: false, amount: 0, reason: 'manual_fee_override' };
+  } else if (perk?.eligible) {
     resolvedShippingFee = perk.payableFee;
     deliveryWaiver = { applied: true, amount: perk.waivedAmount, reason: 'ok' };
   } else if (clientClaimedWaiver) {
@@ -386,11 +388,11 @@ exports.createOrder = asyncHandler(async (req, res) => {
     deliveryWaiver = {
       applied: true,
       amount:  quotedBaseFee - clientShippingFee,
-      reason:  `race_lost:${perk.reason}`,
+      reason:  `race_lost:${perk?.reason}`,
     };
   } else {
     resolvedShippingFee = quotedBaseFee;
-    deliveryWaiver = { applied: false, amount: 0, reason: perk.reason };
+    deliveryWaiver = { applied: false, amount: 0, reason: perk?.reason };
   }
 
   // The customer total and the split share the same server-priced merchandise basis.
@@ -428,7 +430,10 @@ exports.createOrder = asyncHandler(async (req, res) => {
       postalCode: shipping.zipCode,
       coordinates: shipping.coordinates || undefined,
     },
-    shippingInfo: shippingInfo || null,
+    shippingInfo: shippingInfo || manualFee !== undefined
+      ? { ...shippingInfo, manualFeeOverride: manualFee,
+          ...(isManual ? { isFree: resolvedShippingFee === 0 } : {}) }
+      : null,
     shippingMethod: 'standard',
     fulfillmentStatus: new Map(),
     ageVerifiedAtOrderTime: ageVerified || false,
@@ -447,7 +452,9 @@ exports.createOrder = asyncHandler(async (req, res) => {
     kind: 'marketplace', currency: orderData.currency,
     provider: paymentDetails?.method || canonicalPaymentMethod, account: 'platform',
   });
-  const order = await require('../services/marketplacePaymentTrust').createOrder(orderData, tenants, paymentDetails, req.user, req.get('Idempotency-Key'), recovery.requestFingerprint(req.body), { requireDefaultWarehouse: !isManual });
+  const order = await require('../services/marketplacePaymentTrust').createOrder(orderData, tenants, paymentDetails, req.user, req.get('Idempotency-Key'), recovery.requestFingerprint(req.body), {
+    requireDefaultWarehouse: !isManual || Boolean(manualOrder?.customerId),
+  });
 
   if (order.$locals.checkoutReplayed) return res.status(200).json({ success: true, data: { guestAccessToken: require('../services/guestOrderProof').issue(order), order: {
     _id: order._id, orderNumber: order.orderNumber, status: order.status, paymentStatus: order.paymentStatus,
@@ -613,7 +620,13 @@ exports.createOrder = asyncHandler(async (req, res) => {
         .catch(e  => console.error('❌ Email to admin failed:', e.message));
 
       // 4. Loyalty points — 1 pt per ₦100 spent (paid orders only, logged-in users)
-      if (userId && order.paymentStatus === 'paid') {
+      if (isManual && order.paymentStatus === 'paid') {
+        try {
+          await require('../services/platformLoyalty.service').earnPaidMarketplaceOrder(order);
+        } catch (loyaltyErr) {
+          console.error('❌ WhatsApp loyalty credit error:', loyaltyErr.message);
+        }
+      } else if (userId && order.paymentStatus === 'paid') {
         try {
           const loyaltyUser = await User.findById(userId).select('loyaltyTier').lean();
           const multiplier = earnMultiplierForTier(loyaltyUser?.loyaltyTier || 'cork');

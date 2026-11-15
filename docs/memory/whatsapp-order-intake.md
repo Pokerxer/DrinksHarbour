@@ -199,3 +199,70 @@ as demo data.
   and check the hosted invoice and paid invoice print with mock settlement.
   Capture screenshots from that order. The v1 demo orders above predate
   the v2 print layout.
+
+### Catalogue stock and pricing
+
+The WhatsApp builder uses inventory search for discovery and the platform-admin
+`GET /api/whatsapp-orders/catalogue/offers` endpoint for tenant offers. Both the
+cards and the picker use offer availability from the checkout warehouse, and
+line preview requests checkout stock too. The API calculates the customer
+price with internal cost data and returns only the resulting quote. It excludes
+unpublished and hidden listings, inactive or foreign variants, and offers
+without stock or a valid marketplace price. See
+[the catalogue handoff](../superpowers/specs/RESUME-whatsapp-order-catalogue.md).
+
+### Delivery location and manual fee
+
+The builder uses the shared checkout address picker and map. A selected address
+or map pin supplies coordinates to the shipping quote alongside the state,
+LGA, basket subtotal and tenant stops. The form displays a zone rate when a
+road-distance quote is unavailable and persists the pin with the shipping address.
+
+Staff can enter an exact non-negative, whole-naira fee, including zero, and
+return to automatic pricing at any time. Only an authorized WhatsApp manual
+order can submit the override. The order saves that fee without reapplying the
+first-order shipping waiver, and records it under shipping calculation metadata.
+Automatic rates still use the matched customer's waiver on save. See
+[the delivery handoff](../superpowers/specs/RESUME-whatsapp-delivery.md).
+
+### One navigation header
+
+The WhatsApp Intake and New order pages use the WhatsApp layout's header.
+The Marketplace shell suppresses its header for this branch. Use
+**All orders** to return to the Marketplace orders page.
+
+### Saved customers and points
+
+WhatsApp intake searches active marketplace customer profiles by name, email
+or phone. A no-match search exposes inline Add customer. Staff save a real
+email and phone on the existing marketplace User model, with no password
+assigned. Customers can set a password using the existing email reset flow.
+The builder stores the selected profile ID in the draft and links the order
+to it after server-side scope and email checks. A repeated email save reuses
+the profile. Older orders and drafts that lack an ID retain scoped lookup.
+
+Verified WhatsApp invoice settlement uses the online rate of one base point
+per ₦100 with the customer's tier multiplier. The order, credit and points
+ledger entry commit together. A replay of the same receipt leaves the balance
+unchanged. Existing paid orders are outside this change. See
+[the customer handoff](../superpowers/specs/RESUME-whatsapp-customers-and-loyalty.md).
+
+### Faster repeat orders
+
+Selecting a customer, or restoring one from a draft, refreshes their points
+and tier. The delivery form offers their active Nigerian address-book entries
+and the latest eligible delivered marketplace order destination. Staff choose
+the destination before it is copied into the draft. Applying a destination
+copies the pin when available, drops the previous manual fee and recalculates
+delivery. A city that does not match an LGA still needs operator selection.
+Gift destinations are excluded from the previous-order option.
+
+### Order line verification
+
+The empty product row opens the catalogue and takes the first selected offer
+from the catalogue, scan drawer or barcode picker. It keeps the existing row
+key and any note typed on that row. Checkout validation refreshes the price and
+stock ceiling together. An unavailable item blocks submission until removed or
+validated with stock. Current builder submissions identify the saved customer
+and require the same active tenant default warehouse as the catalogue and
+preview. Older manual payloads retain their existing fallback.

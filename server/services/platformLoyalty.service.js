@@ -29,7 +29,7 @@ const { loyaltyDelta, affectsLifetime, tierFromLifetimePoints } = require('./pla
  *                  | { ok:false, status:number, message:string }>}
  */
 async function mutatePlatformLoyalty({
-  userId, value, reference, relatedOrder, redeemedAtTenant, createdBy,
+  userId, value, reference, relatedOrder, redeemedAtTenant, createdBy, session,
 }) {
   const { type, points, reason } = value;
   const delta = loyaltyDelta(type, points);
@@ -41,7 +41,7 @@ async function mutatePlatformLoyalty({
   const inc = { loyaltyPoints: delta };
   if (lifetime > 0) inc.loyaltyLifetimePoints = lifetime;
 
-  const updated = await User.findOneAndUpdate(query, { $inc: inc }, { new: true })
+  const updated = await User.findOneAndUpdate(query, { $inc: inc }, { new: true, ...(session ? { session } : {}) })
     .select('loyaltyPoints loyaltyLifetimePoints loyaltyTier');
 
   if (!updated) {
@@ -58,14 +58,15 @@ async function mutatePlatformLoyalty({
   if (newTier !== updated.loyaltyTier) {
     await User.updateOne(
       { _id: updated._id },
-      { $set: { loyaltyTier: newTier, loyaltyTierUpdatedAt: new Date() } }
+      { $set: { loyaltyTier: newTier, loyaltyTierUpdatedAt: new Date() } },
+      session ? { session } : undefined
     );
     updated.loyaltyTier = newTier;
     tierChanged = true;
   }
 
   try {
-    const tx = await PlatformLoyaltyTransaction.create({
+    const entry = {
       userId,
       type,
       points,
@@ -75,7 +76,10 @@ async function mutatePlatformLoyalty({
       reason: reason || '',
       reference,
       createdBy,
-    });
+    };
+    const tx = session
+      ? (await PlatformLoyaltyTransaction.create([entry], { session }))[0]
+      : await PlatformLoyaltyTransaction.create(entry);
     return {
       ok: true,
       balance: updated.loyaltyPoints,
@@ -85,6 +89,7 @@ async function mutatePlatformLoyalty({
       tx,
     };
   } catch (err) {
+    if (session) throw err; // The caller rolls back the full settlement.
     // Ledger write failed — undo the balance + lifetime moves to stay consistent.
     const undo = { loyaltyPoints: -delta };
     if (lifetime > 0) undo.loyaltyLifetimePoints = -lifetime;
@@ -93,4 +98,22 @@ async function mutatePlatformLoyalty({
   }
 }
 
-module.exports = { mutatePlatformLoyalty };
+// Marketplace purchases earn one base point per ₦100 at the customer's tier.
+async function earnPaidMarketplaceOrder(order, { session } = {}) {
+  if (order.paymentStatus !== 'paid' || !order.user) return;
+  const userId = order.user._id ?? order.user;
+  const query = User.findOne({ _id: userId, role: 'customer', tenant: null }).select('loyaltyTier');
+  if (session) query.session(session);
+  const user = await query.lean();
+  if (!user) return;
+  const points = require('./platformLoyalty.helpers').pointsForSpend((order.totalAmount || 0) * (1 / 100), user.loyaltyTier);
+  if (!points) return;
+  const result = await mutatePlatformLoyalty({
+    userId, session, relatedOrder: order._id, createdBy: userId,
+    value: { type: 'earn', points, reason: `Order ${order.orderNumber} — ₦${order.totalAmount.toLocaleString()} spent` },
+  });
+  if (!result.ok) throw new Error(result.message);
+  return result;
+}
+
+module.exports = { mutatePlatformLoyalty, earnPaidMarketplaceOrder };

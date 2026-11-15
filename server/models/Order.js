@@ -443,6 +443,7 @@ const orderSchema = new Schema(
     // ────────────────────────────────────────────────
     shippingInfo: {
       distanceKm:   { type: Number, default: null },
+      manualFeeOverride: { type: Number, min: 0 },
       routeType:    { type: String, enum: ['direct', 'single-vendor', 'multi-vendor'], default: null },
       stops:        { type: Number, default: null },
       daysMin:      { type: Number, default: null },

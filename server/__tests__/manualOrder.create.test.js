@@ -49,6 +49,7 @@ function setupMocks(t, { matchedUser = null } = {}) {
   // The tenant-alert loop runs Tenant.findById per resolved tenant — no DB here.
   t.mock.method(Tenant, 'findById', async () => null);
 
+  t.mock.method(User, 'find', () => ({ limit: async () => [] }));
   let foundByPhone = null; let foundByEmail = matchedUser;
   t.mock.method(User, 'findOne', (q) => {
     if (q.email) { const r = foundByEmail; foundByEmail = null; return Promise.resolve(r); }
@@ -66,8 +67,10 @@ function setupMocks(t, { matchedUser = null } = {}) {
 
   const trust = require('../services/marketplacePaymentTrust');
   let capturedOrderData = null;
-  t.mock.method(trust, 'createOrder', async (data) => {
+  let capturedOptions;
+  t.mock.method(trust, 'createOrder', async (data, ...args) => {
     capturedOrderData = data;
+    capturedOptions = args[5];
     return { ...data, $locals: {}, populate: async () => {}, totalAmount: data.totalAmount };
   });
 
@@ -103,7 +106,7 @@ function setupMocks(t, { matchedUser = null } = {}) {
   const pos = require('../services/pos.realtime');
   t.mock.method(pos, 'emitToTenantOrders', () => false);
 
-  return { captured: () => capturedOrderData, perkUser: () => perkUser,
+  return { captured: () => capturedOrderData, options: () => capturedOptions, perkUser: () => perkUser,
     ids: { tenantId, subId, sizeId, productId }, CustomerUser: CUSTOMER_USER };
 }
 
@@ -227,4 +230,51 @@ test('non-manual orders reject printLines entirely', async (t) => {
   await assert.rejects(
     () => createOrder({ body, user: ADMIN, get: () => 'k' }, res, (e) => { throw e; }),
   );
+});
+
+test('WhatsApp staff can set an exact free delivery fee and preserve the customer pin', async (t) => {
+  const m = setupMocks(t, { matchedUser: CUSTOMER_USER });
+  const { createOrder } = require('../controllers/order.controller');
+  const body = reqBody({ subProductId: String(m.ids.subId), sizeId: String(m.ids.sizeId) });
+  body.manualOrder.deliveryFeeOverride = 0;
+  body.shipping.coordinates = { latitude: 9.0765, longitude: 7.3986 };
+  body.shippingInfo = { source: 'google', distanceKm: 12, baseFee: 3500 };
+  const res = { status() { return this; }, json() {} };
+  await createOrder({ body, user: ADMIN, get: () => 'manual-free' }, res, (e) => { throw e; });
+  assert.equal(m.captured().shippingFee, 0);
+  assert.equal(m.captured().totalAmount, m.captured().subtotal);
+  assert.deepEqual(m.captured().shippingAddress.coordinates, body.shipping.coordinates);
+  assert.equal(m.captured().shippingInfo.distanceKm, 12);
+  assert.equal(m.captured().shippingInfo.manualFeeOverride, 0);
+});
+
+test('WhatsApp staff fee override rejects a negative amount', async (t) => {
+  const m = setupMocks(t);
+  const { createOrder } = require('../controllers/order.controller');
+  const body = reqBody({ subProductId: String(m.ids.subId), sizeId: String(m.ids.sizeId) });
+  body.manualOrder.deliveryFeeOverride = -1;
+  const res = { status() { return this; }, json() {} };
+  await assert.rejects(
+    () => createOrder({ body, user: ADMIN, get: () => 'manual-negative' }, res, (e) => { throw e; }),
+    /delivery fee/i,
+  );
+  assert.equal(m.captured(), null);
+});
+
+test('manual order attaches the selected platform customer by ID', async (t) => {
+  const m = setupMocks(t);
+  const User = require('../models/User');
+  t.mock.method(User, 'findOne', async (query) => {
+    assert.equal(String(query._id), String(CUSTOMER_USER._id));
+    assert.equal(query.role, 'customer');
+    assert.equal(query.tenant, null);
+    return { ...CUSTOMER_USER, email: 'buyer@example.com' };
+  });
+  const body = reqBody({ subProductId: String(m.ids.subId), sizeId: String(m.ids.sizeId) });
+  body.manualOrder.customerId = String(CUSTOMER_USER._id);
+  const { createOrder } = require('../controllers/order.controller');
+  const res = { status() { return this; }, json() {} };
+  await createOrder({ body, user: ADMIN, get: () => 'manual-selected' }, res, (e) => { throw e; });
+  assert.equal(String(m.captured().user), String(CUSTOMER_USER._id));
+  assert.equal(m.options().requireDefaultWarehouse, true);
 });

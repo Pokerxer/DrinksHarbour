@@ -9,36 +9,28 @@ import {
 } from '@headlessui/react';
 import {
   PiArrowClockwise,
-  PiCaretLeft,
-  PiCaretRight,
-  PiFunnel,
+  PiMagnifyingGlass,
   PiPackage,
   PiX,
 } from 'react-icons/pi';
 import BuilderCatalogCard, {
   rowStock,
+  rowPrice,
   type BuilderCatalogRow,
 } from './builder-catalog-card';
 import BuilderTenantPicker from './builder-tenant-picker';
-import type { BuilderLine } from '@/services/whatsapp-order.service';
+import {
+  fetchCatalogueOffers,
+  type BuilderLine,
+  type TenantOffer,
+} from '@/services/whatsapp-order.service';
+import CatalogueFilters from '../sales/sales-catalog-filters';
+import CatalogueFooter from '../sales/sales-catalog-footer';
+import { emptyFilters } from '../sales/sales-catalog-data';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
-const PAGE_SIZE = 60;
+const PAGE_SIZE = 24;
 const SEARCH_DEBOUNCE_MS = 250;
-
-type SortKey = 'name' | 'priceAsc' | 'priceDesc' | 'stock';
-interface CatalogFilters {
-  categories: string[];
-  brands: string[];
-  inStock: boolean;
-  sort: SortKey;
-}
-const emptyFilters: CatalogFilters = {
-  categories: [],
-  brands: [],
-  inStock: false,
-  sort: 'name',
-};
 
 interface CatalogData {
   rows: BuilderCatalogRow[];
@@ -50,15 +42,6 @@ interface CatalogData {
     hasPrev: boolean;
   };
 }
-
-const rowPrice = (row: BuilderCatalogRow) =>
-  (row.sizes || []).reduce(
-    (min, s) => {
-      const p = s.sellingPrice ?? 0;
-      return p > 0 && p < min ? p : min;
-    },
-    Infinity,
-  );
 
 export interface BuilderCatalogModalProps {
   open: boolean;
@@ -78,13 +61,16 @@ export default function BuilderCatalogModal({
 }: BuilderCatalogModalProps) {
   const [draft, setDraft] = useState('');
   const [query, setQuery] = useState('');
-  const [filters, setFilters] = useState<CatalogFilters>(emptyFilters);
+  const [filters, setFilters] = useState(emptyFilters);
   const [page, setPage] = useState(1);
   const [data, setData] = useState<CatalogData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [picker, setPicker] = useState<{ productId: string; productName: string } | null>(null);
-  const [filtersExpanded, setFiltersExpanded] = useState(false);
+  const [picker, setPicker] = useState<{
+    productId: string;
+    productName: string;
+  } | null>(null);
+  const [refresh, setRefresh] = useState(0);
   const seqRef = useRef(0);
   const scroll = useRef<HTMLDivElement>(null);
 
@@ -120,13 +106,35 @@ export default function BuilderCatalogModal({
         const body = (await res.json().catch(() => ({}))) as {
           success?: boolean;
           message?: string;
-          data?: { subProducts?: BuilderCatalogRow[]; pagination?: Partial<CatalogData['pagination']> };
+          data?: {
+            subProducts?: BuilderCatalogRow[];
+            pagination?: Partial<CatalogData['pagination']>;
+          };
         };
         if (!res.ok || !body.success || !Array.isArray(body.data?.subProducts))
-          throw new Error(body.message || 'Unable to load the catalogue. Please retry.');
-        if (seq !== seqRef.current) return;
+          throw new Error(
+            body.message || 'Unable to load the catalogue. Please retry.'
+          );
+        const ids = body.data.subProducts.flatMap((row) =>
+          row.product?._id ? [row.product._id] : []
+        );
+        const offers = await fetchCatalogueOffers(
+          ids,
+          token,
+          controller.signal
+        );
+        const offersByProduct = new Map<string, TenantOffer[]>();
+        for (const offer of offers) {
+          const group = offersByProduct.get(offer.productId);
+          if (group) group.push(offer);
+          else offersByProduct.set(offer.productId, [offer]);
+        }
+        if (controller.signal.aborted || seq !== seqRef.current) return;
         setData({
-          rows: body.data.subProducts,
+          rows: body.data.subProducts.map((row) => ({
+            ...row,
+            offers: offersByProduct.get(row.product?._id ?? '') ?? [],
+          })),
           pagination: {
             page: body.data.pagination?.page ?? page,
             total: body.data.pagination?.total ?? body.data.subProducts.length,
@@ -139,18 +147,19 @@ export default function BuilderCatalogModal({
       })
       .catch((e: unknown) => {
         if (controller.signal.aborted || seq !== seqRef.current) return;
-        setError(e instanceof Error ? e.message : 'Unable to load the catalogue');
+        setError(
+          e instanceof Error ? e.message : 'Unable to load the catalogue'
+        );
         setLoading(false);
       });
     return () => controller.abort();
-  }, [open, token, query, page]);
+  }, [open, token, query, page, refresh]);
 
   useEffect(() => {
     scroll.current?.scrollTo?.({ top: 0 });
   }, [page, query]);
 
-  // Client-side facets from the loaded rows (categories/brands only — types
-  // live on the product as `type`, not surfaced per-row here).
+  // Discovery facets describe the current page.
   const facets = useMemo(() => {
     const rows = data?.rows ?? [];
     const collect = (get: (r: BuilderCatalogRow) => string | undefined) => {
@@ -166,6 +175,7 @@ export default function BuilderCatalogModal({
     return {
       categories: collect((r) => r.product?.category?.name),
       brands: collect((r) => r.product?.brand?.name),
+      types: collect((r) => r.product?.type),
     };
   }, [data]);
 
@@ -173,16 +183,30 @@ export default function BuilderCatalogModal({
     let rows = data?.rows ?? [];
     if (filters.categories.length)
       rows = rows.filter((r) =>
-        filters.categories.includes(r.product?.category?.name ?? ''),
+        filters.categories.includes(r.product?.category?.name ?? '')
       );
     if (filters.brands.length)
-      rows = rows.filter((r) => filters.brands.includes(r.product?.brand?.name ?? ''));
+      rows = rows.filter((r) =>
+        filters.brands.includes(r.product?.brand?.name ?? '')
+      );
+    if (filters.types.length)
+      rows = rows.filter((r) => filters.types.includes(r.product?.type ?? ''));
     if (filters.inStock) rows = rows.filter((r) => rowStock(r) > 0);
     const sorted = [...rows];
-    if (filters.sort === 'name') sorted.sort((a, b) => (a.product?.name ?? '').localeCompare(b.product?.name ?? ''));
-    if (filters.sort === 'priceAsc') sorted.sort((a, b) => rowPrice(a) - rowPrice(b));
-    if (filters.sort === 'priceDesc') sorted.sort((a, b) => rowPrice(b) - rowPrice(a));
-    if (filters.sort === 'stock') sorted.sort((a, b) => rowStock(b) - rowStock(a));
+    if (filters.sort === 'name')
+      sorted.sort((a, b) =>
+        (a.product?.name ?? '').localeCompare(b.product?.name ?? '')
+      );
+    if (filters.sort === 'priceAsc')
+      sorted.sort((a, b) => rowPrice(a) - rowPrice(b));
+    if (filters.sort === 'priceDesc')
+      sorted.sort(
+        (a, b) =>
+          (Number.isFinite(rowPrice(b)) ? rowPrice(b) : 0) -
+          (Number.isFinite(rowPrice(a)) ? rowPrice(a) : 0)
+      );
+    if (filters.sort === 'stock')
+      sorted.sort((a, b) => rowStock(b) - rowStock(a));
     return sorted;
   }, [data, filters]);
 
@@ -195,9 +219,11 @@ export default function BuilderCatalogModal({
   }, [lines]);
 
   const filtered =
-    Boolean(query) || filters.inStock || filters.categories.length > 0 || filters.brands.length > 0;
-  const activeFilterCount =
-    filters.categories.length + filters.brands.length + Number(filters.inStock);
+    Boolean(query) ||
+    filters.inStock ||
+    filters.categories.length > 0 ||
+    filters.brands.length > 0 ||
+    filters.types.length > 0;
   const pagination = data?.pagination;
 
   return (
@@ -226,6 +252,10 @@ export default function BuilderCatalogModal({
                 </button>
               </div>
               <div className="flex min-h-12 items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 p-2 focus-within:border-brand focus-within:bg-white focus-within:ring-1 focus-within:ring-brand">
+                <PiMagnifyingGlass
+                  className="ml-1 h-5 w-5 shrink-0 text-gray-400"
+                  aria-hidden
+                />
                 <input
                   data-autofocus
                   aria-label="Search catalogue"
@@ -247,139 +277,62 @@ export default function BuilderCatalogModal({
                 )}
               </div>
             </header>
-            <div ref={scroll} className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-gray-50/60">
-              {/* Client-side filter row (facets come from the loaded rows). */}
-              <div className="shrink-0 border-b border-gray-200 bg-white px-4 py-3 sm:px-6">
-                <div className="flex flex-wrap items-center gap-3">
-                  <button
-                    type="button"
-                    aria-expanded={filtersExpanded}
-                    aria-controls="builder-catalogue-filters"
-                    onClick={() => setFiltersExpanded((v) => !v)}
-                    className={`inline-flex min-h-10 items-center gap-2 rounded-lg border px-3 text-sm font-medium ${
-                      activeFilterCount || filtersExpanded
-                        ? 'border-brand/30 bg-red-50 text-brand'
-                        : 'border-gray-200 text-gray-700 hover:bg-gray-50'
-                    }`}
-                  >
-                    <PiFunnel /> Filters
-                    {activeFilterCount > 0 && (
-                      <span className="rounded bg-brand px-1.5 text-xs text-white">{activeFilterCount}</span>
-                    )}
-                  </button>
-                  <label className="flex min-h-10 items-center gap-2 text-xs font-medium text-gray-600">
-                    <input
-                      type="checkbox"
-                      checked={filters.inStock}
-                      onChange={(e) => setFilters({ ...filters, inStock: e.target.checked })}
-                      className="h-4 w-4 rounded border-gray-300 text-brand focus:ring-brand"
-                    />{' '}
-                    In stock only
-                  </label>
-                  {activeFilterCount > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => setFilters({ ...emptyFilters, sort: filters.sort })}
-                      className="inline-flex min-h-10 items-center gap-1 text-xs text-gray-500 hover:text-brand"
-                    >
-                      <PiX /> Clear filters
-                    </button>
-                  )}
-                  <label className="ml-auto flex items-center gap-2 text-xs text-gray-500">
-                    Sort
-                    <select
-                      aria-label="Sort catalogue"
-                      value={filters.sort}
-                      onChange={(e) => setFilters({ ...filters, sort: e.target.value as SortKey })}
-                      className="min-h-10 rounded-lg border-gray-200 bg-gray-50 py-2 text-xs text-gray-700 focus:border-brand focus:ring-brand"
-                    >
-                      <option value="name">Name A–Z</option>
-                      <option value="priceAsc">Selling price: low to high</option>
-                      <option value="priceDesc">Selling price: high to low</option>
-                      <option value="stock">Availability: high to low</option>
-                    </select>
-                  </label>
-                </div>
-                {filtersExpanded && (
-                  <div id="builder-catalogue-filters" className="mt-3 grid gap-4 rounded-xl border border-gray-100 bg-gray-50 p-3 sm:grid-cols-2">
-                    {(
-                      [
-                        ['Categories', facets.categories, filters.categories],
-                        ['Brands', facets.brands, filters.brands],
-                      ] as const
-                    ).map(([title, options, selected]) => (
-                      <fieldset key={title} className="min-w-0">
-                        <legend className="mb-2 text-xs font-semibold text-gray-700">
-                          {title}
-                          {selected.length > 0 ? ` (${selected.length})` : ''}
-                        </legend>
-                        <div className="max-h-36 space-y-1 overflow-y-auto overscroll-contain pr-1">
-                          {options.length ? (
-                            options.map((option) => (
-                              <label
-                                key={option.id}
-                                className="flex min-h-9 cursor-pointer items-center gap-2 rounded-lg px-2 text-xs text-gray-700 hover:bg-white"
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={selected.includes(option.id)}
-                                  onChange={() =>
-                                    setFilters({
-                                      ...filters,
-                                      [title === 'Categories' ? 'categories' : 'brands']: selected.includes(option.id)
-                                        ? selected.filter((id) => id !== option.id)
-                                        : [...selected, option.id],
-                                    })
-                                  }
-                                  className="h-4 w-4 rounded border-gray-300 text-brand focus:ring-brand"
-                                />
-                                <span className="truncate">
-                                  {option.name.replace(/[_-]/g, ' ')}{' '}
-                                  <span className="text-gray-400">({option.n})</span>
-                                </span>
-                              </label>
-                            ))
-                          ) : (
-                            <p className="p-2 text-xs text-gray-500">No matching options</p>
-                          )}
-                        </div>
-                      </fieldset>
-                    ))}
-                  </div>
-                )}
-              </div>
+            <div
+              ref={scroll}
+              className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-gray-50/60"
+            >
+              <CatalogueFilters
+                filters={filters}
+                facets={facets}
+                onChange={setFilters}
+              />
               <div className="flex items-center justify-between gap-3 px-4 py-3 sm:px-6">
-                <p role="status" aria-live="polite" className="text-xs text-gray-500">
+                <p
+                  role="status"
+                  aria-live="polite"
+                  className="text-xs text-gray-500"
+                >
                   {error
                     ? 'Catalogue unavailable'
                     : loading
                       ? 'Updating catalogue…'
-                      : `${pagination?.total ?? 0} matching products`}
+                      : `${pagination?.total ?? 0} matching listings`}
                 </p>
                 <button
                   type="button"
                   disabled={loading}
-                  onClick={() => setPage((p) => p)}
+                  onClick={() => setRefresh((value) => value + 1)}
                   className="inline-flex min-h-9 items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-brand disabled:opacity-40"
                   aria-label="Refresh catalogue"
                 >
-                  <PiArrowClockwise className={loading ? 'animate-spin' : ''} /> Refresh
+                  <PiArrowClockwise className={loading ? 'animate-spin' : ''} />{' '}
+                  Refresh
                 </button>
               </div>
-              <section aria-label="Catalogue results" aria-busy={loading} className="px-4 pb-5 sm:px-6">
+              <section
+                aria-label="Catalogue results"
+                aria-busy={loading}
+                className="px-4 pb-5 sm:px-6"
+              >
                 {error ? (
-                  <div role="alert" className="rounded-xl border border-red-100 bg-white p-8 text-center">
+                  <div
+                    role="alert"
+                    className="rounded-xl border border-red-100 bg-white p-8 text-center"
+                  >
                     <p className="text-sm text-gray-700">{error}</p>
                     <button
                       type="button"
-                      onClick={() => setPage((p) => p)}
+                      onClick={() => setRefresh((value) => value + 1)}
                       className="mt-4 min-h-10 rounded-lg bg-brand px-4 text-sm font-semibold text-white"
                     >
                       Retry catalogue
                     </button>
                   </div>
                 ) : loading && !(data?.rows ?? []).length ? (
-                  <div aria-label="Loading products" className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,266px),266px))] gap-3">
+                  <div
+                    aria-label="Loading products"
+                    className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,266px),266px))] gap-3"
+                  >
                     {Array.from({ length: 8 }, (_, i) => (
                       <div
                         key={i}
@@ -391,7 +344,9 @@ export default function BuilderCatalogModal({
                   <div className="flex min-h-64 flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-gray-200 bg-white p-6 text-center">
                     <PiPackage className="h-9 w-9 text-gray-300" />
                     <h3 className="text-sm font-semibold text-gray-800">
-                      {filtered ? 'No matching products' : 'No active tenant listings yet'}
+                      {filtered
+                        ? 'No matching products'
+                        : 'No active tenant listings yet'}
                     </h3>
                     <p className="text-xs text-gray-500">
                       {filtered
@@ -412,7 +367,10 @@ export default function BuilderCatalogModal({
                     )}
                   </div>
                 ) : (
-                  <div className="grid min-w-0 grid-cols-[repeat(auto-fill,minmax(min(100%,266px),266px))] gap-3">
+                  <fieldset
+                    disabled={loading}
+                    className="grid min-w-0 grid-cols-[repeat(auto-fill,minmax(min(100%,266px),266px))] gap-3"
+                  >
                     {visible.map((row) => (
                       <BuilderCatalogCard
                         key={row._id}
@@ -425,55 +383,18 @@ export default function BuilderCatalogModal({
                         }
                       />
                     ))}
-                  </div>
+                  </fieldset>
                 )}
               </section>
             </div>
-            <footer className="shrink-0 border-t border-gray-200 bg-white px-4 py-3 sm:px-6">
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 pb-3">
-                <p className="text-xs text-gray-500">
-                  {pagination?.total
-                    ? `${(pagination.page - 1) * PAGE_SIZE + 1}–${Math.min(pagination.page * PAGE_SIZE, pagination.total)} of ${pagination.total}`
-                    : '0 products'}
-                </p>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    aria-label="Previous catalogue page"
-                    disabled={loading || !pagination?.hasPrev}
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                    className="flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 disabled:opacity-30"
-                  >
-                    <PiCaretLeft />
-                  </button>
-                  <span className="text-xs text-gray-600">
-                    Page {pagination?.page || 1} of {pagination?.pages || 1}
-                  </span>
-                  <button
-                    type="button"
-                    aria-label="Next catalogue page"
-                    disabled={loading || !pagination?.hasNext}
-                    onClick={() => setPage((p) => p + 1)}
-                    className="flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 disabled:opacity-30"
-                  >
-                    <PiCaretRight />
-                  </button>
-                </div>
-              </div>
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <p className="text-sm font-semibold text-gray-900">
-                  {summary.lines} line{summary.lines !== 1 ? 's' : ''} in order{' '}
-                  <span className="text-xs font-normal text-gray-500">· {summary.units} units</span>
-                </p>
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="min-h-11 rounded-xl bg-brand px-5 text-sm font-semibold text-white hover:bg-brand-dark"
-                >
-                  Done
-                </button>
-              </div>
-            </footer>
+            <CatalogueFooter
+              busy={loading}
+              pagination={error ? undefined : pagination}
+              summary={summary}
+              onPage={(delta) => setPage((page) => Math.max(1, page + delta))}
+              onClose={onClose}
+              showCreateProduct={false}
+            />
           </DialogPanel>
         </div>
       </Dialog>
@@ -483,7 +404,10 @@ export default function BuilderCatalogModal({
         token={token}
         productId={picker?.productId ?? null}
         productName={picker?.productName ?? ''}
-        onAdd={onAdd}
+        onAdd={(lines) => {
+          onAdd(lines);
+          setPicker(null);
+        }}
       />
     </>
   );

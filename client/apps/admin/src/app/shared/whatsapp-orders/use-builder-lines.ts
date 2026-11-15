@@ -1,10 +1,8 @@
 'use client';
 
 // Builder line state + live server-priced preview (advisory).
-// The marketplace price routinely differs from the retail price a picker
-// displays, so `price_changed` is EXPECTED for most lines — the preview adopts
-// the server-corrected price/quantity (mirroring checkout's "Accept & Continue")
-// while order creation re-prices authoritatively. Never sends winning prices.
+// Use checkout stock and quantity-based pricing when a line changes.
+// Order creation validates both again before reserving inventory.
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
@@ -59,11 +57,21 @@ export function useBuilderLines(initial: BuilderLine[]) {
     [],
   );
 
-  /** Append many pre-composed lines (catalogue modal / scan drawer) — each
-   *  gets a fresh key; existing key-unique semantics are preserved since the
-   *  key is always generated here, never trusted from the caller. */
+  /** Fill the open product row before inserting new catalogue or scan lines. */
   const addLines = useCallback((ls: Array<Omit<BuilderLine, 'key'>>) => {
-    setLines((prev) => [...prev, ...ls.map((l) => ({ ...l, key: crypto.randomUUID() }))]);
+    if (!ls.length) return;
+    setLines((prev) => {
+      const index = prev.findIndex((line) => line.lineType === 'product' && !line.subProductId);
+      const additions = ls.map((line) => ({ ...line, key: crypto.randomUUID() }));
+      if (index === -1) return [...prev, ...additions];
+      const blank = prev[index];
+      additions[0] = {
+        ...additions[0],
+        key: blank.key,
+        description: blank.description || additions[0].description,
+      };
+      return [...prev.slice(0, index), ...additions, ...prev.slice(index + 1)];
+    });
   }, []);
 
   const addSection = useCallback(() => {
@@ -98,7 +106,7 @@ export function useBuilderLines(initial: BuilderLine[]) {
     const next = linesRef.current.map((l) => {
       if (l.lineType !== 'product' || !l.subProductId) return l;
       const v = byKey.get(mapKey(l.subProductId, l.sizeId ?? null));
-      if (!v || v.status === 'ok') return l;
+      if (!v) return l;
       if (v.status === 'out_of_stock' || v.status === 'unavailable') {
         if (l.availableStock !== 0) {
           corrected.add(l.key);
@@ -108,7 +116,6 @@ export function useBuilderLines(initial: BuilderLine[]) {
       }
       let nextL = l;
       if (
-        v.status === 'price_changed' &&
         typeof v.currentPrice === 'number' &&
         v.currentPrice > 0 &&
         nextL.unitPrice !== v.currentPrice
@@ -120,9 +127,12 @@ export function useBuilderLines(initial: BuilderLine[]) {
         nextL = { ...nextL, unitPrice: v.currentPrice };
         corrected.add(nextL.key);
       }
-      if (typeof v.maxQuantity === 'number' && nextL.quantity > v.maxQuantity) {
-        nextL = { ...nextL, quantity: Math.max(1, v.maxQuantity) };
-        corrected.add(nextL.key);
+      if (typeof v.maxQuantity === 'number') {
+        const quantity = Math.min(nextL.quantity, Math.max(1, v.maxQuantity));
+        if (quantity !== nextL.quantity) corrected.add(nextL.key);
+        if (quantity !== nextL.quantity || v.maxQuantity !== nextL.availableStock) {
+          nextL = { ...nextL, quantity, availableStock: v.maxQuantity };
+        }
       }
       return nextL;
     });
@@ -164,7 +174,7 @@ export function useBuilderLines(initial: BuilderLine[]) {
         const res = await fetch(`${API_URL}/api/cart/validate`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ items }),
+          body: JSON.stringify({ items, checkout: true }),
         });
         const body = (await res.json().catch(() => ({}))) as {
           success?: boolean;

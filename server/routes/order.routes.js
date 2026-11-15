@@ -43,6 +43,8 @@ const createOrderValidation = [
     .notEmpty()
     .withMessage('State is required'),
   body('shipping.zipCode')
+    .if((_, { req }) => !(req.body?.manualOrder?.originChannel === 'whatsapp' &&
+      ['super_admin', 'admin'].includes(req.user?.role)))
     .trim()
     .notEmpty()
     .withMessage('ZIP code is required'),
