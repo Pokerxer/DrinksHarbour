@@ -1,5 +1,5 @@
 /**
- * Backfill missing product SEO meta with claude-haiku-4-5.
+ * Backfill missing product SEO meta with claude-haiku-5-5.
  *
  * The /product/[slug] pages fall back to the raw product name for their
  * title/H1 and have no meta description when a product has no
@@ -23,12 +23,13 @@
  * NOTE: run from a permitted host — Atlas blocks the local dev IP.
  */
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env'), quiet: true });
+const { CATALOGUE_AI_MODEL, catalogueGenerationOptions } = require('../config/catalogueAi');
 const mongoose = require('mongoose');
 const Anthropic = require('@anthropic-ai/sdk');
 const Product = require('../models/Product');
 const Brand = require('../models/Brand');
 
-const MODEL = 'claude-haiku-4-5';
+const MODEL = CATALOGUE_AI_MODEL;
 const DRY_RUN = process.argv.includes('--dry-run');
 const LIMIT = Number((process.argv.find((a) => a.startsWith('--limit=')) || '').split('=')[1]) || Infinity;
 const DELAY_MS = Number((process.argv.find((a) => a.startsWith('--delay=')) || '').split('=')[1]) || 800;
@@ -116,7 +117,7 @@ async function main() {
 
     try {
       const response = await anthropic.messages.create({
-        model: MODEL,
+        ...catalogueGenerationOptions(MODEL),
         max_tokens: 2048,
         system:
           "You are an SEO content assistant for DrinksHarbour, Nigeria's premier online premium beverages store. " +

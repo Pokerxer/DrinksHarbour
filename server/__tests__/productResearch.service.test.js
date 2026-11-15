@@ -475,39 +475,35 @@ test('a timed-out research call degrades to a blank, flagged brief', async () =>
   assert.deepStrictEqual(brief.unverified, FACTUAL_FIELDS);
 });
 
-// ── Model + reasoning params ────────────────────────────────────────────────
-// The whole product/sub-product AI surface runs on Haiku. Haiku 4.5 rejects
-// `output_config.effort` and adaptive thinking with a 400, so a research call
-// that carried either would fail at request time, not in review.
+// Research must send thinking settings accepted by the selected model.
+const { reasoningParams } = require('../services/productResearch.service');
 
-const {
-  reasoningParams,
-  RESEARCH_MODEL,
-} = require('../services/productResearch.service');
-
-test('research runs on Haiku by default', () => {
-  assert.match(RESEARCH_MODEL, /^claude-haiku/);
-});
-
-test('the research call sends Haiku-legal reasoning params', async () => {
+test('research sends Haiku 5.5 adaptive thinking and keeps source-backed results', async () => {
   const client = stubClient({
     content: [
+      { type: 'thinking', thinking: 'Checking a source' },
       searchResultBlock([{ title: 'Src', url: 'https://src.example/p' }]),
       textBlock({ found: true, abv: 40 }),
     ],
   });
 
-  await researchProduct({ name: 'Params Probe' }, { client });
+  const brief = await researchProduct({ name: 'Params Probe' }, { client });
   const params = client.lastParams;
 
-  assert.match(params.model, /^claude-haiku/);
-  assert.ok(!('output_config' in params), 'effort 400s on Haiku 4.5');
-  assert.strictEqual(params.thinking.type, 'enabled');
-  assert.ok(
-    params.thinking.budget_tokens >= 1024 &&
-      params.thinking.budget_tokens < params.max_tokens,
-    'thinking budget must sit between the 1024 minimum and max_tokens'
-  );
+  assert.strictEqual(params.model, 'claude-haiku-5-5');
+  assert.deepStrictEqual(params.thinking, { type: 'adaptive' });
+  assert.deepStrictEqual(params.output_config, { effort: 'low' });
+  assert.strictEqual(brief.facts.abv, 40);
+  assert.deepStrictEqual(brief.sources, [{ title: 'Src', url: 'https://src.example/p' }]);
+});
+
+test('Haiku 4.5 research overrides keep budgeted thinking', () => {
+  for (const model of ['claude-haiku-4-5', 'claude-haiku-4-5-20251001']) {
+    const params = reasoningParams(model);
+    assert.deepStrictEqual(params, {
+      thinking: { type: 'enabled', budget_tokens: 2000 },
+    });
+  }
 });
 
 test('reasoningParams still emits adaptive+effort for a non-Haiku override', () => {

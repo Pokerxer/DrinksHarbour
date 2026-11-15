@@ -4,13 +4,14 @@
 // the central catalog: instead of requiring the spreadsheet to carry type/brand/
 // category/descriptions, we derive them from the product name.
 
+const { CATALOGUE_AI_MODEL, catalogueGenerationOptions } = require('../config/catalogueAi');
 const Anthropic = require('@anthropic-ai/sdk');
 const Product = require('../models/Product');
 const Category = require('../models/Category');
 const SubCategory = require('../models/SubCategory');
 
 // Same model the platform chatbot / scan matcher already use.
-const CLAUDE_MODEL = 'claude-haiku-4-5';
+const CLAUDE_MODEL = CATALOGUE_AI_MODEL;
 const PRODUCT_TYPES = Product.schema.path('type').enumValues;
 
 let _client;
@@ -139,8 +140,8 @@ async function enrichProductFromName(name, opts = {}, deps = {}) {
 
   try {
     const res = await anthropic.messages.create({
-      model: CLAUDE_MODEL,
-      max_tokens: 600,
+      ...catalogueGenerationOptions(CLAUDE_MODEL),
+      max_tokens: 1024,
       system,
       messages: [{ role: 'user', content: prompt }],
     });

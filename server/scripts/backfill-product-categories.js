@@ -13,6 +13,7 @@
  *   node scripts/backfill-product-categories.js         # classify + write
  */
 require('dotenv').config();
+const { CATALOGUE_AI_MODEL, catalogueGenerationOptions } = require('../config/catalogueAi');
 const mongoose = require('mongoose');
 const Anthropic = require('@anthropic-ai/sdk');
 
@@ -22,7 +23,7 @@ require('../models/Brand');
 
 const DRY_RUN = process.argv.includes('--dry');
 const BATCH_SIZE = 40;
-const HAIKU_MODEL = process.env.ANTHROPIC_FAST_MODEL || 'claude-haiku-4-5';
+const HAIKU_MODEL = process.env.ANTHROPIC_FAST_MODEL || CATALOGUE_AI_MODEL;
 
 const anthropic = process.env.ANTHROPIC_API_KEY
   ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
@@ -57,7 +58,7 @@ ${lines}
 Reply with ONLY a JSON array: [{"i": <index>, "slug": "<category-slug>"}] — one entry per product, no other text.`;
 
   const message = await anthropic.messages.create({
-    model: HAIKU_MODEL,
+    ...catalogueGenerationOptions(HAIKU_MODEL),
     max_tokens: 4000,
     messages: [{ role: 'user', content: prompt }],
   });

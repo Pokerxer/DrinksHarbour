@@ -1,3 +1,4 @@
+const { CATALOGUE_AI_MODEL, catalogueGenerationOptions } = require('../config/catalogueAi');
 const { subcategoryIndustryForWrite } = require('../utils/taxonomyIndustryWrite');
 const SubCategory = require('../models/SubCategory');
 const Category = require('../models/Category'); // registers ref for populate
@@ -568,8 +569,7 @@ const deleteSubCategory = asyncHandler(async (req, res) => {
  */
 const Anthropic = require('@anthropic-ai/sdk');
 
-// Same model the product enrichment / chatbot / brand ai-fill already use.
-const AI_FILL_MODEL = 'claude-haiku-4-5';
+const AI_FILL_MODEL = CATALOGUE_AI_MODEL;
 
 const SUBCATEGORY_STYLES = [
   'traditional', 'modern', 'craft', 'artisanal', 'premium', 'luxury', 'budget', 'mid_range',
@@ -768,7 +768,7 @@ Return a JSON object with exactly these keys:
 For the four seasonal booleans, set true only for seasons this subcategory is especially suited to (e.g. stouts in winter, rosé in summer); all false if not seasonal.${subCategoryCatalogToPrompt(catalog)}`;
 
   const response = await anthropic.messages.create({
-    model: AI_FILL_MODEL,
+    ...catalogueGenerationOptions(AI_FILL_MODEL),
     max_tokens: 8192,
     system,
     messages: [{ role: 'user', content: prompt }],
@@ -809,7 +809,7 @@ For the four seasonal booleans, set true only for seasons this subcategory is es
   res.json({ success: true, data });
 });
 
-const SUB_SMART_MODEL = process.env.ANTHROPIC_SMART_MODEL || 'claude-sonnet-4-6';
+const SUB_SMART_MODEL = process.env.ANTHROPIC_SMART_MODEL || CATALOGUE_AI_MODEL;
 
 const generateSubCategory = asyncHandler(async (req, res) => {
   const topic = String(req.body?.topic || '').trim();
@@ -865,7 +865,7 @@ Return a JSON object with exactly these keys:
 For the four seasonal booleans, set true only for seasons this subcategory is especially suited to (e.g. stouts in winter, rosé in summer); all false if not seasonal.${subCategoryCatalogToPrompt(catalog)}`;
 
   const response = await anthropic.messages.create({
-    model: SUB_SMART_MODEL,
+    ...catalogueGenerationOptions(SUB_SMART_MODEL),
     max_tokens: 8192,
     system,
     messages: [{ role: 'user', content: prompt }],

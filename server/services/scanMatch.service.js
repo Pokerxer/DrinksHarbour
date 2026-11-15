@@ -20,6 +20,7 @@
 //   none    — no usable match (drawer shows a "Create new product" link)
 
 const Anthropic   = require('@anthropic-ai/sdk');
+const { catalogueGenerationOptions } = require('../config/catalogueAi');
 const Brand       = require('../models/Brand');
 const Product     = require('../models/Product');
 const SubProduct  = require('../models/SubProduct');
@@ -27,8 +28,9 @@ const Category    = require('../models/Category');
 const SubCategory = require('../models/SubCategory');
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY || '' });
-const CLAUDE_MODEL = 'claude-haiku-4-5';
 const MAX_ITEMS = 30;
+// The response budget covers both adaptive thinking and the extracted rows.
+const MAX_SCAN_OUTPUT_TOKENS = 4096;
 
 /** Robustly extract the first JSON object/array from an LLM text response
  *  (strips markdown fences, leading prose, trailing prose). Local copy to avoid
@@ -110,9 +112,8 @@ async function extractItemsFromImage(imageUrl) {
     console.warn(`scanMatch: large image (${Math.round(img.base64Data.length / 1024)}KB)`);
   try {
     const response = await anthropic.messages.create({
-      model: CLAUDE_MODEL,
-      max_tokens: 1500,
-      temperature: 0.2,
+      ...catalogueGenerationOptions(),
+      max_tokens: MAX_SCAN_OUTPUT_TOKENS,
       messages: [{
         role: 'user',
         content: [
@@ -153,9 +154,8 @@ async function extractItemsFromText(text) {
   if (!text || !text.trim()) return [];
   try {
     const response = await anthropic.messages.create({
-      model: CLAUDE_MODEL,
-      max_tokens: 1500,
-      temperature: 0.2,
+      ...catalogueGenerationOptions(),
+      max_tokens: MAX_SCAN_OUTPUT_TOKENS,
       messages: [{ role: 'user', content: TEXT_PROMPT + text + '\n"""' }],
     });
     const block = response.content.find((b) => b.type === 'text');

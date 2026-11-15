@@ -1,3 +1,4 @@
+const { CATALOGUE_AI_MODEL, catalogueGenerationOptions } = require('../config/catalogueAi');
 const { fieldsFor } = require('../utils/businessSpecifications');
 const { industriesForProductType, INDUSTRY_VALUES } = require('../constants/industries');
 const { expandedTypeValues } = require('../constants/expandedProductTypes');
@@ -23,7 +24,7 @@ const {
 // AI provider: Claude (Anthropic). Requires ANTHROPIC_API_KEY in server/.env.
 // Every product and sub-product generation handler in this controller runs on
 // Haiku — there is no second, larger model and no non-Claude fallback here.
-const HAIKU_MODEL = process.env.ANTHROPIC_FAST_MODEL || 'claude-haiku-4-5';
+const HAIKU_MODEL = process.env.ANTHROPIC_FAST_MODEL || CATALOGUE_AI_MODEL;
 const anthropic = process.env.ANTHROPIC_API_KEY
   ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
   : null;
@@ -64,7 +65,7 @@ const genAI = {
         ? 'You are an expert product data assistant for a multi-business ecommerce platform. Respond with ONLY valid JSON — no markdown code fences, no explanation, no preamble.'
         : 'You are an expert product data assistant for a multi-business ecommerce platform. Respond with only the requested content, no preamble.';
       const message = await anthropic.messages.create({
-        model: activeModel,
+        ...catalogueGenerationOptions(activeModel),
         max_tokens: maxTokens,
         system,
         messages: [{ role: 'user', content }],
@@ -428,7 +429,7 @@ const generateProductDetails = asyncHandler(async (req, res) => {
       );
       const classifier = genAI.getGenerativeModel({
         model: MODEL_NAME,
-        generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 100 },
+        generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 512 },
       });
       const classification = await classifier.generateContent(
         `Classify this product name: ${JSON.stringify(name)}. Return JSON with a single "type" from this list: ${types.join(', ')}. Use an empty string if no type fits.`

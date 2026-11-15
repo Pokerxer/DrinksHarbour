@@ -1,3 +1,4 @@
+const { CATALOGUE_AI_MODEL, catalogueGenerationOptions } = require('../config/catalogueAi');
 const { categoryIndustryForCreate, validIndustry } = require('../utils/taxonomyIndustryWrite');
 const Category = require('../models/Category');
 const SubCategory = require('../models/SubCategory');
@@ -452,8 +453,7 @@ const deleteCategory = asyncHandler(async (req, res) => {
 
 const Anthropic = require('@anthropic-ai/sdk');
 
-// Same model the product enrichment / chatbot / brand ai-fill already use.
-const AI_FILL_MODEL = 'claude-haiku-4-5';
+const AI_FILL_MODEL = CATALOGUE_AI_MODEL;
 
 const CATEGORY_TYPES = [
   'beer', 'cider', 'wine', 'red_wine', 'white_wine', 'rose_wine',
@@ -646,7 +646,7 @@ Return a JSON object with exactly these keys:
 }${categoryCatalogToPrompt(catalog)}`;
 
   const response = await anthropic.messages.create({
-    model: AI_FILL_MODEL,
+    ...catalogueGenerationOptions(AI_FILL_MODEL),
     max_tokens: 8192,
     system,
     messages: [{ role: 'user', content: prompt }],
@@ -679,7 +679,7 @@ Return a JSON object with exactly these keys:
   res.json({ success: true, data });
 });
 
-const SMART_MODEL = process.env.ANTHROPIC_SMART_MODEL || 'claude-sonnet-4-6';
+const SMART_MODEL = process.env.ANTHROPIC_SMART_MODEL || CATALOGUE_AI_MODEL;
 
 const generateCategory = asyncHandler(async (req, res) => {
   const topic = String(req.body?.topic || '').trim();
@@ -718,7 +718,7 @@ Return a JSON object with exactly these keys:
 }${categoryCatalogToPrompt(catalog)}`;
 
   const response = await anthropic.messages.create({
-    model: SMART_MODEL,
+    ...catalogueGenerationOptions(SMART_MODEL),
     max_tokens: 8192,
     system,
     messages: [{ role: 'user', content: prompt }],

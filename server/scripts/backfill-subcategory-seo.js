@@ -1,5 +1,5 @@
 /**
- * Backfill missing subcategory copy + SEO meta with claude-haiku-4-5.
+ * Backfill missing subcategory copy + SEO meta with claude-haiku-5-5.
  *
  * The /categories/[slug]/[subSlug] pages fall back to generic copy when a
  * subcategory has no description/metaTitle/metaDescription — thin pages that
@@ -20,6 +20,7 @@
  *   --delay=ms  pause between AI calls (default 800)
  */
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env'), quiet: true });
+const { CATALOGUE_AI_MODEL, catalogueGenerationOptions } = require('../config/catalogueAi');
 const mongoose = require('mongoose');
 const Anthropic = require('@anthropic-ai/sdk');
 const SubCategory = require('../models/SubCategory');
@@ -27,7 +28,7 @@ const Category = require('../models/Category'); // registers ref for populate
 const Brand = require('../models/Brand'); // registers ref for populate
 const Product = require('../models/Product');
 
-const MODEL = 'claude-haiku-4-5';
+const MODEL = CATALOGUE_AI_MODEL;
 const DRY_RUN = process.argv.includes('--dry-run');
 const LIMIT = Number((process.argv.find((a) => a.startsWith('--limit=')) || '').split('=')[1]) || Infinity;
 const DELAY_MS = Number((process.argv.find((a) => a.startsWith('--delay=')) || '').split('=')[1]) || 800;
@@ -203,7 +204,7 @@ async function main() {
 
     try {
       const response = await anthropic.messages.create({
-        model: MODEL,
+        ...catalogueGenerationOptions(MODEL),
         max_tokens: 8192,
         system:
           "You are a content assistant for DrinksHarbour, Nigeria's premier online premium beverages store. " +

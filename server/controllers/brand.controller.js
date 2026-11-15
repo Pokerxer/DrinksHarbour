@@ -1,5 +1,6 @@
 // controllers/brand.controller.js
 
+const { CATALOGUE_AI_MODEL, catalogueGenerationOptions } = require('../config/catalogueAi');
 const brandService = require('../services/brand.service');
 const asyncHandler = require('../utils/asyncHandler');
 // withDbRetry: the crawler-hot public reads must survive the transient Atlas
@@ -486,8 +487,7 @@ exports.deleteAdminBrand = asyncHandler(async (req, res) => {
  */
 const Anthropic = require('@anthropic-ai/sdk');
 
-// Same model the product enrichment / chatbot / scan matcher already use.
-const AI_FILL_MODEL = 'claude-haiku-4-5';
+const AI_FILL_MODEL = CATALOGUE_AI_MODEL;
 
 const BRAND_TYPES = [
   'brewery', 'microbrewery', 'craft_brewery', 'brewpub',
@@ -582,7 +582,7 @@ Return a JSON object with exactly these keys:
 }`;
 
   const response = await anthropic.messages.create({
-    model: AI_FILL_MODEL,
+    ...catalogueGenerationOptions(AI_FILL_MODEL),
     max_tokens: 4096,
     system,
     messages: [{ role: 'user', content: prompt }],

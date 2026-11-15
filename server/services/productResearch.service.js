@@ -16,6 +16,7 @@
 'use strict';
 
 const Anthropic = require('@anthropic-ai/sdk');
+const { CATALOGUE_AI_MODEL } = require('../config/catalogueAi');
 const { isBeverageType } = require('../constants/productTypes');
 const { allFields, fieldsFor, cleanSpecifications } = require('../utils/businessSpecifications');
 
@@ -23,7 +24,7 @@ const { allFields, fieldsFor, cleanSpecifications } = require('../utils/business
 // have to resist filling gaps from memory on its own: the no-inference rule is
 // enforced twice in code below — unsourced facts are dropped, and only URLs the
 // search backend actually returned ever become sources.
-const RESEARCH_MODEL = process.env.ANTHROPIC_RESEARCH_MODEL || 'claude-haiku-4-5';
+const RESEARCH_MODEL = process.env.ANTHROPIC_RESEARCH_MODEL || CATALOGUE_AI_MODEL;
 // Deliberately the pre-dynamic-filtering search tool. `web_search_20260209`
 // runs a code-execution container per search to pre-filter results, which
 // measured ~3x slower here (22.6s vs 8.0s on the same query) for a token saving
@@ -39,7 +40,7 @@ const MAX_SEARCHES = Number(process.env.ANTHROPIC_RESEARCH_MAX_SEARCHES || 4);
 // Only sent for models that accept it — Haiku 4.5 rejects `output_config.effort`
 // and adaptive thinking outright, so both are omitted there (see reasoningParams).
 const RESEARCH_EFFORT = process.env.ANTHROPIC_RESEARCH_EFFORT || 'low';
-// Extended thinking on Haiku is the budgeted form, not adaptive. Must stay below
+// Haiku 4.5 uses a fixed thinking budget. This must stay below
 // max_tokens (8000 below) and at/above the 1024 minimum.
 const RESEARCH_THINKING_BUDGET = Number(
   process.env.ANTHROPIC_RESEARCH_THINKING_BUDGET || 2000
@@ -100,15 +101,10 @@ const ARRAY_FIELDS = new Set([
   'awards',
 ]);
 
-/**
- * Reasoning knobs for the research call, which differ by model family:
- *   - Haiku 4.5 has no adaptive thinking and 400s on `output_config.effort`.
- *     It gets budgeted extended thinking and no effort at all.
- *   - Opus/Sonnet 4.6+ (only reachable via ANTHROPIC_RESEARCH_MODEL) 400 on
- *     `budget_tokens`, so they get adaptive thinking plus effort.
- */
+// Haiku 4.5 overrides still need budgeted thinking. Haiku 5.5 and modern
+// Sonnet/Opus models use adaptive thinking with an effort setting.
 function reasoningParams(model = RESEARCH_MODEL) {
-  if (String(model).startsWith('claude-haiku')) {
+  if (/^claude-haiku-4-5(?:-|$)/.test(model)) {
     return {
       thinking: { type: 'enabled', budget_tokens: RESEARCH_THINKING_BUDGET },
     };
