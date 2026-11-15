@@ -7,6 +7,7 @@ const mongoose = require('mongoose');
 const https = require('https');
 const productService = require('./product.service');
 const Anthropic = require('@anthropic-ai/sdk');
+const { CATALOGUE_AI_MODEL, catalogueGenerationOptions } = require('../config/catalogueAi');
 // Venue Phase 3 S1 (docs/saas/venues/03 §2): the consumer assistant is part of
 // the retail channel — it may only propose products a shopper can actually buy
 // in the shop, so venue-only catalog kinds never surface here.
@@ -33,7 +34,6 @@ if (!process.env.ANTHROPIC_API_KEY) {
 }
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY || '' });
-const CLAUDE_MODEL = 'claude-haiku-4-5';
 
 // ── Catalogue visibility ─────────────────────────────────────────────────────
 // The chatbot is an unauthenticated storefront surface, so it may see exactly
@@ -105,7 +105,12 @@ const searchWeb = async (query) => {
 };
 
 // Call Claude Haiku — supports multi-turn conversation history
-const callClaude = async (prompt, systemPrompt = null, conversationHistory = [], historyLimit = 10, outputFormat = null) => {
+const callClaude = async (
+  prompt,
+  systemPrompt = null,
+  conversationHistory = [],
+  { historyLimit = 10, outputFormat, effort = 'low' } = {}
+) => {
   const finalSystemPrompt = systemPrompt || BASE_SYSTEM_PROMPT;
   try {
     // Build messages: history (last 10 turns) + current user message.
@@ -118,12 +123,15 @@ const callClaude = async (prompt, systemPrompt = null, conversationHistory = [],
       { role: 'user', content: prompt },
     ];
 
+    const outputConfig = { effort };
+    if (outputFormat) outputConfig.format = outputFormat;
+
     const response = await anthropic.messages.create({
-      model: CLAUDE_MODEL,
-      max_tokens: outputFormat ? 4096 : 2048,
+      model: CATALOGUE_AI_MODEL,
+      max_tokens: outputFormat ? 8192 : 4096,
       system: finalSystemPrompt,
       messages,
-      ...(outputFormat ? { output_config: { format: outputFormat } } : {}),
+      output_config: outputConfig,
     });
 
     const textBlock = response.content.find(b => b.type === 'text');
@@ -349,8 +357,8 @@ Use null for anything you cannot determine.`;
 
   try {
     const response = await anthropic.messages.create({
-      model: CLAUDE_MODEL,
-      max_tokens: 800,
+      ...catalogueGenerationOptions(),
+      max_tokens: 2048,
       messages: [{
         role: 'user',
         content: [
@@ -1232,7 +1240,16 @@ const handleChatbotQuery = async (options) => {
   try {
     if (options.mode === 'occasion') {
       const { planOccasion } = require('./occasionChat.service');
-      return await planOccasion({ ...options, imageUrls: images }, { callClaude: (prompt, system, history, format) => callClaude(prompt, system, history, 20, format), analyzeImage, buildFullCatalogContext, loadCatalog });
+      return await planOccasion({ ...options, imageUrls: images }, {
+        callClaude: (prompt, system, history, outputFormat) => callClaude(prompt, system, history, {
+          historyLimit: 20,
+          outputFormat,
+          effort: 'medium',
+        }),
+        analyzeImage,
+        buildFullCatalogContext,
+        loadCatalog,
+      });
     }
     // Handle image query first — customers often send a photo with no text
     if (images.length > 0) {

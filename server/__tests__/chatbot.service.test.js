@@ -56,21 +56,30 @@ test('getGreetingResponse still works when Claude is down', async (t) => {
 
 test('handleChatbotQuery uses the first Claude response when available', async (t) => {
   stubEmptyCatalog(t);
-  let calls = 0;
+  let request;
   t.mock.method(anthropic.messages, 'create', async (params) => {
-    calls += 1;
+    request = params;
     if ('temperature' in params) throw new Error('temperature: Extra inputs are not permitted');
-    return textResponse('Here is a great whiskey pick for you!');
+    return {
+      content: [
+        { type: 'thinking', thinking: 'Consider the recommendation' },
+        { type: 'text', text: 'Here is a great whiskey pick for you!' },
+      ],
+    };
   });
 
   const result = await handleChatbotQuery({ query: 'What whiskey do you recommend?' });
 
   assert.strictEqual(result.response, 'Here is a great whiskey pick for you!');
-  assert.strictEqual(calls, 1);
+  assert.strictEqual(anthropic.messages.create.mock.callCount(), 1);
+  assert.strictEqual(request.model, 'claude-haiku-5-5');
+  assert.deepStrictEqual(request.output_config, { effort: 'low' });
 });
 
-test('chatbot can analyze a beverage photo when Claude rejects temperature', async (t) => {
+test('chatbot sends beverage photos to Haiku 5.5 at low effort', async (t) => {
+  let request;
   t.mock.method(anthropic.messages, 'create', async (params) => {
+    request = params;
     if ('temperature' in params) throw new Error('temperature: Extra inputs are not permitted');
     return textResponse('This is Tomatin Legacy.');
   });
@@ -78,6 +87,9 @@ test('chatbot can analyze a beverage photo when Claude rejects temperature', asy
   const result = await chatbotService.analyzeImage(`data:image/jpeg;base64,${'A'.repeat(100)}`);
 
   assert.strictEqual(result?.text, 'This is Tomatin Legacy.');
+  assert.strictEqual(request.model, 'claude-haiku-5-5');
+  assert.deepStrictEqual(request.output_config, { effort: 'low' });
+  assert.strictEqual(request.messages[0].content[0].type, 'image');
 });
 
 test('handleChatbotQuery retries once with a minimal prompt before falling back', async (t) => {
@@ -206,6 +218,8 @@ test('occasion mode keeps uploads in the planning conversation instead of old fi
   t.mock.method(anthropic.messages, 'create', async input => { prompt = input; return textResponse('Let us refine your reception list.'); });
   const result = await handleChatbotQuery({ mode: 'occasion', occasion: 'weddings', query: 'Review this', fileContent: '12 Apple Juice', fileName: 'wedding.txt', conversationHistory: [{ role: 'user', content: '80 guests in Abuja' }] });
   assert.equal(result.intent, 'occasion_planning');
+  assert.equal(prompt.model, 'claude-haiku-5-5');
+  assert.deepStrictEqual(prompt.output_config, { effort: 'medium' });
   assert.ok(prompt.messages.some(turn => turn.content.includes('80 guests in Abuja')));
   assert.ok(prompt.messages.some(turn => turn.content.includes('12 Apple Juice')));
   assert.match(result.attachmentContext, /Apple Juice/);
@@ -225,6 +239,8 @@ test('category generation requests provider-enforced JSON output through the rea
  t.mock.method(Size,'find',()=>chainable([{_id:sizeId,size:'75cl',stock:20,costPrice:1000,sellingPrice:1000}]));
  let sent;t.mock.method(anthropic.messages,'create',async input=>{sent=input;return textResponse(JSON.stringify({items:[{productId:productId.toString(),quantity:2}]}));});
  const result=await handleChatbotQuery({mode:'occasion',tenantId,generation:{categories:['wine'],budget:10000,guests:20},query:'Generate my drinks list'});
+ assert.equal(sent.model, 'claude-haiku-5-5');
+ assert.equal(sent.output_config?.effort, 'medium');
  assert.equal(sent.output_config?.format?.type,'json_schema');assert.equal(sent.output_config.format.schema.additionalProperties,false);
  assert.equal(result.generatedList.items[0].quantity,2);
 });
