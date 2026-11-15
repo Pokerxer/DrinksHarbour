@@ -36,3 +36,9 @@ answered /Users/mac/Documents/drinksharbour/client/apps/platform.
 
 Subsequent /occasions redesign and enquiry builder are documented separately in
 docs/memory/occasions-experience.md and RESUME-occasions-experience.md.
+
+2026-11-15. The marketplace footer exposes the Authenticity Guarantee,
+shipping and both city delivery guides under Help & Policies. Occasions
+links to the hub and the wedding, party, gifting and corporate pages.
+The crawl test verifies a single descriptive link per destination in
+initial HTML. Tenant storefronts retain their compact footer.

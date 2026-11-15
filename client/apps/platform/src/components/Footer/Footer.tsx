@@ -20,7 +20,6 @@ const SHOP_TOP_LINKS: FooterLink[] = [
   { label: "New Arrivals",   href: "/shop?tag=new-arrival" },
   { label: "On Sale",        href: "/deals" },
   { label: "Bulk & Case Buying", href: "/bulk-drinks" },
-  { label: "Shop by Occasion", href: "/occasions" },
 ];
 
 // Static shop links rendered below the dynamic category shortcuts.
@@ -47,14 +46,24 @@ const FALLBACK_CATEGORY_LINKS: FooterLink[] = [
   { label: "Tequila",       href: "/shop?category=tequila" },
 ];
 
-const HELP_LINKS = [
-  { label: "Contact Us",      href: "/contact" },
-  { label: "FAQs",            href: "/faqs" },
-  { label: "Order Tracking",  href: "/order-tracking" },
-  { label: "Shipping Info",   href: "/shipping-info" },
+const OCCASION_LINKS: FooterLink[] = [
+  { label: "Shop by Occasion", href: "/occasions" },
+  { label: "Wedding Drinks", href: "/occasions/weddings" },
+  { label: "Party Drinks", href: "/occasions/house-parties" },
+  { label: "Drinks Gifts", href: "/occasions/gifting" },
+  { label: "Corporate Events", href: "/occasions/corporate" },
+];
+
+const HELP_LINKS: FooterLink[] = [
+  { label: "Authenticity Guarantee", href: "/authenticity-guarantee" },
+  { label: "Shipping & Delivery", href: "/shipping-info" },
+  { label: "Abuja Delivery", href: "/delivery/abuja" },
+  { label: "Lagos Delivery", href: "/delivery/lagos" },
   { label: "Returns & Refunds", href: "/returns" },
-  { label: "Authenticity & Bottle Checks", href: "/authenticity-guarantee" },
-  { label: "My Account",      href: "/my-account" },
+  { label: "Order Tracking", href: "/order-tracking" },
+  { label: "FAQs", href: "/faqs" },
+  { label: "Contact Us", href: "/contact" },
+  { label: "My Account", href: "/my-account" },
 ];
 
 const COMPANY_LINKS = [
@@ -78,6 +87,23 @@ const SOCIALS = [
   { icon: Icon.PiYoutubeLogo,    href: "https://youtube.com/drinksharbour",   label: "YouTube" },
   { icon: Icon.PiTiktokLogo,     href: "https://tiktok.com/@drinksharbour",   label: "TikTok" },
 ];
+
+function FooterLinkGroup({ title, links }: { title: string; links: FooterLink[] }) {
+  return (
+    <nav aria-label={title}>
+      <h2 className="mb-4 text-xs font-black uppercase tracking-widest text-white/65">{title}</h2>
+      <ul className="space-y-2.5">
+        {links.map(({ label, href }) => (
+          <li key={href}>
+            <Link href={href} className="text-sm text-white/75 transition-colors hover:text-white hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">
+              {label}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </nav>
+  );
+}
 
 // ─── Newsletter ───────────────────────────────────────────────────────────────
 
@@ -245,39 +271,15 @@ export const Footer: React.FC = () => {
             </div>
           </div>
 
-          {/* Col 2 — Shop */}
+          {/* Shop and occasion storefronts */}
           <div>
-            <p className="text-xs font-black uppercase tracking-widest text-white/40 mb-4">Shop</p>
-            <ul className="space-y-2.5">
-              {shopLinks.map(({ label, href }) => (
-                <li key={href}>
-                  <Link
-                    href={href}
-                    className="text-sm text-white/55 hover:text-white transition-colors"
-                  >
-                    {label}
-                  </Link>
-                </li>
-              ))}
-            </ul>
+            <FooterLinkGroup title="Shop" links={shopLinks} />
+            <div className="mt-6">
+              <FooterLinkGroup title="Occasions" links={OCCASION_LINKS} />
+            </div>
           </div>
 
-          {/* Col 3 — Help */}
-          <div>
-            <p className="text-xs font-black uppercase tracking-widest text-white/40 mb-4">Help</p>
-            <ul className="space-y-2.5">
-              {HELP_LINKS.map(({ label, href }) => (
-                <li key={href}>
-                  <Link
-                    href={href}
-                    className="text-sm text-white/55 hover:text-white transition-colors"
-                  >
-                    {label}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
+          <FooterLinkGroup title="Help & Policies" links={HELP_LINKS} />
 
           {/* Col 4 — Company */}
           <div>

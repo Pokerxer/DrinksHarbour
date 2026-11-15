@@ -92,7 +92,7 @@ function anchorText(html) {
   }));
 }
 
-test('footer social links contain descriptive anchor text in server HTML', () => {
+test('footer links have descriptive text and connect key public pages in server HTML', () => {
   const Footer = load('../components/Footer/Footer.tsx', {
     ...routing,
     'next/image': { default: ({ priority, ...props }) => React.createElement('img', props) },
@@ -103,6 +103,24 @@ test('footer social links contain descriptive anchor text in server HTML', () =>
   const anchors = anchorText(renderToStaticMarkup(React.createElement(Footer)));
   assert(anchors.length > 10);
   for (const a of anchors) assert(a.text || a.imageAlt, 'Empty anchor: ' + a.attributes);
+  for (const [href, label] of [
+    ['/authenticity-guarantee', 'Authenticity Guarantee'],
+    ['/shipping-info', 'Shipping &amp; Delivery'],
+    ['/delivery/abuja', 'Abuja Delivery'],
+    ['/delivery/lagos', 'Lagos Delivery'],
+    ['/returns', 'Returns &amp; Refunds'],
+    ['/order-tracking', 'Order Tracking'],
+    ['/bulk-drinks', 'Bulk &amp; Case Buying'],
+    ['/occasions', 'Shop by Occasion'],
+    ['/occasions/weddings', 'Wedding Drinks'],
+    ['/occasions/house-parties', 'Party Drinks'],
+    ['/occasions/gifting', 'Drinks Gifts'],
+    ['/occasions/corporate', 'Corporate Events'],
+  ]) {
+    const matches = anchors.filter(a => a.attributes.includes(`href="${href}"`));
+    assert.deepEqual(matches.map(a => a.text), [label], href);
+  }
+
 });
 
 for (const linkType of ['internal', 'external']) {
