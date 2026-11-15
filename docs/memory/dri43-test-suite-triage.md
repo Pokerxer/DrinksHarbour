@@ -101,3 +101,23 @@ was reused by a follow-up verification run). Final TAP:
   the shared replica transiently made it exit 1 with `--quiet` swallowing stderr;
   dump/restore failures now surface stderr in the error message.
 
+
+## 2026-11-15 workspace suite
+
+The 5,227-test run reported 282 failures. The stack traces grouped them into
+189 loopback HTTP listener failures, 92 missing disposable MongoDB fixture
+URI failures, and the route audit's missing WhatsApp pay-verify exception.
+
+The WhatsApp callback remains public for guest gateway returns. Its service
+requires an order-bound payment claim and verified provider receipt before
+settling. The route audit now records that intentional exception. The audit,
+WhatsApp route, and invoice tests passed together (11 tests).
+
+The workspace denies both binding and connecting to loopback. A disposable
+`mongod` failed to bind port 29127, and a test with the correct fixture URI
+failed to connect with EPERM. Use the disposable replica setup in the server CI
+job and the command in `server/README.md` for unrestricted integration testing.
+
+The post-fix suite reported 4,660 passed, 281 failed and 286 skipped. The
+WhatsApp audit assertion was the only failure that disappeared. Integration
+behavior for the remaining failures still needs a loopback-capable run.

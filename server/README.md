@@ -3,6 +3,25 @@
 > limits use local memory. Old Redis configuration cannot reactivate it. See
 > [standalone operating notes](../docs/memory/standalone-without-upstash.md).
 
+## Running the full server test suite
+
+Run the full suite from `server/` on a host that permits local HTTP listeners
+on `127.0.0.1`. Start the disposable MongoDB replicas `venuePhase0` on port
+`29127` and `peerTest` on port `27029` first. The
+[server CI job](../.github/workflows/ci.yml) has the startup and readiness
+commands. Use only disposable test data because the fixture drops its databases.
+
+```sh
+NODE_ENV=test \
+DRINKSHARBOUR_VENUE_TEST_MONGO_URI='mongodb://127.0.0.1:29127/drinks_venue_test_local?replicaSet=venuePhase0' \
+PEER_TEST_MONGO='mongodb://127.0.0.1:27029/?replicaSet=peerTest' \
+node --test --test-concurrency=2 --test-timeout=60000 '__tests__/*.test.js'
+```
+
+A blocked loopback listener can produce `listen EPERM` or a null
+`server.address()`. A missing replica URI fails the fixture assertion before
+MongoDB tests reach application code.
+
 # Import the public key
 
 ## Shared warehouse identity safety
