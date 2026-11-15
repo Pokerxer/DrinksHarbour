@@ -6,7 +6,7 @@ import OccasionsExplorer from '@/components/Occasions/OccasionsExplorer';
 import OccasionsHelp from '@/components/Occasions/OccasionsHelp';
 
 const title = 'Drinks for Weddings, Parties & Gifts in Nigeria';
-const description = 'Plan drinks for weddings, corporate events, house parties and gifts in Nigeria. Explore bottle choices, bulk buying guidance and delivery information.';
+const description = 'Shop drinks for weddings, house parties, gifts and corporate events in Nigeria. Browse bottles by occasion or send a drinks brief for help with quantities and delivery.';
 export const metadata = guideMetadata('/occasions', title, description);
 
 export default function OccasionsPage() {

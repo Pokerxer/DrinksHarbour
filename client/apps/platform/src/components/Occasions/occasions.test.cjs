@@ -38,6 +38,31 @@ test('occasion hub serves every guide and one main heading before client interac
   assert(String(page.metadata.alternates.canonical).endsWith('/occasions'));
 });
 
+test('occasion hub gives shoppers direct storefront links before the shared brief', () => {
+  const page = load('app/occasions/page.tsx');
+  const dom = new JSDOM(renderToStaticMarkup(React.createElement(page.default)));
+  try {
+    const document = dom.window.document;
+    const hero = document.querySelector('header');
+    assert.equal(hero.querySelector('a[href="#occasion-explorer"]').textContent.trim(), 'Shop by occasion');
+    assert.equal(hero.querySelector('a[href="#occasion-planner"]').textContent.trim(), 'Send a drinks brief');
+
+    const explorer = document.getElementById('occasion-explorer');
+    for (const [path, action, asset] of [
+      ['weddings', 'Shop wedding drinks', 'wedding-drinks-abuja.webp'],
+      ['house-parties', 'Shop party drinks', 'party-drinks-abuja.webp'],
+      ['gifting', 'Shop drinks gifts', 'drinks-gifting-abuja.webp'],
+    ]) {
+      const link = [...explorer.querySelectorAll(`a[href="/occasions/${path}"]`)]
+        .find(candidate => candidate.textContent.trim() === action);
+      assert(link, action);
+      assert(link.closest('article').querySelector(`img[src*="${asset}"]`), asset);
+    }
+    assert(explorer.querySelector('a[href="/occasions/corporate"]'));
+    assert(explorer.querySelector('a[href="/occasions/house-parties/birthday"]'));
+  } finally { dom.window.close(); }
+});
+
 test('occasion selection focuses the staff request form without transmitting customer details',async()=>{
  const dom=new JSDOM('<div id="root"></div>',{url:'http://localhost/occasions'});
  const prior={window:global.window,document:global.document,fetch:global.fetch,IS_REACT_ACT_ENVIRONMENT:global.IS_REACT_ACT_ENVIRONMENT};

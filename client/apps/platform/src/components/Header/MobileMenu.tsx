@@ -17,6 +17,7 @@ interface NavLink {
   name: string;
   href: string;
   sale?: boolean;
+  exact?: boolean;
 }
 
 interface MobileMenuProps {
@@ -51,6 +52,7 @@ const NAV_ICONS: Record<string, React.ElementType> = {
   "Send a gift":  Icon.PiGift,
   "Weddings":     Icon.PiChampagne,
   "Parties":      Icon.PiConfetti,
+  "Occasions":    Icon.PiCalendar,
   "New Arrivals": Icon.PiSparkle,
   "Sale":         Icon.PiTag,
   "Vendors":      Icon.PiHandshake,
@@ -88,8 +90,8 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({
 
   const handleLogout = () => { logout(); onClose(); };
 
-  const isActive = (href: string) =>
-    href === "/" ? pathname === "/" : pathname.startsWith(href.split("?")[0]);
+  const isActive = (href: string, exact?: boolean) =>
+    href === "/" || exact ? pathname === href : pathname.startsWith(href.split("?")[0]);
 
   return (
     <AnimatePresence>
@@ -255,7 +257,7 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({
               <div className="space-y-0.5">
                 {allNavLinks.map((link) => {
                   const NavIcon = NAV_ICONS[link.name] ?? Icon.PiCaretRight;
-                  const active  = isActive(link.href);
+                  const active  = isActive(link.href, link.exact);
                   return (
                     <Link
                       key={link.name}

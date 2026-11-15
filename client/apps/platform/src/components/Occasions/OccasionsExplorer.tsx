@@ -51,7 +51,7 @@ export default function OccasionsExplorer() {
     <div className="mb-8 max-w-2xl">
       <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#7c1d1d]">Find your starting point</p>
       <h2 id="choose-occasion" className="mt-3 text-3xl font-bold tracking-tight text-gray-950">What are you planning?</h2>
-      <p className="mt-3 leading-7 text-gray-600">Explore a guide or choose an occasion to start your brief. You can browse bottles now and ask about the details when you are ready.</p>
+      <p className="mt-3 leading-7 text-gray-600">Shop for your occasion, browse the planning guides or start a brief for our team.</p>
     </div>
     <div className="grid items-start gap-8 ">
       <div>

@@ -32,5 +32,10 @@ export default function OccasionHomeLinks() {
         </Link>
       </div>)}
     </div>
+    <div className="container mx-auto px-5 pb-4 text-center">
+      <Link href="/occasions" className="inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-[#571419] underline underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4">
+        View all occasions <PiArrowUpRight aria-hidden />
+      </Link>
+    </div>
   </section>;
 }

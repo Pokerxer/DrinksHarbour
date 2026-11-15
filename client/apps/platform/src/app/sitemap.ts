@@ -226,7 +226,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${BASE_URL}/delivery/lagos`, changeFrequency: "monthly", priority: 0.7, lastModified: deliveryPolicyUpdated },
     { url: `${BASE_URL}/authenticity-guarantee`,      changeFrequency: "monthly", priority: 0.6 },
     { url: `${BASE_URL}/bulk-drinks`,                changeFrequency: "monthly", priority: 0.7 },
-    { url: `${BASE_URL}/occasions`,                  changeFrequency: "monthly", priority: 0.6 },
+    { url: `${BASE_URL}/occasions`, changeFrequency: "monthly", priority: 0.6, lastModified: "2026-11-15" },
     // Occasion landing pages plus every registered subpage — subpages relied
     // on SubpageNav alone for discovery before this sitemap expansion.
     ...occasionPages.flatMap(page => [

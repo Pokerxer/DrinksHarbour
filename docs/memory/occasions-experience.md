@@ -85,3 +85,11 @@ drafts, admin 11 module tests; types + lint clean; visual evidence at
 320/390/1280 (0 overflow) with both tick states; server
 `__tests__/occasionConversation*.test.js` green. Global battery + evidence:
 docs/superpowers/specs/RESUME-occasion-chat-whatsapp-DRI-41.md.
+
+2026-11-15. The hub hero now leads with Shop by occasion. The wedding,
+house-party and gifting cards use their storefront photographs and direct
+shopping calls to action. Corporate events, guide chips and the shared
+brief are still reachable from the hub. The marketplace homepage and
+primary desktop navigation and mobile menu expose the hub, while the storefront
+breadcrumbs lead back to it. The hub keeps its canonical URL and its
+sitemap date reflects this change.
